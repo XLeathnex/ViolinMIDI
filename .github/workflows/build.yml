@@ -104,3 +104,10 @@ jobs:
           awk -v heading="## $VERSION" '$0 == heading { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md > notes.md
           test -s notes.md
           gh release create "$GITHUB_REF_NAME" ViolinMIDI-macOS.zip --title "ViolinMIDI $VERSION" --notes-file notes.md
+          # The list of all versions as a plain file. The app reads this instead of
+          # the query interface, which limits requests per network address.
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            | jq '[.[] | {tag_name, draft, prerelease, published_at, body, assets: [.assets[] | {name, size, digest, browser_download_url}]}]' \
+            > versions.json
+          jq -e --arg tag "$GITHUB_REF_NAME" 'map(select(.tag_name == $tag and .draft == false)) | length == 1' versions.json
+          gh release upload "$GITHUB_REF_NAME" versions.json --clobber

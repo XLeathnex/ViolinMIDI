@@ -17,6 +17,7 @@ namespace
 {
     constexpr const char* kRepository = "XLeathnex/ViolinMIDI";
     constexpr const char* kAssetName  = "ViolinMIDI-macOS.zip";
+    constexpr const char* kManifestName = "versions.json";
     constexpr const char* kBundleId   = "app.violinmidi.ViolinMIDI";
     constexpr const char* kBundleName = "ViolinMIDI.app";
 
@@ -341,60 +342,96 @@ juce::Result relaunchInto (const juce::String& version, const juce::StringArray&
 }
 
 //==============================================================================
+namespace
+{
+    /** Reads a web address into a string. Returns the HTTP status, or 0 without a connection. */
+    int readUrl (const juce::String& address, const juce::String& headers, juce::String& body)
+    {
+        int status = 0;
+        auto stream = juce::URL (address).createInputStream (juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
+                                                                 .withConnectionTimeoutMs (10000)
+                                                                 .withStatusCode (&status)
+                                                                 .withNumRedirectsToFollow (8)
+                                                                 .withExtraHeaders (headers));
+        if (stream == nullptr)
+            return 0;
+
+        body = stream->readEntireStreamAsString();
+        return status;
+    }
+
+    /** Turns the list of releases (as the project page publishes it) into ours. */
+    bool parseReleases (const juce::String& body, juce::Array<Release>& releases)
+    {
+        releases.clear();
+
+        juce::var json;
+        if (juce::JSON::parse (body, json).failed() || ! json.isArray())
+            return false;
+
+        for (const auto& item : *json.getArray())
+        {
+            if ((bool) item.getProperty ("draft", false) || (bool) item.getProperty ("prerelease", false))
+                continue;
+
+            Release release;
+            release.version = item.getProperty ("tag_name", {}).toString().trimCharactersAtStart ("v");
+            if (! isValidVersion (release.version))
+                continue;
+
+            release.date = item.getProperty ("published_at", {}).toString().substring (0, 10);
+            release.notes = item.getProperty ("body", {}).toString().trim();
+
+            if (const auto* assets = item.getProperty ("assets", {}).getArray())
+            {
+                for (const auto& asset : *assets)
+                {
+                    if (asset.getProperty ("name", {}).toString() != kAssetName)
+                        continue;
+                    release.downloadUrl = asset.getProperty ("browser_download_url", {}).toString();
+                    release.size = (juce::int64) asset.getProperty ("size", 0);
+                    const auto digest = asset.getProperty ("digest", {}).toString();
+                    if (digest.startsWith ("sha256:"))
+                        release.sha256 = digest.fromFirstOccurrenceOf (":", false, false).toLowerCase();
+                }
+            }
+
+            if (release.downloadUrl.startsWith ("https://"))
+                releases.add (release);
+        }
+
+        std::sort (releases.begin(), releases.end(),
+                   [] (const Release& a, const Release& b) { return compareVersions (a.version, b.version) > 0; });
+        return true;
+    }
+}
+
 juce::Result fetchReleases (juce::Array<Release>& releases)
 {
     releases.clear();
+    const juce::String repository (kRepository);
+    juce::String body;
 
-    const juce::URL url ("https://api.github.com/repos/" + juce::String (kRepository) + "/releases?per_page=100");
-    int status = 0;
-    auto stream = url.createInputStream (juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
-                                             .withConnectionTimeoutMs (10000)
-                                             .withStatusCode (&status)
-                                             .withExtraHeaders ("Accept: application/vnd.github+json\r\nUser-Agent: ViolinMIDI"));
-    if (stream == nullptr)
+    // First choice: the list that is published as a plain file with every
+    // release. It is an ordinary download with no limit on how often it is read.
+    int status = readUrl ("https://github.com/" + repository + "/releases/latest/download/" + kManifestName,
+                          "User-Agent: ViolinMIDI", body);
+    if (status == 200 && parseReleases (body, releases) && ! releases.isEmpty())
+        return juce::Result::ok();
+
+    // Otherwise ask the project page's query interface. It answers only a
+    // limited number of requests per hour from one network address.
+    status = readUrl ("https://api.github.com/repos/" + repository + "/releases?per_page=100",
+                      "Accept: application/vnd.github+json\r\nUser-Agent: ViolinMIDI", body);
+    if (status == 0)
         return juce::Result::fail ("Keine Verbindung zum Update-Server.");
-
-    const auto body = stream->readEntireStreamAsString();
+    if (status == 403 || status == 429)
+        return juce::Result::fail (text ("Der Update-Server nimmt gerade keine Anfragen an. Bitte sp\xc3\xa4ter noch einmal versuchen."));
     if (status != 200)
         return juce::Result::fail ("Der Update-Server antwortet mit Fehler " + juce::String (status) + ".");
+    if (! parseReleases (body, releases))
+        return juce::Result::fail ("Die Versionsliste war nicht lesbar.");
 
-    juce::var json;
-    if (juce::JSON::parse (body, json).failed() || ! json.isArray())
-        return juce::Result::fail (text ("Die Versionsliste war nicht lesbar."));
-
-    for (const auto& item : *json.getArray())
-    {
-        if ((bool) item.getProperty ("draft", false) || (bool) item.getProperty ("prerelease", false))
-            continue;
-
-        Release release;
-        release.version = item.getProperty ("tag_name", {}).toString().trimCharactersAtStart ("v");
-        if (! isValidVersion (release.version))
-            continue;
-
-        release.date = item.getProperty ("published_at", {}).toString().substring (0, 10);
-        release.notes = item.getProperty ("body", {}).toString().trim();
-
-        if (const auto* assets = item.getProperty ("assets", {}).getArray())
-        {
-            for (const auto& asset : *assets)
-            {
-                if (asset.getProperty ("name", {}).toString() != kAssetName)
-                    continue;
-                release.downloadUrl = asset.getProperty ("browser_download_url", {}).toString();
-                release.size = (juce::int64) asset.getProperty ("size", 0);
-                const auto digest = asset.getProperty ("digest", {}).toString();
-                if (digest.startsWith ("sha256:"))
-                    release.sha256 = digest.fromFirstOccurrenceOf (":", false, false).toLowerCase();
-            }
-        }
-
-        if (release.downloadUrl.startsWith ("https://"))
-            releases.add (release);
-    }
-
-    std::sort (releases.begin(), releases.end(),
-               [] (const Release& a, const Release& b) { return compareVersions (a.version, b.version) > 0; });
     return juce::Result::ok();
 }
 
