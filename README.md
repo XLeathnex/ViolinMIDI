@@ -1,8 +1,12 @@
-# ViolinMIDI
+# Archet
 
-ViolinMIDI hört über das Audio-Interface auf deine Geige und gibt ihre Tonhöhe als MIDI aus.
-Die App legt dafür einen virtuellen MIDI-Ausgang namens **ViolinMIDI** an, den MainStage, Logic
-und andere Programme wie ein angeschlossenes Keyboard sehen.
+Archet hört über das Audio-Interface auf deine Geige und gibt ihre Tonhöhe als MIDI aus.
+Die App legt dafür einen virtuellen MIDI-Ausgang an, den MainStage, Logic und andere Programme
+wie ein angeschlossenes Keyboard sehen. Er heißt **Archet**, bei Installationen von vor
+Version 1.2 weiter **ViolinMIDI**, damit eine bestehende Einrichtung in MainStage bleibt. Der
+aktuelle Name steht oben im Fenster.
+
+Bis Version 1.1 hieß die App ViolinMIDI.
 
 Sie ist einstimmig, auf gestrichene Saiten abgestimmt und für eine 7-saitige Geige mit
 Tonabnehmer ausgelegt (B♭1 bis A7).
@@ -23,20 +27,22 @@ Das ist nur einmal nötig. Spätere Versionen holt die App selbst, siehe „Upda
 3. Die App wird geladen, in „Programme“ gelegt und gestartet. Beim ersten Start fragt macOS nach
    dem Mikrofon-Zugriff. Mit „Erlauben“ bestätigen, sonst kommt kein Signal an.
 
-Dafür muss nichts weiter installiert sein. Liegt schon eine ältere ViolinMIDI-App in „Programme“
+Dafür muss nichts weiter installiert sein. Eine App unter dem früheren Namen ViolinMIDI wird dabei
+entfernt, die Einstellungen bleiben. Liegt schon eine ältere Archet-App in „Programme“
 und macOS lässt das Ersetzen nicht zu, sagt die Zeile das. Dann die alte App in den Papierkorb
 legen und die Zeile noch einmal ausführen.
 
 ### Von Hand
 
 1. `ViolinMIDI-macOS.zip` von der [Seite mit den Versionen](https://github.com/XLeathnex/ViolinMIDI/releases/latest)
-   laden und doppelklicken. Es entsteht `ViolinMIDI.app`.
-2. `ViolinMIDI.app` in den Ordner „Programme“ ziehen.
+   laden und doppelklicken. Es entsteht `ViolinMIDI.app` (der Dateiname ist aus Gründen der
+   Update-Kompatibilität geblieben; nach Belieben in `Archet.app` umbenennen).
+2. Die App in den Ordner „Programme“ ziehen.
 3. Die App ist nicht bei Apple registriert. macOS blockiert deshalb den ersten Start, wenn die
    Datei über den Browser kam. Einmalig im Terminal ausführen:
 
    ```
-   xattr -dr com.apple.quarantine /Applications/ViolinMIDI.app
+   xattr -dr com.apple.quarantine /Applications/Archet.app
    ```
 
    Alternativ: App starten, die Meldung schließen, dann unter Systemeinstellungen →
@@ -47,7 +53,7 @@ Voraussetzung: macOS 11 oder neuer, Intel oder Apple Silicon.
 
 ## Einrichtung
 
-### In ViolinMIDI
+### In Archet
 
 1. **Einstellungen…** öffnen, das Interface und den Eingang wählen, an dem die Geige hängt.
    Puffergröße so klein wie möglich (64 oder 128 Samples). Die Abtastrate nicht verändern,
@@ -59,10 +65,11 @@ Voraussetzung: macOS 11 oder neuer, Intel oder Apple Silicon.
 
 ### In MainStage
 
-1. ViolinMIDI zuerst starten, dann MainStage. „ViolinMIDI“ erscheint dort als MIDI-Gerät.
+1. Archet zuerst starten, dann MainStage. Der MIDI-Ausgang (Name oben im Fenster) erscheint dort
+   als MIDI-Gerät.
 2. Ein Software-Instrument anlegen. Steht dessen Keyboard-Eingang auf „Alle“, spielt die Geige
    es sofort.
-3. Den **Pitch-Bend-Bereich des Instruments** auf denselben Wert stellen wie in ViolinMIDI.
+3. Den **Pitch-Bend-Bereich des Instruments** auf denselben Wert stellen wie in Archet.
    Ab Werk stehen die meisten Instrumente auf ±2 Halbtöne, das ist auch hier die Voreinstellung.
    Für lange Glissandi beide Seiten auf ±12 oder ±24 stellen.
 4. Im Channel-Strip-Informationsfenster unter „MIDI-Eingang“ dürfen Pitch Bend und
@@ -73,13 +80,13 @@ leicht abweichen.
 
 ### Wenn andere MIDI-Geräte mit angeschlossen sind
 
-MainStage wirft alle MIDI-Geräte zusammen. ViolinMIDI sendet neben den Noten laufend Pitch Bend
+MainStage wirft alle MIDI-Geräte zusammen. Archet sendet neben den Noten laufend Pitch Bend
 und, bei „Lautstärke: Kontinuierlich“, Expression (Regler Nr. 11). Dieselbe Nummer benutzen
 Expression-Pedale, deshalb können sich Regler anderer Geräte mitbewegen.
 
-- In ViolinMIDI einen eigenen **MIDI-Kanal** wählen, den kein anderes Gerät benutzt.
+- Oben im Fenster einen eigenen **MIDI-Kanal** wählen, den kein anderes Gerät benutzt.
 - In MainStage im Layout-Modus ein eigenes Keyboard-Bedienelement für die Geige anlegen und ihm
-  das Gerät „ViolinMIDI“ zuweisen. Den übrigen Bedienelementen ihr jeweiliges Gerät zuweisen
+  den MIDI-Ausgang von Archet zuweisen. Den übrigen Bedienelementen ihr jeweiliges Gerät zuweisen
   statt „Alle“.
 - Schnelle Abhilfe ohne Umbau: „Lautstärke“ auf „Nur Anschlagstärke“ stellen. Dann sendet die
   App keine Expression mehr.
@@ -98,11 +105,11 @@ Expression-Pedale, deshalb können sich Regler anderer Geräte mitbewegen.
 | **Ansprache** | Schnell, Normal oder Sicher, siehe Tabelle unten. |
 | **Tiefster Ton** | Töne darunter werden ignoriert. Höher gesetzt reagieren auch tiefe Lagen schneller. |
 | **Kammerton A** | Bezugston für die Notenzuordnung, 430 bis 450 Hz. |
-| **MIDI-Kanal** | Kanal 1 bis 16, auf dem die App sendet. |
+| **MIDI-Kanal** | Kanal 1 bis 16, auf dem die App sendet (oben im Fenster). |
 | **Alle Noten aus** | Beendet hängende Noten, stellt Pitch Bend und Expression zurück. |
 
 Die Einstellungen werden gespeichert, aber nicht pro MainStage-Patch. Der Modus lässt sich
-mit den Tasten 1, 2 und 3 umschalten, solange das ViolinMIDI-Fenster vorne ist.
+mit den Tasten 1, 2 und 3 umschalten, solange das Archet-Fenster vorne ist.
 
 ### Was die App aus dem Spiel macht
 
@@ -160,7 +167,7 @@ Tonbeginn bis zur MIDI-Note, ohne Audiopuffer:
 | E5 (659 Hz) | 9 ms | 10 ms | 14 ms |
 | E6 (1319 Hz) | 6 ms | 7 ms | 11 ms |
 
-Dazu kommen der Audiopuffer von ViolinMIDI und der von MainStage. Ein weicher Bogenansatz
+Dazu kommen der Audiopuffer von Archet und der von MainStage. Ein weicher Bogenansatz
 verlängert die Zeit, weil die Saite später eine klare Tonhöhe hat.
 
 ## Grenzen
@@ -187,7 +194,7 @@ verlängert die Zeit, weil die Saite später eine klare Tonhöhe hat.
 | Zu träge | Ansprache auf „Schnell“, kleinere Puffer, „Tiefster Ton“ höher setzen. |
 | Instrument klingt verstimmt oder springt | Pitch-Bend-Bereich in App und Instrument angleichen. |
 | Instrument bleibt leise | Auf „Nur Anschlagstärke“ wechseln oder „Alle Noten aus“ drücken, das setzt Expression zurück. |
-| MainStage sieht „ViolinMIDI“ nicht | ViolinMIDI vor MainStage starten. |
+| MainStage sieht den MIDI-Ausgang nicht | Archet vor MainStage starten. |
 | Eine neue Version macht Ärger | Unter „Einstellungen…“ die vorige Version wählen. |
 
 ## Aufnahmen prüfen
@@ -229,6 +236,31 @@ Besteht der Build, erscheint die Version auf der Projektseite und der Update-Kno
 | `app/` | Fenster, Audio-Eingang, MIDI-Ausgang und Updater (JUCE) |
 | `tests/` | Automatische Tests mit künstlichen Geigensignalen |
 | `tools/` | `violinmidi_wav` zum Prüfen von Aufnahmen |
+| `assets/` | Das App-Icon, erzeugt mit `ViolinMIDI --render-icon assets/AppIcon.png` |
+
+## Erweitern
+
+Die App ist so aufgebaut, dass Neues an genau einer Stelle dazukommt:
+
+| Vorhaben | Wo |
+| --- | --- |
+| Name, Farben, Logo ändern | `app/Brand.h`, `app/Brand.cpp` (Anzeigename für macOS zusätzlich `VIOLINMIDI_DISPLAY_NAME` in `app/CMakeLists.txt`) |
+| Aussehen aller Standard-Bedienelemente | `app/Theme.cpp` |
+| Neue Einstellung, die gespeichert wird | Feld in `AppSettings`, je eine Zeile in `load()` und `save()` in `app/SettingsStore.cpp` |
+| Neues Bedienelement im Fenster | im Konstruktor von `app/MainComponent.cpp` anlegen und mit `addRow()` auf eine Karte setzen; das Layout ergibt sich |
+| Neue Live-Anzeige | `app/Widgets.cpp`, gefüttert aus `MainComponent::timerCallback()` |
+| Andere Erkennung oder MIDI-Logik | `core/` (ohne JUCE, mit eigenen Tests in `tests/test_main.cpp`) |
+
+Regeln, damit es schnell und sicher bleibt:
+
+- Im Audio-Thread (`AudioHost::audioDeviceIOCallbackWithContext`, `vm::Engine::process`) nichts
+  anlegen, nichts sperren, nicht warten. Die Erkennung braucht derzeit etwa 3 % eines
+  Prozessorkerns.
+- Anzeigen zeichnen sich nur neu, wenn sich etwas geändert hat (30 Bilder pro Sekunde).
+- Bestehende Einstellungs-Schlüssel nie umbenennen: Alle Versionen lesen dieselbe Datei. Ändert
+  sich die Bedeutung eines Werts, `kSchema` erhöhen und in `migrate()` umrechnen.
+- Dateiname, Programmname und Bundle-ID (`ViolinMIDI`, `app.violinmidi.ViolinMIDI`) nicht ändern:
+  Ältere Versionen erkennen Updates daran, und macOS hängt die Mikrofon-Freigabe daran.
 
 ## Lizenz
 

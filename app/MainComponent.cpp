@@ -1,254 +1,136 @@
 #include "MainComponent.h"
 
+#include "Brand.h"
 #include "SettingsPanel.h"
 
 #include <cmath>
 
+using namespace brand;
+
 namespace
 {
-    constexpr int kWidth = 560, kHeight = 752;
-    constexpr int kMargin = 18, kRow = 26, kGap = 6, kLabelWidth = 200;
-    constexpr int kPitchHeight = 150, kStatusHeight = 56;
+    constexpr int kWidth = 960, kHeight = 620;
+    constexpr int kMargin = 20, kHeader = 64, kFooter = 48;
+    constexpr int kLeftWidth = 560, kColumnGap = 16, kNoteHeight = 212;
+    constexpr int kCardPad = 16, kCardTitle = 26, kRowGap = 10, kDivider = 12, kLabelWidth = 104;
     constexpr int kTimerHz = 30;
-    constexpr const char* kPortName = "ViolinMIDI";
 
-    const juce::Colour kAccent  { 0xff39b6a8 };
-    const juce::Colour kPanel   { 0xff22272b };
-    const juce::Colour kDim     { 0xff7d8990 };
-    const juce::Colour kWarning { 0xffe0a03c };
-
-    juce::String noteName (int midiNote)
+    juce::String decimalComma (double value, int places)
     {
-        static const char* names[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-        return juce::String (names[((midiNote % 12) + 12) % 12]) + juce::String (midiNote / 12 - 1);
-    }
-
-    void setupLabel (juce::Component& parent, juce::Label& label, const juce::String& text)
-    {
-        label.setText (text, juce::dontSendNotification);
-        label.setJustificationType (juce::Justification::centredLeft);
-        parent.addAndMakeVisible (label);
-    }
-
-    void setupSlider (juce::Component& parent, juce::Slider& slider, double low, double high, double step,
-                      const juce::String& suffix, int decimals)
-    {
-        slider.setSliderStyle (juce::Slider::LinearHorizontal);
-        slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 78, 22);
-        slider.setRange (low, high, step);
-        slider.setTextValueSuffix (suffix);
-        slider.setNumDecimalPlacesToDisplay (decimals);
-        parent.addAndMakeVisible (slider);
+        return juce::String (value, places).replaceCharacter ('.', ',');
     }
 }
 
 //==============================================================================
-void PitchDisplay::update (const AudioHost::Meters& m, float gateDb, bool midiActive)
+MainComponent::MainComponent (const Options& o) : options (o)
 {
-    active = m.active;
-    heard = m.voiced && m.levelDb >= gateDb - 6.0f;
-    midi = midiActive;
-    note = m.note;
-    pitch = m.pitch;
-    repaint();
-}
-
-void PitchDisplay::paint (juce::Graphics& g)
-{
-    const auto area = getLocalBounds().toFloat();
-    g.setColour (kPanel);
-    g.fillRoundedRectangle (area, 10.0f);
-
-    // MIDI activity
-    g.setColour (midi ? kAccent : kDim.withAlpha (0.35f));
-    g.fillEllipse (area.getRight() - 26.0f, 14.0f, 10.0f, 10.0f);
-    g.setColour (kDim);
-    g.setFont (juce::Font (juce::FontOptions (12.0f)));
-    g.drawText ("MIDI", juce::Rectangle<float> (area.getRight() - 70.0f, 10.0f, 40.0f, 18.0f),
-                juce::Justification::centredRight);
-
-    // note name
-    const int shownNote = active ? note : (heard ? juce::roundToInt (pitch) : -1);
-    if (shownNote >= 0)
-    {
-        g.setColour (active ? kAccent : kDim);
-        g.setFont (juce::Font (juce::FontOptions (62.0f, juce::Font::bold)));
-        g.drawText (noteName (shownNote), area.withTrimmedBottom (66.0f).withTrimmedTop (4.0f), juce::Justification::centred);
-    }
-
-    // tuner scale: where the string is between two semitones
-    const auto scale = area.withTrimmedLeft (40.0f).withTrimmedRight (40.0f).withTop (area.getBottom() - 66.0f).withHeight (20.0f);
-    g.setColour (kDim.withAlpha (0.5f));
-    g.fillRoundedRectangle (scale.withSizeKeepingCentre (scale.getWidth(), 4.0f), 2.0f);
-    for (int tick = -2; tick <= 2; ++tick)
-    {
-        const float x = scale.getCentreX() + (float) tick * scale.getWidth() * 0.25f;
-        g.fillRect (x - 0.5f, scale.getY() + (tick == 0 ? 0.0f : 5.0f), 1.0f, tick == 0 ? 20.0f : 10.0f);
-    }
-
-    juce::String info = U ("Bereit \xe2\x80\x93 spiel einen Ton");
-    if (active || heard)
-    {
-        const float cents = (pitch - std::round (pitch)) * 100.0f;
-        const float x = scale.getCentreX() + juce::jlimit (-50.0f, 50.0f, cents) / 100.0f * scale.getWidth();
-        g.setColour (active ? kAccent : kDim);
-        g.fillRoundedRectangle (x - 3.0f, scale.getY(), 6.0f, 20.0f, 3.0f);
-
-        const juce::String centText = (cents >= 0.0f ? "+" : U ("\xe2\x88\x92")) + juce::String (std::abs (juce::roundToInt (cents))) + " Cent";
-        info = active ? "MIDI-Note " + juce::String (note) + "   " + centText
-                      : U ("unter der Ansprechschwelle   ") + centText;
-    }
-
-    g.setColour (kDim);
-    g.setFont (juce::Font (juce::FontOptions (14.0f)));
-    g.drawText (info, area.withTop (area.getBottom() - 38.0f).withTrimmedBottom (10.0f), juce::Justification::centred);
-}
-
-//==============================================================================
-void LevelMeter::update (float levelDb, float gateDb, bool clipped)
-{
-    shown = std::max (levelDb, shown - 1.5f); // quick up, slower down
-    gate = gateDb;
-    clip = clipped;
-    repaint();
-}
-
-void LevelMeter::paint (juce::Graphics& g)
-{
-    constexpr float low = -72.0f, high = 0.0f;
-    const auto area = getLocalBounds().toFloat();
-    auto toX = [&] (float db) { return area.getX() + juce::jlimit (0.0f, 1.0f, (db - low) / (high - low)) * area.getWidth(); };
-
-    g.setColour (kPanel);
-    g.fillRoundedRectangle (area, 4.0f);
-
-    const float x = toX (shown);
-    if (x > area.getX() + 1.0f)
-    {
-        g.setColour (clip ? kWarning : (shown >= gate ? kAccent : kDim));
-        g.fillRoundedRectangle (area.withRight (x), 4.0f);
-    }
-
-    // gate threshold
-    g.setColour (juce::Colours::white.withAlpha (0.85f));
-    g.fillRect (toX (gate) - 1.0f, area.getY(), 2.0f, area.getHeight());
-}
-
-//==============================================================================
-MainComponent::MainComponent (bool openAudio, const juce::String& startupNotice, bool showSettingsAtStart)
-{
+    setOpaque (true);
     setWantsKeyboardFocus (true);
 
-    juce::PropertiesFile::Options options;
-    options.applicationName = "ViolinMIDI";
-    options.filenameSuffix = "settings";
-    options.osxLibrarySubFolder = "Application Support";
-    appProperties.setStorageParameters (options);
+    // One settings file for every version, from before and after the rename.
+    juce::PropertiesFile::Options fileOptions;
+    fileOptions.applicationName = kLegacyName;
+    fileOptions.filenameSuffix = "settings";
+    fileOptions.osxLibrarySubFolder = "Application Support";
+    fileOptions.millisecondsBeforeSaving = 500;
+    appProperties.setStorageParameters (fileOptions);
+    store = std::make_unique<SettingsStore> (*appProperties.getUserSettings());
+    settings = store->load();
 
-    addAndMakeVisible (pitchDisplay);
-    addAndMakeVisible (levelMeter);
+    addAndMakeVisible (noteDisplay);
+    addAndMakeVisible (history);
 
-    // --- input
-    setupLabel (*this, gainLabel, U ("Eingangsverst\xc3\xa4rkung"));
-    setupSlider (*this, gainSlider, -12.0, 36.0, 0.5, " dB", 1);
-    gainSlider.setDoubleClickReturnValue (true, 0.0);
-    gainSlider.setTooltip (U ("So einstellen, dass der Balken bei kr\xc3\xa4" "ftigem Spiel weit nach rechts geht, ohne orange zu werden."));
+    // --- expression
+    addCard ("AUSDRUCK");
+    setupSegments (modeButtons, modeRow, 1,
+                   { "Stufenlos", U ("Vibrato gl\xc3\xa4tten"), U ("Halbt\xc3\xb6ne") },
+                   { U ("Pitch Bend folgt der Saite exakt: Glissando und Vibrato kommen an. (Taste 1)"),
+                     U ("Glissando wird \xc3\xbc" "bertragen, Vibrato herausgefiltert: das Instrument steht ruhig. (Taste 2)"),
+                     U ("Kein Pitch Bend: jeder erreichte Halbton wird neu angeschlagen, z. B. f\xc3\xbcr Klavier. (Taste 3)") });
+    addRow (nullptr, modeRow, 32);
 
-    setupLabel (*this, gateLabel, "Ansprechschwelle (Gate)");
-    setupSlider (*this, gateSlider, -70.0, -20.0, 0.5, " dB", 1);
-    gateSlider.setDoubleClickReturnValue (true, -45.0);
-    gateSlider.setTooltip (U ("Wei\xc3\x9f" "e Marke im Pegelbalken. Knapp \xc3\xbc" "ber das Grundrauschen legen: niedrig = spricht fr\xc3\xbch an, h\xc3\xb6her = keine Geisternoten."));
-
-    // --- pitch movement
-    const char* modeNames[] = { "Stufenlos", "Vibrato gegl\xc3\xa4ttet", "Halbt\xc3\xb6ne" };
-    const char* modeTips[] = {
-        "Pitch Bend folgt der Saite exakt: Glissando und Vibrato kommen beim Instrument an. (Taste 1)",
-        "Glissando wird \xc3\xbc" "bertragen, Vibrato herausgefiltert: das Instrument steht ruhig. (Taste 2)",
-        "Kein Pitch Bend: beim Rutschen wird jeder erreichte Halbton neu angeschlagen, z. B. f\xc3\xbcr Klavier. (Taste 3)"
-    };
-    for (int i = 0; i < 3; ++i)
-    {
-        auto& b = modeButtons[i];
-        b.setButtonText (U (modeNames[i]));
-        b.setTooltip (U (modeTips[i]));
-        b.setClickingTogglesState (true);
-        b.setRadioGroupId (1);
-        b.setColour (juce::TextButton::buttonOnColourId, kAccent.darker (0.2f));
-        b.setConnectedEdges ((i > 0 ? juce::Button::ConnectedOnLeft : 0) | (i < 2 ? juce::Button::ConnectedOnRight : 0));
-        b.onClick = [this, i] { if (modeButtons[i].getToggleState()) pushSettings(); };
-        addAndMakeVisible (b);
-    }
-
-    setupLabel (*this, bendRangeLabel, "Pitch-Bend-Bereich");
+    setupLabel (bendRangeLabel, "Pitch-Bend");
     for (int range : { 2, 4, 12, 24, 48 })
-        bendRangeBox.addItem (U ("\xc2\xb1") + juce::String (range) + U (" Halbt\xc3\xb6ne") + (range == 2 ? " (Standard)" : ""), range);
+        bendRangeBox.addItem (U ("\xc2\xb1") + juce::String (range) + U (" Halbt\xc3\xb6ne"), range);
     bendRangeBox.setTooltip (U ("Muss mit dem Pitch-Bend-Bereich des Instruments \xc3\xbc" "bereinstimmen. Gr\xc3\xb6\xc3\x9f" "er = l\xc3\xa4ngere Glissandi ohne neuen Anschlag."));
     bendRangeBox.onChange = [this] { pushSettings(); };
     addAndMakeVisible (bendRangeBox);
+    addRow (&bendRangeLabel, bendRangeBox);
 
-    // --- dynamics
-    setupLabel (*this, dynamicsLabel, U ("Lautst\xc3\xa4rke"));
-    dynamicsBox.addItem (U ("Kontinuierlich (Anschlag + Expression CC11)"), 1);
-    dynamicsBox.addItem (U ("Nur Anschlagst\xc3\xa4rke"), 2);
-    dynamicsBox.addItem (U ("Feste Lautst\xc3\xa4rke"), 3);
-    dynamicsBox.setTooltip (U ("Kontinuierlich: An- und Abschwellen des Bogens steuert laufend die Lautst\xc3\xa4rke des Instruments."));
+    setupLabel (dynamicsLabel, "Dynamik");
+    dynamicsBox.addItem ("Anschlag + Expression", 1);
+    dynamicsBox.addItem ("Nur Anschlag", 2);
+    dynamicsBox.addItem (U ("Feste St\xc3\xa4rke"), 3);
+    dynamicsBox.setTooltip (U ("Anschlag + Expression: An- und Abschwellen des Bogens steuert laufend die Lautst\xc3\xa4rke (CC11). "
+                               "Bewegen sich dabei Regler anderer Ger\xc3\xa4te mit, \xe2\x80\x9eNur Anschlag\xe2\x80\x9c w\xc3\xa4hlen."));
     dynamicsBox.onChange = [this] { pushSettings(); };
     addAndMakeVisible (dynamicsBox);
+    addRow (&dynamicsLabel, dynamicsBox);
 
-    setupLabel (*this, velocityLabel, U ("Feste Anschlagst\xc3\xa4rke"));
-    setupSlider (*this, velocitySlider, 1.0, 127.0, 1.0, "", 0);
+    setupLabel (velocityLabel, U ("Feste St\xc3\xa4rke"));
+    setupSlider (velocitySlider, 1.0, 127.0, 1.0, "", 0);
+    addRow (&velocityLabel, velocitySlider);
 
-    // --- detection
-    setupLabel (*this, responseLabel, "Ansprache");
-    responseBox.addItem ("Schnell", 1);
-    responseBox.addItem ("Normal", 2);
-    responseBox.addItem ("Sicher", 3);
-    responseBox.setTooltip (U ("Schnell = k\xc3\xbcrzeste Verz\xc3\xb6gerung, Sicher = wartet l\xc3\xa4nger, bis die Tonh\xc3\xb6he eindeutig steht. Wirkt vor allem auf den tiefen Saiten."));
-    responseBox.onChange = [this] { pushSettings(); };
-    addAndMakeVisible (responseBox);
+    // --- input and detection
+    addCard ("EINGANG & ERKENNUNG");
+    setupLabel (meterLabel, "Pegel");
+    levelMeter.setTooltip (U ("Gr\xc3\xbcn: der Ton liegt \xc3\xbc" "ber der Schwelle (wei\xc3\x9f" "e Marke). Rot: \xc3\xbc" "bersteuert."));
+    addAndMakeVisible (levelMeter);
+    addRow (&meterLabel, levelMeter, 20);
 
-    setupLabel (*this, lowestLabel, "Tiefster Ton");
+    setupLabel (gainLabel, U ("Verst\xc3\xa4rkung"));
+    setupSlider (gainSlider, -12.0, 36.0, 0.5, " dB", 1);
+    gainSlider.setDoubleClickReturnValue (true, 0.0);
+    gainSlider.setTooltip (U ("Kr\xc3\xa4" "ftig spielen: der Balken soll weit nach rechts gehen, ohne rot zu werden."));
+    addRow (&gainLabel, gainSlider);
+
+    setupLabel (gateLabel, "Schwelle");
+    setupSlider (gateSlider, -70.0, -20.0, 0.5, " dB", 1);
+    gateSlider.setDoubleClickReturnValue (true, -45.0);
+    gateSlider.setTooltip (U ("Wei\xc3\x9f" "e Marke im Pegel. Knapp \xc3\xbc" "ber das Rauschen legen: niedrig spricht fr\xc3\xbch an, h\xc3\xb6her verhindert Geisternoten."));
+    addRow (&gateLabel, gateSlider);
+
+    setupLabel (responseLabel, "Ansprache");
+    setupSegments (responseButtons, responseRow, 2, { "Schnell", "Normal", "Sicher" },
+                   { U ("K\xc3\xbcrzeste Verz\xc3\xb6gerung."),
+                     U ("Ausgewogen."),
+                     U ("Wartet l\xc3\xa4nger, bis die Tonh\xc3\xb6he eindeutig ist. Hilft auf den tiefen Saiten.") });
+    addRow (&responseLabel, responseRow, 28, true);
+
+    setupLabel (lowestLabel, "Tiefster Ton");
     for (int n = vm::kAbsLowestNote; n <= 60; ++n)
     {
-        juce::String text = noteName (n) + "  (MIDI " + juce::String (n) + ")";
-        if (n == 34) text += U ("  \xe2\x80\x93 B\xe2\x99\xad, tiefste Saite 7-Saiter");
-        if (n == 41) text += U ("  \xe2\x80\x93 6-Saiter");
-        if (n == 48) text += U ("  \xe2\x80\x93 5-Saiter");
-        if (n == 55) text += U ("  \xe2\x80\x93 4-Saiter");
-        lowestBox.addItem (text, n);
+        juce::String item = noteName (n);
+        if (n == 34) item << U ("  \xc2\xb7  7 Saiten");
+        if (n == 41) item << U ("  \xc2\xb7  6 Saiten");
+        if (n == 48) item << U ("  \xc2\xb7  5 Saiten");
+        if (n == 55) item << U ("  \xc2\xb7  4 Saiten");
+        lowestBox.addItem (item, n);
     }
-    lowestBox.setTooltip (U ("T\xc3\xb6ne darunter werden ignoriert. H\xc3\xb6her gesetzt reagieren auch die tiefen Lagen schneller."));
+    lowestBox.setTooltip (U ("T\xc3\xb6ne darunter werden ignoriert. H\xc3\xb6her gesetzt reagieren auch tiefe Lagen schneller."));
     lowestBox.onChange = [this] { pushSettings(); };
     addAndMakeVisible (lowestBox);
+    addRow (&lowestLabel, lowestBox);
 
-    setupLabel (*this, tuningLabel, "Kammerton A");
-    setupSlider (*this, tuningSlider, 430.0, 450.0, 0.5, " Hz", 1);
+    setupLabel (tuningLabel, "Kammerton A");
+    setupSlider (tuningSlider, 430.0, 450.0, 0.5, " Hz", 1);
     tuningSlider.setDoubleClickReturnValue (true, 440.0);
+    addRow (&tuningLabel, tuningSlider);
 
-    for (auto* s : { &gainSlider, &gateSlider, &velocitySlider, &tuningSlider })
-        s->onValueChange = [this] { pushSettings(); };
-
-    // --- MIDI output
-    setupLabel (*this, channelLabel, "MIDI-Kanal");
+    // --- header and footer
     for (int channel = 1; channel <= 16; ++channel)
-        channelBox.addItem ("Kanal " + juce::String (channel), channel);
+        channelBox.addItem ("MIDI-Kanal " + juce::String (channel), channel);
     channelBox.setTooltip (U ("Auf diesem Kanal sendet die App. Ein eigener Kanal h\xc3\xa4lt die Geige von anderen MIDI-Ger\xc3\xa4ten getrennt."));
     channelBox.onChange = [this] { pushSettings(); };
     addAndMakeVisible (channelBox);
 
-    // --- bottom
-    statusLabel.setJustificationType (juce::Justification::topLeft);
-    statusLabel.setColour (juce::Label::textColourId, kDim);
-    statusLabel.setFont (juce::Font (juce::FontOptions (13.0f)));
-    addAndMakeVisible (statusLabel);
-
-    settingsButton.setButtonText (U ("Einstellungen\xe2\x80\xa6"));
-    settingsButton.setTooltip (U ("Audio-Eingang w\xc3\xa4hlen, nach Updates suchen und zwischen Versionen wechseln."));
+    settingsButton.setButtonText ("Einstellungen");
+    settingsButton.setTooltip (U ("Audio-Eingang w\xc3\xa4hlen, nach Updates suchen, Version wechseln."));
     settingsButton.onClick = [this] { showSettings(); };
     addAndMakeVisible (settingsButton);
 
-    // Only shown while a newer version is waiting. One click loads it and restarts.
-    updateButton.setColour (juce::TextButton::buttonColourId, kAccent.darker (0.25f));
+    updateButton.setColour (juce::TextButton::buttonColourId, colour::accent);
+    updateButton.setColour (juce::TextButton::textColourOffId, colour::window);
     updateButton.onClick = [this]
     {
         const auto version = updates.availableUpdate();
@@ -262,32 +144,29 @@ MainComponent::MainComponent (bool openAudio, const juce::String& startupNotice,
     panicButton.onClick = [this] { host.requestAllNotesOff(); };
     addAndMakeVisible (panicButton);
 
-    loadSettings();
+    applySettingsToControls();
     setSize (kWidth, kHeight);
 
     updates.onRestart = [] { juce::JUCEApplication::getInstance()->systemRequestedQuit(); };
     updates.addChangeListener (this);
-    if (startupNotice.isNotEmpty())
-        updates.setNotice (startupNotice);
+    if (options.notice.isNotEmpty())
+        updates.setNotice (options.notice);
 
-    if (showSettingsAtStart)
+    if (options.showSettingsAtStart)
     {
         juce::Component::SafePointer<MainComponent> safeThis (this);
         juce::MessageManager::callAsync ([safeThis] { if (safeThis != nullptr) safeThis->showSettings(); });
     }
 
     startTimerHz (kTimerHz);
-    if (! openAudio)
+    if (! options.openAudio)
         return;
 
     // --- MIDI out and audio in
-    midiPortOk = host.openMidiPort (kPortName);
+    midiPortOk = host.openMidiPort (settings.midiPortName);
 
-    auto savedState = properties() != nullptr ? properties()->getXmlValue ("audioState") : nullptr;
+    auto savedState = store->audioState();
     const bool firstRun = savedState == nullptr;
-    if (savedState != nullptr)
-        savedState->removeAttribute ("audioDeviceRate"); // never change the rate other programs are using
-
     audioInitError = deviceManager.initialise (1, 0, savedState.get(), true);
 
     if (firstRun)
@@ -326,64 +205,84 @@ MainComponent::~MainComponent()
     deviceManager.removeChangeListener (this);
     deviceManager.removeAudioCallback (&host); // ends the sounding note, see AudioHost::audioDeviceStopped
     deviceManager.closeAudioDevice();
-    saveSettings();
-    appProperties.saveIfNeeded();
-}
 
-juce::PropertiesFile* MainComponent::properties()
-{
-    return appProperties.getUserSettings();
+    store->save (settings);
+    store->flush();
 }
 
 //==============================================================================
-void MainComponent::loadSettings()
+MainComponent::Card& MainComponent::addCard (const juce::String& title)
+{
+    cards.push_back ({});
+    cards.back().title = title;
+    return cards.back();
+}
+
+void MainComponent::addRow (juce::Label* label, juce::Component& control, int height, bool dividerAbove)
+{
+    jassert (! cards.empty());
+    cards.back().rows.push_back ({ label, &control, height, dividerAbove });
+}
+
+void MainComponent::setupLabel (juce::Label& label, const juce::String& text)
+{
+    label.setText (text, juce::dontSendNotification);
+    label.setJustificationType (juce::Justification::centredLeft);
+    label.setFont (font (13.5f));
+    label.setColour (juce::Label::textColourId, colour::textDim);
+    label.setBorderSize ({ 0, 0, 0, 0 });
+    addAndMakeVisible (label);
+}
+
+void MainComponent::setupSlider (juce::Slider& slider, double low, double high, double step,
+                                 const juce::String& suffix, int decimals)
+{
+    slider.setSliderStyle (juce::Slider::LinearHorizontal);
+    slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 66, 24);
+    slider.setRange (low, high, step);
+    slider.setTextValueSuffix (suffix);
+    slider.setNumDecimalPlacesToDisplay (decimals);
+    slider.onValueChange = [this] { pushSettings(); };
+    addAndMakeVisible (slider);
+}
+
+void MainComponent::setupSegments (juce::TextButton* buttons, ButtonRow& row, int radioGroup,
+                                   const juce::StringArray& names, const juce::StringArray& tips)
+{
+    const int count = names.size();
+    for (int i = 0; i < count; ++i)
+    {
+        auto& b = buttons[i];
+        b.setButtonText (names[i]);
+        b.setTooltip (tips[i]);
+        b.setClickingTogglesState (true);
+        b.setRadioGroupId (radioGroup);
+        b.setConnectedEdges ((i > 0 ? juce::Button::ConnectedOnLeft : 0) | (i < count - 1 ? juce::Button::ConnectedOnRight : 0));
+        b.onClick = [this, &b] { if (b.getToggleState()) pushSettings(); };
+        row.add (b);
+    }
+    addAndMakeVisible (row);
+}
+
+//==============================================================================
+void MainComponent::applySettingsToControls()
 {
     loading = true;
-    auto* p = properties();
-    const vm::Settings defaults;
+    const auto& e = settings.engine;
 
-    auto getInt = [p] (const char* key, int fallback) { return p != nullptr ? p->getIntValue (key, fallback) : fallback; };
-    auto getDouble = [p] (const char* key, double fallback) { return p != nullptr ? p->getDoubleValue (key, fallback) : fallback; };
-
-    const int mode = juce::jlimit (0, 2, getInt ("bendMode", (int) defaults.bendMode));
-    modeButtons[mode].setToggleState (true, juce::dontSendNotification);
-
-    int range = getInt ("bendRange", defaults.bendRangeSemis);
-    if (bendRangeBox.indexOfItemId (range) < 0)
-        range = defaults.bendRangeSemis;
-    bendRangeBox.setSelectedId (range, juce::dontSendNotification);
-
-    dynamicsBox.setSelectedId (juce::jlimit (0, 2, getInt ("dynamics", (int) defaults.dynamics)) + 1, juce::dontSendNotification);
-    responseBox.setSelectedId (juce::jlimit (0, 2, getInt ("response", (int) defaults.response)) + 1, juce::dontSendNotification);
-    lowestBox.setSelectedId (juce::jlimit (vm::kAbsLowestNote, 60, getInt ("lowestNote", defaults.lowestNote)), juce::dontSendNotification);
-
-    gainSlider.setValue (getDouble ("gainDb", defaults.inputGainDb), juce::dontSendNotification);
-    gateSlider.setValue (getDouble ("gateDb", defaults.gateDb), juce::dontSendNotification);
-    velocitySlider.setValue (getInt ("fixedVelocity", defaults.fixedVelocity), juce::dontSendNotification);
-    tuningSlider.setValue (getDouble ("a4Hz", defaults.a4Hz), juce::dontSendNotification);
-    channelBox.setSelectedId (juce::jlimit (1, 16, getInt ("midiChannel", defaults.midiChannel)), juce::dontSendNotification);
+    modeButtons[juce::jlimit (0, 2, (int) e.bendMode)].setToggleState (true, juce::dontSendNotification);
+    responseButtons[juce::jlimit (0, 2, (int) e.response)].setToggleState (true, juce::dontSendNotification);
+    bendRangeBox.setSelectedId (e.bendRangeSemis, juce::dontSendNotification);
+    dynamicsBox.setSelectedId ((int) e.dynamics + 1, juce::dontSendNotification);
+    lowestBox.setSelectedId (e.lowestNote, juce::dontSendNotification);
+    channelBox.setSelectedId (e.midiChannel, juce::dontSendNotification);
+    gainSlider.setValue (e.inputGainDb, juce::dontSendNotification);
+    gateSlider.setValue (e.gateDb, juce::dontSendNotification);
+    velocitySlider.setValue (e.fixedVelocity, juce::dontSendNotification);
+    tuningSlider.setValue (e.a4Hz, juce::dontSendNotification);
 
     loading = false;
     pushSettings();
-}
-
-void MainComponent::saveSettings()
-{
-    auto* p = properties();
-    if (p == nullptr)
-        return;
-
-    const vm::Settings s = host.getSettings();
-    p->setValue ("bendMode", (int) s.bendMode);
-    p->setValue ("bendRange", s.bendRangeSemis);
-    p->setValue ("dynamics", (int) s.dynamics);
-    p->setValue ("response", (int) s.response);
-    p->setValue ("lowestNote", s.lowestNote);
-    p->setValue ("gainDb", (double) s.inputGainDb);
-    p->setValue ("gateDb", (double) s.gateDb);
-    p->setValue ("fixedVelocity", s.fixedVelocity);
-    p->setValue ("a4Hz", (double) s.a4Hz);
-    p->setValue ("midiChannel", s.midiChannel);
 }
 
 void MainComponent::pushSettings()
@@ -391,35 +290,37 @@ void MainComponent::pushSettings()
     if (loading)
         return;
 
-    vm::Settings s;
+    auto& e = settings.engine;
     for (int i = 0; i < 3; ++i)
-        if (modeButtons[i].getToggleState())
-            s.bendMode = (vm::BendMode) i;
+    {
+        if (modeButtons[i].getToggleState())     e.bendMode = (vm::BendMode) i;
+        if (responseButtons[i].getToggleState()) e.response = (vm::Response) i;
+    }
 
-    s.bendRangeSemis = bendRangeBox.getSelectedId() > 0 ? bendRangeBox.getSelectedId() : 2;
-    s.dynamics = (vm::DynamicsMode) juce::jlimit (0, 2, dynamicsBox.getSelectedId() - 1);
-    s.response = (vm::Response) juce::jlimit (0, 2, responseBox.getSelectedId() - 1);
-    s.lowestNote = lowestBox.getSelectedId() > 0 ? lowestBox.getSelectedId() : 34;
-    s.inputGainDb = (float) gainSlider.getValue();
-    s.gateDb = (float) gateSlider.getValue();
-    s.fixedVelocity = juce::roundToInt (velocitySlider.getValue());
-    s.a4Hz = (float) tuningSlider.getValue();
-    s.midiChannel = channelBox.getSelectedId() > 0 ? channelBox.getSelectedId() : 1;
-    host.setSettings (s);
+    e.bendRangeSemis = bendRangeBox.getSelectedId() > 0 ? bendRangeBox.getSelectedId() : 2;
+    e.dynamics = (vm::DynamicsMode) juce::jlimit (0, 2, dynamicsBox.getSelectedId() - 1);
+    e.lowestNote = lowestBox.getSelectedId() > 0 ? lowestBox.getSelectedId() : 34;
+    e.midiChannel = channelBox.getSelectedId() > 0 ? channelBox.getSelectedId() : 1;
+    e.inputGainDb = (float) gainSlider.getValue();
+    e.gateDb = (float) gateSlider.getValue();
+    e.fixedVelocity = juce::roundToInt (velocitySlider.getValue());
+    e.a4Hz = (float) tuningSlider.getValue();
+    host.setSettings (e);
 
-    const bool fixed = s.dynamics == vm::DynamicsMode::Fixed;
+    const bool fixed = e.dynamics == vm::DynamicsMode::Fixed;
     velocitySlider.setEnabled (fixed);
-    velocityLabel.setEnabled (fixed);
-    const bool bends = s.bendMode != vm::BendMode::Quantized;
+    velocityLabel.setAlpha (fixed ? 1.0f : 0.45f);
+    const bool bends = e.bendMode != vm::BendMode::Quantized;
     bendRangeBox.setEnabled (bends);
-    bendRangeLabel.setEnabled (bends);
+    bendRangeLabel.setAlpha (bends ? 1.0f : 0.45f);
 
-    saveSettings();
+    store->save (settings);
 }
 
 void MainComponent::setMode (int index)
 {
     modeButtons[juce::jlimit (0, 2, index)].setToggleState (true, juce::sendNotification);
+    pushSettings();
 }
 
 bool MainComponent::keyPressed (const juce::KeyPress& key)
@@ -433,6 +334,29 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
     return false;
 }
 
+bool MainComponent::savedWindowPosition (juce::Point<int>& topLeft) const
+{
+    if (! settings.hasWindowPosition)
+        return false;
+
+    // Only if the window would still be on a screen (a display may be gone).
+    const juce::Rectangle<int> wanted (settings.windowX, settings.windowY, kWidth, kHeight);
+    const auto* display = juce::Desktop::getInstance().getDisplays().getDisplayForRect (wanted);
+    if (display == nullptr || ! display->userBounds.toNearestInt().contains (wanted.withSize (kWidth / 2, 60)))
+        return false;
+
+    topLeft = { settings.windowX, settings.windowY };
+    return true;
+}
+
+void MainComponent::rememberWindowPosition (juce::Point<int> topLeft)
+{
+    settings.hasWindowPosition = true;
+    settings.windowX = topLeft.x;
+    settings.windowY = topLeft.y;
+    store->save (settings);
+}
+
 //==============================================================================
 void MainComponent::showSettings()
 {
@@ -442,166 +366,313 @@ void MainComponent::showSettings()
         return;
     }
 
-    juce::DialogWindow::LaunchOptions options;
-    options.content.setOwned (new SettingsPanel (deviceManager, updates));
-    options.dialogTitle = "Einstellungen";
-    options.dialogBackgroundColour = getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId);
-    options.escapeKeyTriggersCloseButton = true;
-    options.useNativeTitleBar = true;
-    options.resizable = false;
-    settingsDialog = options.launchAsync();
+    juce::DialogWindow::LaunchOptions launch;
+    launch.content.setOwned (new SettingsPanel (deviceManager, updates));
+    launch.dialogTitle = "Einstellungen";
+    launch.dialogBackgroundColour = colour::window;
+    launch.escapeKeyTriggersCloseButton = true;
+    launch.useNativeTitleBar = true;
+    launch.resizable = false;
+    settingsDialog = launch.launchAsync();
 }
 
 void MainComponent::refreshUpdateButton()
 {
     const auto version = updates.availableUpdate();
-    updateButton.setVisible (version.isNotEmpty());
+    const bool show = version.isNotEmpty();
     updateButton.setEnabled (! updates.isBusy());
-    if (version.isNotEmpty())
-        updateButton.setButtonText ("Update auf " + version + " installieren");
-}
+    if (show)
+        updateButton.setButtonText ("Update " + version + " installieren");
 
-void MainComponent::saveAudioState()
-{
-    auto* p = properties();
-    if (p == nullptr)
-        return;
-
-    if (auto state = deviceManager.createStateXml())
+    if (updateButton.isVisible() != show)
     {
-        state->removeAttribute ("audioDeviceRate");
-        p->setValue ("audioState", state.get());
+        updateButton.setVisible (show);
+        resized();
+        repaint (0, 0, getWidth(), kHeader);
     }
 }
 
 void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
     if (source == &deviceManager)
-        saveAudioState();
+    {
+        if (auto state = deviceManager.createStateXml())
+            store->saveAudioState (*state);
+    }
     else
+    {
         refreshUpdateButton();
+    }
 }
 
 //==============================================================================
+AudioHost::Meters MainComponent::demoMeters()
+{
+    // A short phrase with vibrato and one slide, to show every display at work.
+    struct Step { int note; double seconds; bool slide; };
+    static const Step steps[] = { { 67, 0.8, false }, { 69, 0.45, false }, { 71, 0.45, false }, { 72, 1.0, false },
+                                  { 74, 0.5, false }, { 79, 1.2, true },   { 76, 0.5, false }, { 74, 0.5, false },
+                                  { 72, 0.9, false }, { -1, 0.7, false } };
+
+    demoTime += 1.0 / kTimerHz;
+    double total = 0.0;
+    for (const auto& s : steps)
+        total += s.seconds;
+
+    double t = std::fmod (demoTime, total);
+    int index = 0;
+    while (index < (int) std::size (steps) - 1 && t >= steps[index].seconds)
+        t -= steps[index++].seconds;
+
+    AudioHost::Meters m;
+    m.running = m.hasInput = true;
+    m.sampleRate = 48000.0;
+    m.blockSize = 128;
+    const auto& step = steps[index];
+    if (step.note < 0)
+    {
+        m.levelDb = -80.0f;
+        return m;
+    }
+
+    double pitch = step.note + 0.2 * std::sin (2.0 * juce::MathConstants<double>::pi * 5.5 * t) * juce::jmin (1.0, t / 0.3);
+    if (step.slide && index > 0 && t < 0.22)
+        pitch = steps[index - 1].note + (step.note - steps[index - 1].note) * (t / 0.22);
+
+    m.pitch = m.outputPitch = (float) pitch;
+    m.note = step.note;
+    m.voiced = m.active = true;
+    m.clarity = 0.97f;
+    m.levelDb = (float) (-24.0 + 4.0 * std::sin (demoTime * 1.3));
+    m.midiMessages = ++demoMessages;
+    return m;
+}
+
 void MainComponent::timerCallback()
 {
-    const AudioHost::Meters m = host.takeMeters();
-    const float gateDb = (float) gateSlider.getValue();
+    const auto m = options.demo ? demoMeters() : host.takeMeters();
+    const float gateDb = settings.engine.gateDb;
 
     // digital silence for a while usually means a missing permission or the wrong input
-    silentTicks = (m.running && m.inputPeak <= 0.0f) ? silentTicks + 1 : 0;
-    clipTicks = m.inputPeak >= 0.98f ? kTimerHz : std::max (0, clipTicks - 1);
-
-    midiTicks = m.midiMessages != lastMidiCount ? 4 : std::max (0, midiTicks - 1);
+    silentTicks = (m.running && m.inputPeak <= 0.0f && ! options.demo) ? silentTicks + 1 : 0;
+    clipTicks = m.inputPeak >= 0.98f ? kTimerHz : juce::jmax (0, clipTicks - 1);
+    midiTicks = m.midiMessages != lastMidiCount ? 4 : juce::jmax (0, midiTicks - 1);
     lastMidiCount = m.midiMessages;
 
-    pitchDisplay.update (m, gateDb, midiTicks > 0);
-    levelMeter.update (m.running ? m.levelDb : -120.0f, gateDb, clipTicks > 0);
+    LiveFrame f;
+    f.pitch = m.pitch;
+    f.outputPitch = m.active ? m.outputPitch : m.pitch;
+    f.levelDb = m.running ? m.levelDb : -120.0f;
+    f.note = m.note;
+    f.active = m.active;
+    f.heard = m.voiced && m.levelDb >= gateDb - 6.0f;
+
+    noteDisplay.update (f, settings.engine.a4Hz);
+    history.push (f);
+    levelMeter.update (f.levelDb, gateDb, clipTicks > 0);
     updateStatus (m);
 }
 
 void MainComponent::updateStatus (const AudioHost::Meters& m)
 {
-    juce::String text;
+    juce::String input, midi, footer;
+    juce::Colour inputC, midiC, footerC;
 
-    text << (midiPortOk ? U ("MIDI-Ausgang \xe2\x80\x9eViolinMIDI\xe2\x80\x9c bereit \xe2\x80\x93 im Zielprogramm als MIDI-Ger\xc3\xa4t w\xc3\xa4hlen")
-                        : U ("MIDI-Ausgang konnte nicht angelegt werden (virtuelle MIDI-Ports gibt es nur unter macOS)"))
-         << "\n";
-
-    if (auto* device = deviceManager.getCurrentAudioDevice(); device != nullptr && m.running)
+    if (options.demo)
+    {
+        input = "Demo";
+        inputC = colour::good;
+    }
+    else if (auto* device = deviceManager.getCurrentAudioDevice(); device != nullptr && m.running)
     {
         const double ms = m.sampleRate > 0.0 ? 1000.0 * m.blockSize / m.sampleRate : 0.0;
-        text << "Eingang: " << device->getName() << U ("  \xc2\xb7  ") << juce::String (m.sampleRate / 1000.0, 1) << " kHz"
-             << U ("  \xc2\xb7  Puffer ") << m.blockSize << " Samples (" << juce::String (ms, 1) << " ms)\n";
+        input = device->getName() + U ("  \xc2\xb7  ") + decimalComma (m.sampleRate / 1000.0, 1) + " kHz"
+              + U ("  \xc2\xb7  ") + decimalComma (ms, 1) + " ms";
+        inputC = (m.hasInput && silentTicks <= kTimerHz * 3) ? colour::good : colour::accent;
     }
     else
     {
-        text << U ("Kein Audio-Eingang aktiv \xe2\x80\x93 bitte unter \xe2\x80\x9e" "Einstellungen\xe2\x80\x9c w\xc3\xa4hlen")
-             << (audioInitError.isNotEmpty() ? " (" + audioInitError + ")" : juce::String()) << "\n";
+        input = options.openAudio ? "Kein Eingang" : "Ohne Audio";
+        inputC = colour::bad;
     }
 
-    const juce::String error = host.lastError();
-    const juce::String updateStatus = updates.statusText();
-    if (error.isNotEmpty())
-        text << U ("Audio-Fehler: ") << error;
-    else if (updateStatus.isNotEmpty())
-        text << updateStatus;
-    else if (m.running && ! m.hasInput)
-        text << U ("Das Ger\xc3\xa4t liefert keinen Eingangskanal. Bitte einen Eingang ausw\xc3\xa4hlen.");
-    else if (silentTicks > kTimerHz * 3)
-        text << U ("Es kommt kein Signal an. Richtiger Eingang? Mikrofon-Zugriff in den Systemeinstellungen (Datenschutz) erlaubt?");
-    else if (clipTicks > 0)
-        text << U ("Eingang \xc3\xbc" "bersteuert \xe2\x80\x93 Pegel am Interface oder die Eingangsverst\xc3\xa4rkung senken.");
+    if (midiPortOk || options.demo)
+    {
+        midi = U ("MIDI-Ausgang \xe2\x80\x9e") + settings.midiPortName + U ("\xe2\x80\x9c");
+        midiC = midiTicks > 0 ? colour::accent : colour::good;
+    }
+    else
+    {
+        midi = options.openAudio ? U ("MIDI-Ausgang fehlt") : U ("MIDI aus");
+        midiC = colour::bad;
+    }
 
-    if (statusLabel.getText() != text)
-        statusLabel.setText (text, juce::dontSendNotification);
+    const auto error = host.lastError();
+    const auto update = updates.statusText();
+    if (error.isNotEmpty())
+        footer = U ("Audio-Fehler: ") + error, footerC = colour::bad;
+    else if (update.isNotEmpty())
+        footer = update, footerC = colour::accent;
+    else if (options.openAudio && ! options.demo && ! m.running)
+        footer = U ("Kein Audio-Eingang aktiv \xe2\x80\x93 unter \xe2\x80\x9e" "Einstellungen\xe2\x80\x9c das Interface w\xc3\xa4hlen."), footerC = colour::bad;
+    else if (m.running && ! m.hasInput)
+        footer = U ("Das Ger\xc3\xa4t liefert keinen Eingang. Unter \xe2\x80\x9e" "Einstellungen\xe2\x80\x9c einen Eingang w\xc3\xa4hlen."), footerC = colour::bad;
+    else if (silentTicks > kTimerHz * 3)
+        footer = U ("Es kommt kein Signal an. Richtiger Eingang? Mikrofon-Zugriff unter Systemeinstellungen \xe2\x86\x92 Datenschutz erlaubt?"), footerC = colour::accent;
+    else if (clipTicks > 0)
+        footer = U ("Eingang \xc3\xbc" "bersteuert \xe2\x80\x93 Pegel am Interface oder die Verst\xc3\xa4rkung senken."), footerC = colour::bad;
+    else
+        footer = U ("Tasten 1 \xc2\xb7 2 \xc2\xb7 3 wechseln den Modus. Alles wird automatisch gespeichert."), footerC = colour::textFaint;
+
+    if (input != inputChip || midi != midiChip || inputC != inputDot || midiC != midiDot)
+    {
+        inputChip = input;
+        midiChip = midi;
+        inputDot = inputC;
+        midiDot = midiC;
+        repaint (0, 0, getWidth(), kHeader);
+    }
+
+    if (footer != footerText || footerC != footerDot)
+    {
+        footerText = footer;
+        footerDot = footerC;
+        repaint (0, getHeight() - kFooter, getWidth(), kFooter);
+    }
 }
 
 //==============================================================================
 void MainComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
+    g.fillAll (colour::window);
 
-    g.setColour (kDim);
-    g.setFont (juce::Font (juce::FontOptions (12.5f, juce::Font::bold)));
-    for (const auto& h : headings)
-        g.drawText (h.text, kMargin, h.y, getWidth() - 2 * kMargin, 18, juce::Justification::centredLeft);
+    // --- header: name on the left, status in the middle
+    const int x0 = kMargin;
+    drawMark (g, juce::Rectangle<float> ((float) x0, 15.0f, 34.0f, 34.0f));
+    g.setColour (colour::text);
+    g.setFont (font (20.0f, true));
+    g.drawText (kName, x0 + 44, 12, 180, 24, juce::Justification::centredLeft);
+    g.setColour (colour::textFaint);
+    g.setFont (font (12.0f));
+    g.drawText (juce::String (kTagline) + U ("  \xc2\xb7  ") + updater::runningVersion(), x0 + 44, 35, 200, 16,
+                juce::Justification::centredLeft);
+
+    const int chipsLeft = x0 + 200;
+    const int chipsRight = (updateButton.isVisible() ? updateButton.getX() : channelBox.getX()) - 12;
+    auto drawChip = [&] (juce::Rectangle<float> r, const juce::String& text, juce::Colour dot)
+    {
+        g.setColour (colour::raised);
+        g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+        g.setColour (colour::line);
+        g.drawRoundedRectangle (r.reduced (0.5f), r.getHeight() * 0.5f, 1.0f);
+        g.setColour (dot.withAlpha (0.25f));
+        g.fillEllipse (r.getX() + 9.0f, r.getCentreY() - 6.5f, 13.0f, 13.0f);
+        g.setColour (dot);
+        g.fillEllipse (r.getX() + 12.5f, r.getCentreY() - 3.0f, 6.0f, 6.0f);
+        g.setColour (colour::textDim);
+        g.setFont (font (12.5f));
+        g.drawText (text, r.withTrimmedLeft (28.0f).withTrimmedRight (12.0f), juce::Justification::centredLeft, true);
+    };
+
+    const auto chipFont = font (12.5f);
+    const float available = (float) juce::jmax (0, chipsRight - chipsLeft);
+    const float wMidi = juce::jmin (available * 0.45f, juce::GlyphArrangement::getStringWidth (chipFont, midiChip) + 42.0f);
+    const float wInput = juce::jmin (available - wMidi - 8.0f, juce::GlyphArrangement::getStringWidth (chipFont, inputChip) + 42.0f);
+    float x = (float) chipsRight;
+    if (wMidi > 60.0f)
+    {
+        x -= wMidi;
+        drawChip ({ x, 18.0f, wMidi, 28.0f }, midiChip, midiDot);
+        x -= 8.0f;
+    }
+    if (wInput > 60.0f)
+        drawChip ({ x - wInput, 18.0f, wInput, 28.0f }, inputChip, inputDot);
+
+    g.setColour (colour::line.withAlpha (0.6f));
+    g.fillRect (0, kHeader - 1, getWidth(), 1);
+
+    // --- cards
+    for (const auto& card : cards)
+    {
+        const auto r = card.bounds.toFloat();
+        g.setColour (colour::panel);
+        g.fillRoundedRectangle (r, 12.0f);
+        g.setColour (colour::line.withAlpha (0.7f));
+        g.drawRoundedRectangle (r.reduced (0.5f), 12.0f, 1.0f);
+        g.setColour (colour::textFaint);
+        g.setFont (headingFont());
+        g.drawText (card.title, card.bounds.reduced (kCardPad + 2, kCardPad - 2).removeFromTop (14), juce::Justification::centredLeft);
+
+        g.setColour (colour::line.withAlpha (0.8f));
+        for (int y : card.dividerY)
+            g.fillRect (card.bounds.getX() + kCardPad, y, card.bounds.getWidth() - 2 * kCardPad, 1);
+    }
+
+    // --- footer: one line saying what is going on
+    const int fy = getHeight() - kFooter;
+    g.setColour (colour::line.withAlpha (0.6f));
+    g.fillRect (0, fy, getWidth(), 1);
+    g.setColour (footerDot);
+    g.fillEllipse ((float) kMargin, (float) fy + (float) kFooter * 0.5f - 3.0f, 6.0f, 6.0f);
+    g.setColour (footerDot == colour::textFaint ? colour::textFaint : colour::textDim);
+    g.setFont (font (13.0f));
+    g.drawText (footerText, kMargin + 16, fy, panicButton.getX() - kMargin - 28, kFooter, juce::Justification::centredLeft, true);
 }
 
 void MainComponent::resized()
 {
-    headings.clear();
-    auto area = getLocalBounds().reduced (kMargin, 14);
+    auto area = getLocalBounds();
 
-    auto heading = [&] (const juce::String& text)
+    auto header = area.removeFromTop (kHeader).reduced (kMargin, 16);
+    settingsButton.setBounds (header.removeFromRight (124));
+    header.removeFromRight (10);
+    channelBox.setBounds (header.removeFromRight (136));
+    header.removeFromRight (10);
+    if (updateButton.isVisible())
+        updateButton.setBounds (header.removeFromRight (196));
+
+    auto footer = area.removeFromBottom (kFooter).reduced (kMargin, 9);
+    panicButton.setBounds (footer.removeFromRight (140));
+
+    auto body = area.reduced (kMargin, 12);
+    auto left = body.removeFromLeft (kLeftWidth);
+    body.removeFromLeft (kColumnGap);
+
+    noteDisplay.setBounds (left.removeFromTop (kNoteHeight));
+    left.removeFromTop (12);
+    history.setBounds (left);
+
+    auto right = body;
+    for (size_t i = 0; i < cards.size(); ++i)
     {
-        area.removeFromTop (8);
-        headings.add ({ area.getY(), text });
-        area.removeFromTop (22);
-    };
-    auto row = [&] (juce::Label& label, juce::Component& control)
-    {
-        auto r = area.removeFromTop (kRow);
-        label.setBounds (r.removeFromLeft (kLabelWidth));
-        control.setBounds (r);
-        area.removeFromTop (kGap);
-    };
+        auto& card = cards[i];
+        int height = 2 * kCardPad + kCardTitle;
+        for (size_t r = 0; r < card.rows.size(); ++r)
+            height += card.rows[r].height + (r > 0 ? kRowGap : 0) + (card.rows[r].dividerAbove ? kDivider : 0);
 
-    pitchDisplay.setBounds (area.removeFromTop (kPitchHeight));
+        // the last card reaches down to the bottom of the live view
+        card.bounds = (i + 1 == cards.size()) ? right : right.removeFromTop (height);
+        right.removeFromTop (12);
 
-    heading ("EINGANG");
-    levelMeter.setBounds (area.removeFromTop (16));
-    area.removeFromTop (kGap);
-    row (gainLabel, gainSlider);
-    row (gateLabel, gateSlider);
+        auto inner = card.bounds.reduced (kCardPad);
+        inner.removeFromTop (kCardTitle);
+        card.dividerY.clear();
 
-    heading ("TONZIEHEN");
-    {
-        auto r = area.removeFromTop (kRow + 4);
-        const int w = r.getWidth() / 3;
-        modeButtons[0].setBounds (r.removeFromLeft (w));
-        modeButtons[1].setBounds (r.removeFromLeft (w));
-        modeButtons[2].setBounds (r);
-        area.removeFromTop (kGap);
+        for (size_t r = 0; r < card.rows.size(); ++r)
+        {
+            const auto& row = card.rows[r];
+            if (r > 0)
+                inner.removeFromTop (kRowGap);
+            if (row.dividerAbove)
+            {
+                card.dividerY.push_back (inner.getY() + kDivider / 2 - 4);
+                inner.removeFromTop (kDivider);
+            }
+
+            auto line = inner.removeFromTop (row.height);
+            if (row.label != nullptr)
+                row.label->setBounds (line.removeFromLeft (kLabelWidth));
+            row.control->setBounds (line);
+        }
     }
-    row (bendRangeLabel, bendRangeBox);
-
-    heading (U ("LAUTST\xc3\x84RKE"));
-    row (dynamicsLabel, dynamicsBox);
-    row (velocityLabel, velocitySlider);
-
-    heading ("ERKENNUNG");
-    row (responseLabel, responseBox);
-    row (lowestLabel, lowestBox);
-    row (tuningLabel, tuningSlider);
-
-    heading ("MIDI-AUSGANG");
-    row (channelLabel, channelBox);
-
-    auto buttons = area.removeFromBottom (kRow + 2);
-    settingsButton.setBounds (buttons.removeFromLeft (150));
-    panicButton.setBounds (buttons.removeFromRight (140));
-    updateButton.setBounds (buttons.reduced (8, 0));
-    area.removeFromBottom (kGap);
-    statusLabel.setBounds (area.removeFromBottom (kStatusHeight));
 }

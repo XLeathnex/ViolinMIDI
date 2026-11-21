@@ -1,10 +1,12 @@
-// ViolinMIDI - plays virtual instruments from the pitch of a violin.
+// Archet (formerly ViolinMIDI) - plays virtual instruments from the pitch of a violin.
 //
 // The app listens to an audio input, follows the pitch of the violin and
-// sends it as MIDI through a virtual port named "ViolinMIDI".
+// sends it as MIDI through a virtual MIDI port.
 
+#include "Brand.h"
 #include "MainComponent.h"
 #include "SelfTest.h"
+#include "Theme.h"
 #include "Updater.h"
 
 #include <cstdio>
@@ -29,6 +31,17 @@ namespace
         Returns the exit code, or -1 if the command line asks for none of them. */
     int runMaintenanceCommand (const juce::StringArray& arguments)
     {
+        if (arguments.contains ("--render-icon"))
+        {
+            // "--render-icon file.png [size]": writes the app icon (assets/AppIcon.png comes from here)
+            const auto file = juce::File::getCurrentWorkingDirectory().getChildFile (valueAfter (arguments, "--render-icon"));
+            const int index = arguments.indexOf ("--render-icon");
+            const int size = index + 2 < arguments.size() ? juce::jlimit (16, 2048, arguments[index + 2].getIntValue()) : 1024;
+            const bool ok = brand::renderIconPng (file, size);
+            say (ok ? "icon written: " + file.getFullPathName() : juce::String ("could not write the icon"));
+            return ok ? 0 : 1;
+        }
+
         if (arguments.contains ("--list-versions"))
         {
             juce::Array<updater::Release> releases;
@@ -103,18 +116,46 @@ namespace
 
         return -1;
     }
+
+    /** German texts for the standard audio settings. */
+    void installTranslations()
+    {
+        const char* text =
+            "language: German\n"
+            "countries: de at ch\n"
+            "\"Audio device type:\" = \"Treiber:\"\n"
+            "\"Input:\" = \"Eingang:\"\n"
+            "\"Output:\" = \"Ausgang:\"\n"
+            "\"Device:\" = \"Ger\xc3\xa4t:\"\n"
+            "\"Sample rate:\" = \"Abtastrate:\"\n"
+            "\"Audio buffer size:\" = \"Puffergr\xc3\xb6\xc3\x9f" "e:\"\n"
+            "\"Active input channels:\" = \"Aktive Eing\xc3\xa4nge:\"\n"
+            "\"(no audio input channels found)\" = \"(keine Eing\xc3\xa4nge gefunden)\"\n"
+            "\"Control Panel\" = \"Treiber-Einstellungen\"\n"
+            "\"Opens the device's own control panel\" = \"\xc3\x96" "ffnet die Einstellungen des Ger\xc3\xa4ts\"\n"
+            "\"Reset Device\" = \"Ger\xc3\xa4t zur\xc3\xbc" "cksetzen\"\n"
+            "\"Show advanced settings...\" = \"Erweiterte Einstellungen \xe2\x80\xa6\"\n"
+            "\"Error when trying to open audio device!\" = \"Das Audio-Ger\xc3\xa4t lie\xc3\x9f sich nicht \xc3\xb6" "ffnen.\"\n"
+            "\"none\" = \"keiner\"\n"
+            "\"Test\" = \"Test\"\n"
+            "\"Plays a test tone\" = \"Spielt einen Testton\"\n";
+
+        juce::LocalisedStrings::setCurrentMappings (new juce::LocalisedStrings (juce::String::fromUTF8 (text), false));
+    }
 }
 
 class ViolinMidiApplication final : public juce::JUCEApplication
 {
 public:
-    const juce::String getApplicationName() override       { return JUCE_APPLICATION_NAME_STRING; }
+    const juce::String getApplicationName() override       { return brand::kName; }
     const juce::String getApplicationVersion() override    { return JUCE_APPLICATION_VERSION_STRING; }
     bool moreThanOneInstanceAllowed() override             { return false; } // two would fight over the MIDI port
 
     void initialise (const juce::String&) override
     {
         const auto arguments = getCommandLineParameterArray();
+        juce::LookAndFeel::setDefaultLookAndFeel (&theme);
+        installTranslations();
 
         if (arguments.contains ("--selftest"))
         {
@@ -149,11 +190,14 @@ public:
         }
 
         // "--no-audio" shows the window without opening an input, "--show-settings"
-        // opens the settings window as well (both for looking at the layout).
-        mainWindow = std::make_unique<MainWindow> (getApplicationName() + " " + updater::runningVersion(),
-                                                   ! arguments.contains ("--no-audio"),
-                                                   startup.notice,
-                                                   arguments.contains ("--show-settings"));
+        // opens the settings window, "--demo" plays a melody into the displays
+        // (all three for looking at the layout).
+        MainComponent::Options options;
+        options.openAudio = ! arguments.contains ("--no-audio");
+        options.demo = arguments.contains ("--demo");
+        options.showSettingsAtStart = arguments.contains ("--show-settings");
+        options.notice = startup.notice;
+        mainWindow = std::make_unique<MainWindow> (getApplicationName(), options);
         updater::startedSuccessfully();
     }
 
@@ -161,6 +205,8 @@ public:
     {
         mainWindow = nullptr;
         selfTest = nullptr;
+        juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
+        juce::LocalisedStrings::setCurrentMappings (nullptr);
     }
 
     void systemRequestedQuit() override                     { quit(); }
@@ -180,16 +226,29 @@ private:
     class MainWindow final : public juce::DocumentWindow
     {
     public:
-        MainWindow (const juce::String& name, bool openAudio, const juce::String& notice, bool showSettings)
-            : DocumentWindow (name,
-                              juce::Desktop::getInstance().getDefaultLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId),
+        MainWindow (const juce::String& name, const MainComponent::Options& options)
+            : DocumentWindow (name, brand::colour::window,
                               juce::DocumentWindow::closeButton | juce::DocumentWindow::minimiseButton)
         {
             setUsingNativeTitleBar (true);
-            setContentOwned (new MainComponent (openAudio, notice, showSettings), true);
+            auto* content = new MainComponent (options);
+            setContentOwned (content, true);
             setResizable (false, false);
-            centreWithSize (getWidth(), getHeight());
+
+            juce::Point<int> topLeft;
+            if (content->savedWindowPosition (topLeft))
+                setTopLeftPosition (topLeft);
+            else
+                centreWithSize (getWidth(), getHeight());
+
             setVisible (true);
+        }
+
+        ~MainWindow() override
+        {
+            // The content is still alive here; it saves the position with the other settings.
+            if (auto* content = dynamic_cast<MainComponent*> (getContentComponent()))
+                content->rememberWindowPosition (getPosition());
         }
 
         void closeButtonPressed() override
@@ -201,6 +260,7 @@ private:
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainWindow)
     };
 
+    Theme theme;   // declared first, so it outlives the windows that use it
     std::unique_ptr<MainWindow> mainWindow;
     std::unique_ptr<SelfTest> selfTest;
 };

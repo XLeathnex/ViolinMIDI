@@ -13,15 +13,27 @@ else()
     FetchContent_MakeAvailable(JUCE)
 endif()
 
+# The product is called Archet. The bundle keeps its file name, executable and
+# identifier from before the rename (ViolinMIDI): versions 1.1.x look for exactly
+# these when they install an update, and macOS keeps the microphone permission.
+# What the user sees - menu bar, Dock, window - comes from CFBundleName below.
+set(VIOLINMIDI_DISPLAY_NAME "Archet")
+set(VIOLINMIDI_ICON "${PROJECT_SOURCE_DIR}/assets/AppIcon.png")
+set(VIOLINMIDI_ICON_ARGS)
+if(EXISTS "${VIOLINMIDI_ICON}")
+    set(VIOLINMIDI_ICON_ARGS ICON_BIG "${VIOLINMIDI_ICON}")
+endif()
+
 juce_add_gui_app(ViolinMIDI
     PRODUCT_NAME "ViolinMIDI"
     COMPANY_NAME "ViolinMIDI"
     BUNDLE_ID "app.violinmidi.ViolinMIDI"
+    ${VIOLINMIDI_ICON_ARGS}
     MICROPHONE_PERMISSION_ENABLED TRUE
-    MICROPHONE_PERMISSION_TEXT "ViolinMIDI wandelt das Signal deiner Geige in MIDI-Noten um."
+    MICROPHONE_PERMISSION_TEXT "${VIOLINMIDI_DISPLAY_NAME} wandelt das Signal deiner Geige in MIDI-Noten um."
     # MainStage is in front while playing. macOS must not put this app to sleep behind it.
     # The minimum system version lets older Macs say clearly why the app will not open.
-    PLIST_TO_MERGE "<plist version=\"1.0\"><dict><key>NSAppSleepDisabled</key><true/><key>LSMinimumSystemVersion</key><string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string></dict></plist>"
+    PLIST_TO_MERGE "<plist version=\"1.0\"><dict><key>CFBundleName</key><string>${VIOLINMIDI_DISPLAY_NAME}</string><key>CFBundleDisplayName</key><string>${VIOLINMIDI_DISPLAY_NAME}</string><key>NSAppSleepDisabled</key><true/><key>LSMinimumSystemVersion</key><string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string></dict></plist>"
     NEEDS_CURL FALSE
     NEEDS_WEB_BROWSER FALSE)
 
@@ -29,6 +41,10 @@ target_sources(ViolinMIDI PRIVATE
     Main.cpp
     MainComponent.cpp
     AudioHost.cpp
+    Brand.cpp
+    SettingsStore.cpp
+    Theme.cpp
+    Widgets.cpp
     SettingsPanel.cpp
     UpdateManager.cpp
     Updater.cpp
