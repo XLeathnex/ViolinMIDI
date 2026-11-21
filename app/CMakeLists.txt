@@ -20,7 +20,8 @@ juce_add_gui_app(ViolinMIDI
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT "ViolinMIDI wandelt das Signal deiner Geige in MIDI-Noten um."
     # MainStage is in front while playing. macOS must not put this app to sleep behind it.
-    PLIST_TO_MERGE "<plist version=\"1.0\"><dict><key>NSAppSleepDisabled</key><true/></dict></plist>"
+    # The minimum system version lets older Macs say clearly why the app will not open.
+    PLIST_TO_MERGE "<plist version=\"1.0\"><dict><key>NSAppSleepDisabled</key><true/><key>LSMinimumSystemVersion</key><string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string></dict></plist>"
     NEEDS_CURL FALSE
     NEEDS_WEB_BROWSER FALSE)
 

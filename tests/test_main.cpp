@@ -1066,7 +1066,9 @@ void performance()
 
     const double load = best / 20.0 * 100.0;
     info ("20 s of audio processed in %.2f s -> %.1f %% of one processor core", best, load);
-    check (load < 12.0, "processing needs %.1f %% of a core", load);
+    // The limit is generous on purpose: emulated or instrumented builds run several
+    // times slower than the real thing, and this test is only meant to catch a blow-up.
+    check (load < 40.0, "processing needs %.1f %% of a core", load);
 }
 
 //==============================================================================

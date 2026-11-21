@@ -53,7 +53,7 @@ jobs:
           lipo -archs "$APP/Contents/MacOS/ViolinMIDI" | grep -q x86_64
           /usr/libexec/PlistBuddy -c "Print :NSMicrophoneUsageDescription" "$APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :NSAppSleepDisabled" "$APP/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$APP/Contents/Info.plist" || true
+          /usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$APP/Contents/Info.plist"
 
       - name: Self-test of the app (engine and virtual MIDI port)
         run: '"$APP/Contents/MacOS/ViolinMIDI" --selftest'

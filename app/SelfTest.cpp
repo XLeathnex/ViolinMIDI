@@ -9,6 +9,11 @@
 
 namespace
 {
+    constexpr const char* kTestPortName = "ViolinMIDI Selftest";
+    constexpr int kTickMs = 50;
+    constexpr int kListTimeoutTicks = 100;  // 5 s for the port to appear in the system's list
+    constexpr int kSendTimeoutTicks = 60;   // 3 s for the messages to arrive
+
     void say (const juce::String& text)
     {
         std::printf ("%s\n", text.toRawUTF8());
@@ -50,107 +55,135 @@ namespace
         say ("engine: 220 Hz tone -> note-on " + juce::String (noteOn) + ", note-off " + juce::String (noteOff));
         return noteOn == 57 && noteOff == 57;
     }
-
-    struct Collector final : public juce::MidiInputCallback
-    {
-        void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message) override
-        {
-            if (message.isNoteOn() && message.getNoteNumber() == 69 && message.getVelocity() == 100) gotNoteOn = true;
-            if (message.isNoteOff() && message.getNoteNumber() == 69) gotNoteOff = true;
-            if (message.isPitchWheel() && message.getPitchWheelValue() == 9000) gotBend = true;
-            if (message.isController() && message.getControllerNumber() == 11 && message.getControllerValue() == 77) gotController = true;
-        }
-
-        bool complete() const { return gotNoteOn && gotNoteOff && gotBend && gotController; }
-
-        std::atomic<bool> gotNoteOn { false }, gotNoteOff { false }, gotBend { false }, gotController { false };
-    };
-
-    /** Creates the virtual port exactly as the app does and listens to it
-        from the outside, the way MainStage would. */
-    bool midiCheck()
-    {
-        const juce::String name = "ViolinMIDI Selftest";
-        auto output = juce::MidiOutput::createNewDevice (name);
-
-       #if ! JUCE_MAC
-        if (output == nullptr)
-        {
-            say ("midi: virtual ports are not available on this system - skipped");
-            return true;
-        }
-       #endif
-
-        if (output == nullptr)
-        {
-            say ("midi: FAILED to create the virtual port");
-            return false;
-        }
-        say ("midi: virtual port created");
-
-        // Other programs find the port in the system's list of MIDI sources.
-        juce::String identifier;
-        for (int attempt = 0; attempt < 40 && identifier.isEmpty(); ++attempt)
-        {
-            for (const auto& device : juce::MidiInput::getAvailableDevices())
-                if (device.name == name)
-                    identifier = device.identifier;
-            if (identifier.isEmpty())
-                juce::Thread::sleep (50);
-        }
-        if (identifier.isEmpty())
-        {
-            say ("midi: FAILED - the port does not show up in the list of MIDI sources");
-            return false;
-        }
-        say ("midi: port is listed for other programs");
-
-        Collector collector;
-        auto input = juce::MidiInput::openDevice (identifier, &collector);
-        if (input == nullptr)
-        {
-            say ("midi: FAILED to open the port as another program would");
-            return false;
-        }
-        input->start();
-        juce::Thread::sleep (200);
-
-        for (int attempt = 0; attempt < 20 && ! collector.complete(); ++attempt)
-        {
-            output->sendMessageNow (juce::MidiMessage::pitchWheel (1, 9000));
-            output->sendMessageNow (juce::MidiMessage::controllerEvent (1, 11, 77));
-            output->sendMessageNow (juce::MidiMessage::noteOn (1, 69, (juce::uint8) 100));
-            output->sendMessageNow (juce::MidiMessage::noteOff (1, 69));
-            juce::Thread::sleep (100);
-        }
-
-        input->stop();
-        say ("midi: received note-on " + juce::String ((int) collector.gotNoteOn.load())
-             + ", note-off " + juce::String ((int) collector.gotNoteOff.load())
-             + ", pitch bend " + juce::String ((int) collector.gotBend.load())
-             + ", expression " + juce::String ((int) collector.gotController.load()));
-        return collector.complete();
-    }
 }
 
+/** Listens to the port from the outside, the way MainStage would. */
+struct SelfTest::Collector final : public juce::MidiInputCallback
+{
+    void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message) override
+    {
+        if (message.isNoteOn() && message.getNoteNumber() == 69 && message.getVelocity() == 100) gotNoteOn = true;
+        if (message.isNoteOff() && message.getNoteNumber() == 69) gotNoteOff = true;
+        if (message.isPitchWheel() && message.getPitchWheelValue() == 9000) gotBend = true;
+        if (message.isController() && message.getControllerNumber() == 11 && message.getControllerValue() == 77) gotController = true;
+    }
+
+    bool complete() const { return gotNoteOn && gotNoteOff && gotBend && gotController; }
+
+    std::atomic<bool> gotNoteOn { false }, gotNoteOff { false }, gotBend { false }, gotController { false };
+};
+
 SelfTest::SelfTest (std::function<void (int)> onFinished)
-    : juce::Thread ("ViolinMIDI self-test"), finished (std::move (onFinished))
+    : finished (std::move (onFinished)), collector (std::make_unique<Collector>())
 {
 }
 
 SelfTest::~SelfTest()
 {
-    stopThread (15000);
+    stopTimer();
+    if (input != nullptr)
+        input->stop();
 }
 
-void SelfTest::run()
+void SelfTest::start()
 {
     say (juce::String ("ViolinMIDI self-test, version ") + JUCE_APPLICATION_VERSION_STRING);
-    const bool engineOk = engineCheck();
-    const bool midiOk = midiCheck();
+    engineOk = engineCheck();
+
+    // The virtual port, created exactly as the app creates it.
+    output = juce::MidiOutput::createNewDevice (kTestPortName);
+
+    if (output == nullptr)
+    {
+       #if JUCE_MAC
+        say ("midi: FAILED to create the virtual port");
+        finish (false);
+       #else
+        say ("midi: virtual ports are not available on this system - skipped");
+        finish (true);
+       #endif
+        return;
+    }
+
+    say ("midi: virtual port created");
+    state = State::waitingForPort;
+    ticks = 0;
+    startTimer (kTickMs);
+}
+
+void SelfTest::timerCallback()
+{
+    ++ticks;
+
+    if (state == State::waitingForPort)
+    {
+        // Other programs find the port in the system's list of MIDI sources.
+        juce::String identifier;
+        for (const auto& device : juce::MidiInput::getAvailableDevices())
+            if (device.name == kTestPortName)
+                identifier = device.identifier;
+
+        if (identifier.isEmpty())
+        {
+            if (ticks > kListTimeoutTicks)
+            {
+                say ("midi: FAILED - the port does not show up in the list of MIDI sources");
+                finish (false);
+            }
+            return;
+        }
+
+        say ("midi: port is listed for other programs");
+        input = juce::MidiInput::openDevice (identifier, collector.get());
+        if (input == nullptr)
+        {
+            say ("midi: FAILED to open the port as another program would");
+            finish (false);
+            return;
+        }
+
+        input->start();
+        state = State::sending;
+        ticks = 0;
+        return;
+    }
+
+    if (state == State::sending)
+    {
+        if (collector->complete() || ticks > kSendTimeoutTicks)
+        {
+            say ("midi: received note-on " + juce::String ((int) collector->gotNoteOn.load())
+                 + ", note-off " + juce::String ((int) collector->gotNoteOff.load())
+                 + ", pitch bend " + juce::String ((int) collector->gotBend.load())
+                 + ", expression " + juce::String ((int) collector->gotController.load()));
+            finish (collector->complete());
+            return;
+        }
+
+        output->sendMessageNow (juce::MidiMessage::pitchWheel (1, 9000));
+        output->sendMessageNow (juce::MidiMessage::controllerEvent (1, 11, 77));
+        output->sendMessageNow (juce::MidiMessage::noteOn (1, 69, (juce::uint8) 100));
+        output->sendMessageNow (juce::MidiMessage::noteOff (1, 69));
+    }
+}
+
+void SelfTest::finish (bool midiOk)
+{
+    stopTimer();
+    state = State::done;
+    if (input != nullptr)
+        input->stop();
+    input.reset();
+    output.reset();
+
     const int code = (engineOk ? 0 : 1) + (midiOk ? 0 : 2);
     say (code == 0 ? "SELFTEST OK" : "SELFTEST FAILED (code " + juce::String (code) + ")");
 
-    auto callback = finished;
-    juce::MessageManager::callAsync ([callback, code] { callback (code); });
+    // Reported from a fresh message, so the app can quit cleanly whether this
+    // was reached from the timer or straight from start().
+    if (finished != nullptr)
+    {
+        auto callback = finished;
+        juce::MessageManager::callAsync ([callback, code] { callback (code); });
+    }
 }
