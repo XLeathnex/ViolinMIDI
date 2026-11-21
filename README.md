@@ -98,7 +98,13 @@ Expression-Pedale, deshalb können sich Regler anderer Geräte mitbewegen.
 | **Stufenlos** (Taste 1) | Pitch Bend folgt der Saite exakt, mit Glissando und Vibrato. |
 | **Vibrato geglättet** (Taste 2) | Glissando wird übertragen, Vibrato bis etwa ±40 Cent herausgefiltert. |
 | **Halbtöne** (Taste 3) | Kein Pitch Bend. Beim Rutschen wird jeder erreichte Halbton neu angeschlagen. |
-| **Pitch-Bend-Bereich** | Muss zum Instrument passen. Überschreitet ein Glissando den Bereich, wird neu angeschlagen. |
+| **Pitch-Bend-Bereich** | Muss zum Instrument passen, ±0,2 bis ±48 Halbtöne. Der Bend (14 Bit, Mitte 8192) wird genau auf den Bereich skaliert und bleibt darüber bei 0 bzw. 16383 stehen. Erreicht ein Glissando den nächsten Halbton außerhalb des Bereichs, wird neu angeschlagen. |
+| **Vibrato-Glättung** | Wie stark „Geglättet“ das Vibrato herausfiltert, 0 bis 100 %. |
+| **Erkennung an/aus** (Leertaste) | Aus beendet sofort alle Noten und sendet nichts mehr. |
+| **Tonart** | Grundton und Kirchentonart (ionisch bis lokrisch). |
+| **Nur Töne der Tonart** | Aus, Skala (sieben Töne) oder Pentatonik (fünf Töne; Dur-Pentatonik bei Dur, Lydisch, Mixolydisch, sonst Moll-Pentatonik). Fremde Töne werden nicht angeschlagen und beenden die laufende Note. |
+| **Pentatonik-Ton halten** | Nur mit Pentatonik: Der letzte gültige Ton klingt bei fremden Tönen weiter, bis ein neuer gültiger Ton kommt oder der Pegel unter die Schwelle fällt. |
+| **Dreiklang** | Zu jedem Ton erklingen 1., 3. und 5. Stufe aus der Tonart auf dem Dreiklang-Kanal (C-Dur: D wird D-F-A, B wird B-D-F). „2 Töne“ lässt den Grundton weg. Töne außerhalb der Tonart bekommen einen Dur-Dreiklang. |
 | **Lautstärke: Kontinuierlich** | Anschlagstärke plus laufende Expression (CC11): An- und Abschwellen des Bogens steuert das Instrument. |
 | **Lautstärke: Nur Anschlagstärke** | Velocity aus dem Pegel beim Tonbeginn, danach keine Dynamikdaten. |
 | **Lautstärke: Fest** | Jede Note mit derselben Velocity. |
@@ -110,6 +116,14 @@ Expression-Pedale, deshalb können sich Regler anderer Geräte mitbewegen.
 
 Die Einstellungen werden gespeichert, aber nicht pro MainStage-Patch. Der Modus lässt sich
 mit den Tasten 1, 2 und 3 umschalten, solange das Archet-Fenster vorne ist.
+
+### Steuerung per MIDI
+
+Unter Einstellungen, Seite „MIDI-Steuerung“: einen MIDI-Eingang wählen (zum Beispiel ein
+Fußpedal) und jedem Regler einen Controller oder eine Note zuweisen. „Lernen“ übernimmt die
+nächste eintreffende Nachricht. Ein Controller schaltet Schalter ab Wert 64 ein, verteilt sich
+bei Auswahlen auf die Möglichkeiten und stellt Regler stufenlos; eine Note schaltet um oder
+springt zur nächsten Möglichkeit. Die Zuweisungen werden gespeichert.
 
 ### Was die App aus dem Spiel macht
 
@@ -247,9 +261,11 @@ Die App ist so aufgebaut, dass Neues an genau einer Stelle dazukommt:
 | Name, Farben, Logo ändern | `app/Brand.h`, `app/Brand.cpp` (Anzeigename für macOS zusätzlich `VIOLINMIDI_DISPLAY_NAME` in `app/CMakeLists.txt`) |
 | Aussehen aller Standard-Bedienelemente | `app/Theme.cpp` |
 | Neue Einstellung, die gespeichert wird | Feld in `AppSettings`, je eine Zeile in `load()` und `save()` in `app/SettingsStore.cpp` |
-| Neues Bedienelement im Fenster | im Konstruktor von `app/MainComponent.cpp` anlegen und mit `addRow()` auf eine Karte setzen; das Layout ergibt sich |
+| Neues Bedienelement im Fenster | im Konstruktor von `app/MainComponent.cpp` anlegen und mit `addItem()` in eine Spalte setzen; das Layout ergibt sich |
+| Regler per MIDI steuerbar machen | ein Eintrag in `app/Params.cpp`; er erscheint von selbst in der Mapping-Tabelle |
 | Neue Live-Anzeige | `app/Widgets.cpp`, gefüttert aus `MainComponent::timerCallback()` |
-| Andere Erkennung oder MIDI-Logik | `core/` (ohne JUCE, mit eigenen Tests in `tests/test_main.cpp`) |
+| Andere Erkennung | `core/PitchDetector.cpp`, `core/NoteTracker.cpp` (ohne JUCE, Tests in `tests/`) |
+| Was aus den erkannten Noten gesendet wird (Tonart, Dreiklang, weitere Stimmen) | `core/OutputStage.cpp`; die Regeln stehen oben in `core/OutputStage.h` |
 
 Regeln, damit es schnell und sicher bleibt:
 

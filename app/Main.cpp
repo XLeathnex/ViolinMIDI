@@ -195,7 +195,8 @@ public:
         MainComponent::Options options;
         options.openAudio = ! arguments.contains ("--no-audio");
         options.demo = arguments.contains ("--demo");
-        options.showSettingsAtStart = arguments.contains ("--show-settings");
+        options.showSettingsAtStart = arguments.contains ("--show-settings") || arguments.contains ("--show-mapping");
+        options.settingsPage = arguments.contains ("--show-mapping") ? 1 : 0;
         options.notice = startup.notice;
         mainWindow = std::make_unique<MainWindow> (getApplicationName(), options);
         updater::startedSuccessfully();

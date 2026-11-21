@@ -6,6 +6,7 @@
 
 #include "Biquad.h"
 #include "NoteTracker.h"
+#include "OutputStage.h"
 #include "PitchDetector.h"
 #include "Types.h"
 
@@ -24,9 +25,12 @@ public:
         float clarity     = 0.0f;
         float pitch       = 0.0f;   ///< detected pitch, fractional MIDI note
         float outputPitch = 0.0f;   ///< pitch the instrument is asked to play
-        int   note        = -1;     ///< sounding MIDI note or -1
+        int   note        = -1;     ///< MIDI note being sent or -1
         bool  voiced      = false;
-        bool  active      = false;
+        bool  active      = false;  ///< a note is being sent
+        bool  held        = false;  ///< ...kept by the pentatonic sustain
+        int   triadCount  = 0;
+        int   triad[3]    = { -1, -1, -1 };
     };
 
     /** One row per analysis hop, for tests and offline analysis only. */
@@ -41,6 +45,8 @@ public:
 
     /** The tracker emits at most this many events per analysis hop. */
     static constexpr int kMaxEventsPerHop = 8;
+    /** After the output stage (key filter, triad). */
+    static constexpr int kMaxOutputEventsPerHop = OutputStage::maxEventsFor (kMaxEventsPerHop) + 4;
 
     void prepare (double sampleRate);
 
@@ -66,6 +72,7 @@ public:
 private:
     void configure (const Settings& s);
     void analyseHop (const Settings& s, int offset, MidiEventList& out);
+    void silenceOutput (const Settings& s, int offset, MidiEventList& out);
 
     double fsIn = 48000.0, fs = 48000.0;
     int decim = 1, decimPhase = 0;
@@ -77,6 +84,10 @@ private:
 
     PitchDetector detector;
     NoteTracker tracker;
+    OutputStage stage;
+    MidiEventList hopEvents;      // what the tracker produced in one hop
+    Settings lastSettings;
+    bool wasEnabled = true;
     Meter currentMeter;
     std::vector<TraceRow>* trace = nullptr;
 

@@ -2,6 +2,8 @@
 
 #include "Brand.h"
 
+#include <cmath>
+
 namespace key
 {
     // Keys from version 1.0/1.1 keep their names, so every version reads the same file.
@@ -22,6 +24,18 @@ namespace key
     constexpr const char* midiPortName  = "midiPortName";
     constexpr const char* windowX       = "windowX";
     constexpr const char* windowY       = "windowY";
+    // added in 1.3. The master switch is not stored: the app always starts listening.
+    constexpr const char* vibratoSmoothing = "vibratoSmoothing";
+    constexpr const char* keyFilter     = "keyFilter";
+    constexpr const char* keyRoot       = "keyRoot";
+    constexpr const char* scaleMode     = "scaleMode";
+    constexpr const char* pentatonic    = "pentatonic";
+    constexpr const char* pentaSustain  = "pentaSustain";
+    constexpr const char* triad         = "triad";
+    constexpr const char* triadChannel  = "triadChannel";
+    constexpr const char* triadWithRoot = "triadWithRoot";
+    constexpr const char* midiInput     = "midiInput";
+    constexpr const char* midiMap       = "midiMap";
 }
 
 SettingsStore::SettingsStore (juce::PropertiesFile& file) : props (file)
@@ -29,9 +43,13 @@ SettingsStore::SettingsStore (juce::PropertiesFile& file) : props (file)
     migrate();
 }
 
-bool SettingsStore::isOfferedBendRange (int semitones)
+int SettingsStore::bendRangeIndex (float semitones)
 {
-    return semitones == 2 || semitones == 4 || semitones == 12 || semitones == 24 || semitones == 48;
+    int best = 0;
+    for (int i = 1; i < kNumBendRanges; ++i)
+        if (std::abs (kBendRanges[i] - semitones) < std::abs (kBendRanges[best] - semitones))
+            best = i;
+    return best;
 }
 
 void SettingsStore::migrate()
@@ -64,8 +82,21 @@ AppSettings SettingsStore::load()
     e.a4Hz          = (float) juce::jlimit (430.0, 450.0, props.getDoubleValue (key::a4Hz, d.a4Hz));
     e.midiChannel   = juce::jlimit (1, 16, props.getIntValue (key::midiChannel, d.midiChannel));
 
-    const int range = props.getIntValue (key::bendRange, d.bendRangeSemis);
-    e.bendRangeSemis = isOfferedBendRange (range) ? range : d.bendRangeSemis;
+    // Versions before 1.3 read this as a whole number and fall back to 2 for the small ranges.
+    e.bendRangeSemis = kBendRanges[bendRangeIndex ((float) props.getDoubleValue (key::bendRange, d.bendRangeSemis))];
+
+    e.vibratoSmoothing = (float) juce::jlimit (0.0, 1.0, props.getDoubleValue (key::vibratoSmoothing, d.vibratoSmoothing));
+    e.keyFilter     = props.getBoolValue (key::keyFilter, d.keyFilter);
+    e.keyRoot       = juce::jlimit (0, 11, props.getIntValue (key::keyRoot, d.keyRoot));
+    e.scaleMode     = juce::jlimit (0, 6, props.getIntValue (key::scaleMode, d.scaleMode));
+    e.pentatonic    = props.getBoolValue (key::pentatonic, d.pentatonic);
+    e.pentaSustain  = props.getBoolValue (key::pentaSustain, d.pentaSustain);
+    e.triad         = props.getBoolValue (key::triad, d.triad);
+    e.triadChannel  = juce::jlimit (1, 16, props.getIntValue (key::triadChannel, d.triadChannel));
+    e.triadWithRoot = props.getBoolValue (key::triadWithRoot, d.triadWithRoot);
+
+    s.midiInputName = props.getValue (key::midiInput);
+    s.midiMapJson   = props.getValue (key::midiMap);
 
     s.midiPortName = props.getValue (key::midiPortName, brand::kName).trim();
     if (s.midiPortName.isEmpty())
@@ -81,7 +112,18 @@ void SettingsStore::save (const AppSettings& s)
 {
     const auto& e = s.engine;
     props.setValue (key::bendMode, (int) e.bendMode);
-    props.setValue (key::bendRange, e.bendRangeSemis);
+    props.setValue (key::bendRange, (double) e.bendRangeSemis);
+    props.setValue (key::vibratoSmoothing, (double) e.vibratoSmoothing);
+    props.setValue (key::keyFilter, e.keyFilter);
+    props.setValue (key::keyRoot, e.keyRoot);
+    props.setValue (key::scaleMode, e.scaleMode);
+    props.setValue (key::pentatonic, e.pentatonic);
+    props.setValue (key::pentaSustain, e.pentaSustain);
+    props.setValue (key::triad, e.triad);
+    props.setValue (key::triadChannel, e.triadChannel);
+    props.setValue (key::triadWithRoot, e.triadWithRoot);
+    props.setValue (key::midiInput, s.midiInputName);
+    props.setValue (key::midiMap, s.midiMapJson);
     props.setValue (key::dynamics, (int) e.dynamics);
     props.setValue (key::response, (int) e.response);
     props.setValue (key::lowestNote, e.lowestNote);

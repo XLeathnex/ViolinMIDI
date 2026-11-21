@@ -5,10 +5,12 @@
 
 namespace
 {
-    // Blocks larger than this are processed in pieces, so the event list never
-    // has to grow on the audio thread.
-    constexpr int kChunk = 2048;
-    constexpr size_t kEventCapacity = 2048;
+    // Blocks are processed in pieces of this size and the MIDI of each piece is
+    // sent before the next one is analysed: a note found at the start of a large
+    // block does not wait for the rest of it. It also bounds the event list, so
+    // it never has to grow on the audio thread.
+    constexpr int kChunk = 256;
+    constexpr size_t kEventCapacity = 4096;
 }
 
 AudioHost::AudioHost()
@@ -38,6 +40,16 @@ void AudioHost::setSettings (const vm::Settings& s) noexcept
     dynamics.store ((int) s.dynamics);
     response.store ((int) s.response);
     bendRange.store (s.bendRangeSemis);
+    vibratoSmoothing.store (s.vibratoSmoothing);
+    enabled.store (s.enabled);
+    keyFilter.store (s.keyFilter);
+    keyRoot.store (s.keyRoot);
+    scaleMode.store (s.scaleMode);
+    pentatonic.store (s.pentatonic);
+    pentaSustain.store (s.pentaSustain);
+    triad.store (s.triad);
+    triadChannel.store (s.triadChannel);
+    triadWithRoot.store (s.triadWithRoot);
     lowestNote.store (s.lowestNote);
     highestNote.store (s.highestNote);
     fixedVelocity.store (s.fixedVelocity);
@@ -54,6 +66,16 @@ vm::Settings AudioHost::getSettings() const noexcept
     s.dynamics = (vm::DynamicsMode) juce::jlimit (0, 2, dynamics.load());
     s.response = (vm::Response) juce::jlimit (0, 2, response.load());
     s.bendRangeSemis = bendRange.load();
+    s.vibratoSmoothing = vibratoSmoothing.load();
+    s.enabled = enabled.load();
+    s.keyFilter = keyFilter.load();
+    s.keyRoot = keyRoot.load();
+    s.scaleMode = scaleMode.load();
+    s.pentatonic = pentatonic.load();
+    s.pentaSustain = pentaSustain.load();
+    s.triad = triad.load();
+    s.triadChannel = triadChannel.load();
+    s.triadWithRoot = triadWithRoot.load();
     s.lowestNote = lowestNote.load();
     s.highestNote = highestNote.load();
     s.fixedVelocity = fixedVelocity.load();
@@ -75,6 +97,11 @@ AudioHost::Meters AudioHost::takeMeters() noexcept
     m.note = mNote.load();
     m.voiced = mVoiced.load();
     m.active = mActive.load();
+    m.held = mHeld.load();
+    const int packed = mTriad.load();
+    m.triadCount = juce::jlimit (0, 3, packed >> 24);
+    for (int i = 0; i < 3; ++i)
+        m.triad[i] = i < m.triadCount ? ((packed >> (8 * (2 - i))) & 0x7F) : -1;
     m.running = mRunning.load();
     m.hasInput = mHasInput.load();
     m.sampleRate = mSampleRate.load();
@@ -126,12 +153,20 @@ void AudioHost::audioDeviceIOCallbackWithContext (const float* const* inputChann
         events.clear();
         engine.shutdown (events);
 
-        vm::MidiEvent allNotesOff;
-        allNotesOff.size = 3;
-        allNotesOff.bytes[0] = (uint8_t) (0xB0 | (juce::jlimit (1, 16, settings.midiChannel) - 1));
-        allNotesOff.bytes[1] = 123;
-        allNotesOff.bytes[2] = 0;
-        events.push_back (allNotesOff);
+        const int mainChannel = juce::jlimit (1, 16, settings.midiChannel) - 1;
+        const int secondChannel = juce::jlimit (1, 16, settings.triadChannel) - 1;
+        for (int channel : { mainChannel, secondChannel })
+        {
+            if (channel == secondChannel && (channel == mainChannel || ! settings.triad))
+                continue;
+
+            vm::MidiEvent allNotesOff;
+            allNotesOff.size = 3;
+            allNotesOff.bytes[0] = (uint8_t) (0xB0 | channel);
+            allNotesOff.bytes[1] = 123;
+            allNotesOff.bytes[2] = 0;
+            events.push_back (allNotesOff);
+        }
         send (events);
     }
 
@@ -163,6 +198,8 @@ void AudioHost::audioDeviceIOCallbackWithContext (const float* const* inputChann
     mNote.store (meter.note);
     mVoiced.store (meter.voiced);
     mActive.store (meter.active);
+    mHeld.store (meter.held);
+    mTriad.store ((meter.triadCount << 24) | ((meter.triad[0] & 0x7F) << 16) | ((meter.triad[1] & 0x7F) << 8) | (meter.triad[2] & 0x7F));
 }
 
 void AudioHost::audioDeviceAboutToStart (juce::AudioIODevice* device)
@@ -189,6 +226,8 @@ void AudioHost::audioDeviceStopped()
 
     mRunning.store (false);
     mActive.store (false);
+    mHeld.store (false);
+    mTriad.store (0);
     mVoiced.store (false);
     mNote.store (-1);
     mLevelDb.store (-120.0f);

@@ -1,12 +1,14 @@
 #include "SettingsPanel.h"
 
+#include "Brand.h"
+
 namespace
 {
-    constexpr int kWidth = 520, kHeight = 660;
-    constexpr int kSelectorHeight = 330;
+    constexpr int kWidth = 560, kHeight = 640;
     constexpr int kMargin = 16;
+    constexpr int kPageBarHeight = 26;
 
-    const juce::Colour kDim { 0xff7d8990 };
+    const juce::Colour kDim = brand::colour::secondary;
 
     juce::String text (const char* utf8) { return juce::String::fromUTF8 (utf8); }
 
@@ -19,18 +21,33 @@ namespace
     }
 }
 
-SettingsPanel::SettingsPanel (juce::AudioDeviceManager& deviceManager, UpdateManager& updateManager)
+SettingsPanel::SettingsPanel (juce::AudioDeviceManager& deviceManager, UpdateManager& updateManager, MidiRemote& remote, int firstPage)
     : updates (updateManager),
-      selector (deviceManager, 1, 1, 0, 0, false, false, false, false)
+      selector (deviceManager, 1, 1, 0, 0, false, false, false, false),
+      mapping (remote)
 {
-    addAndMakeVisible (selector);
+    static const char* names[] = { "Audio", "MIDI-Steuerung", "Version" };
+    for (int i = 0; i < 3; ++i)
+    {
+        auto& b = pageButtons[i];
+        b.setButtonText (names[i]);
+        b.setClickingTogglesState (true);
+        b.setRadioGroupId (1);
+        b.setConnectedEdges ((i > 0 ? juce::Button::ConnectedOnLeft : 0) | (i < 2 ? juce::Button::ConnectedOnRight : 0));
+        b.onClick = [this, i] { if (pageButtons[i].getToggleState()) showPage (i); };
+        pageRow.add (b);
+    }
+    addAndMakeVisible (pageRow);
+
+    addChildComponent (selector);
+    addChildComponent (mapping);
 
     runningLabel.setJustificationType (juce::Justification::centredLeft);
-    addAndMakeVisible (runningLabel);
+    addChildComponent (runningLabel);
 
     versionBox.setTextWhenNothingSelected (text ("Noch keine Versionsliste geladen"));
     versionBox.onChange = [this] { selectionChanged(); };
-    addAndMakeVisible (versionBox);
+    addChildComponent (versionBox);
 
     useButton.setButtonText ("Diese Version verwenden");
     useButton.setTooltip (text ("L\xc3\xa4" "dt die gew\xc3\xa4hlte Version, falls n\xc3\xb6tig, und startet die App damit neu. "
@@ -41,28 +58,30 @@ SettingsPanel::SettingsPanel (juce::AudioDeviceManager& deviceManager, UpdateMan
         if (index >= 0 && index < itemVersions.size())
             updates.switchTo (itemVersions[index]);
     };
-    addAndMakeVisible (useButton);
+    addChildComponent (useButton);
 
     notes.setMultiLine (true);
     notes.setReadOnly (true);
     notes.setScrollbarsShown (true);
     notes.setCaretVisible (false);
     notes.setFont (juce::Font (juce::FontOptions (13.0f)));
-    addAndMakeVisible (notes);
+    addChildComponent (notes);
 
     checkButton.setButtonText ("Nach Updates suchen");
     checkButton.onClick = [this] { updates.check(); };
-    addAndMakeVisible (checkButton);
+    addChildComponent (checkButton);
 
     statusLabel.setJustificationType (juce::Justification::centredLeft);
     statusLabel.setColour (juce::Label::textColourId, kDim);
     statusLabel.setFont (juce::Font (juce::FontOptions (13.0f)));
     statusLabel.setMinimumHorizontalScale (0.8f);
-    addAndMakeVisible (statusLabel);
+    addChildComponent (statusLabel);
 
     updates.addChangeListener (this);
     rebuildList();
     setSize (kWidth, kHeight);
+    pageButtons[juce::jlimit (0, 2, firstPage)].setToggleState (true, juce::dontSendNotification);
+    showPage (juce::jlimit (0, 2, firstPage));
     startTimerHz (5); // download progress
 
     if (! updates.hasChecked() && ! updates.isBusy())
@@ -77,6 +96,16 @@ SettingsPanel::~SettingsPanel()
 void SettingsPanel::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     rebuildList();
+}
+
+void SettingsPanel::showPage (int index)
+{
+    page = index;
+    selector.setVisible (page == 0);
+    mapping.setVisible (page == 1);
+    for (juce::Component* c : { (juce::Component*) &runningLabel, (juce::Component*) &versionBox, (juce::Component*) &useButton,
+                                (juce::Component*) &notes, (juce::Component*) &checkButton, (juce::Component*) &statusLabel })
+        c->setVisible (page == 2);
 }
 
 void SettingsPanel::timerCallback()
@@ -177,23 +206,21 @@ void SettingsPanel::paint (juce::Graphics& g)
 {
     g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
 
-    g.setColour (kDim.withAlpha (0.4f));
-    g.fillRect (kMargin, headingY - 10, getWidth() - 2 * kMargin, 1);
-
-    g.setColour (kDim);
-    g.setFont (juce::Font (juce::FontOptions (12.5f, juce::Font::bold)));
-    g.drawText ("VERSION", kMargin, headingY, getWidth() - 2 * kMargin, 18, juce::Justification::centredLeft);
+    g.setColour (brand::colour::separator);
+    g.fillRect (0, kMargin + kPageBarHeight + kMargin - 1, getWidth(), 1);
 }
 
 void SettingsPanel::resized()
 {
     auto area = getLocalBounds();
-    selector.setBounds (area.removeFromTop (kSelectorHeight));
+    pageRow.setBounds (area.removeFromTop (kMargin + kPageBarHeight).withTrimmedTop (kMargin).withSizeKeepingCentre (330, kPageBarHeight));
+    area.removeFromTop (kMargin);
+
+    selector.setBounds (area.withTrimmedTop (8));
+    mapping.setBounds (area.withTrimmedTop (kMargin));
 
     area = area.reduced (kMargin, 0);
-    area.removeFromTop (14);
-    headingY = area.getY();
-    area.removeFromTop (24);
+    area.removeFromTop (kMargin);
 
     runningLabel.setBounds (area.removeFromTop (24));
     area.removeFromTop (6);

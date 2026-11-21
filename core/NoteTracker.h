@@ -123,7 +123,8 @@ private:
     int   stableCount = 0;
 
     // vibrato filter (moving average with a dead band)
-    std::vector<float> smoothBuffer;
+    std::vector<float> smoothBuffer;   // sized for the longest window
+    int    smoothLen = 1;              // the part of it in use
     int    smoothPos = 0;
     double smoothSum = 0.0;
 

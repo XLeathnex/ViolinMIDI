@@ -28,7 +28,7 @@ namespace
     // --- bend modes
     constexpr float kQuantizeHysteresis = 0.15f; // semitones past the half-way point
     constexpr float kVibratoDeadband    = 0.40f; // vibrato up to +-40 cents is removed
-    constexpr double kVibratoWindowSec  = 0.18;
+    constexpr double kVibratoWindowMaxSec = 0.36; // at vibratoSmoothing = 1; the default 0.5 gives 180 ms
 
     // --- level
     constexpr float kGateHysteresisDb = 6.0f;    // note ends this far below the gate
@@ -74,7 +74,8 @@ namespace
 
     Settings sanitised (Settings s) noexcept
     {
-        s.bendRangeSemis = clampi (s.bendRangeSemis, 1, 96);
+        s.bendRangeSemis = clampf (s.bendRangeSemis, 0.1f, 96.0f);
+        s.vibratoSmoothing = clampf (s.vibratoSmoothing, 0.0f, 1.0f);
         s.lowestNote     = clampi (s.lowestNote, kAbsLowestNote, kAbsHighestNote - 12);
         s.highestNote    = clampi (s.highestNote, s.lowestNote + 12, kAbsHighestNote);
         s.fixedVelocity  = clampi (s.fixedVelocity, 1, 127);
@@ -108,7 +109,8 @@ void NoteTracker::prepare (double hopsPerSecond)
     exprAttack  = (float) (1.0 - std::exp (-1.0 / (0.008 * hopRate)));
     exprRelease = (float) (1.0 - std::exp (-1.0 / (0.060 * hopRate)));
 
-    smoothBuffer.assign ((size_t) hopsFor (kVibratoWindowSec, hopRate, 1), 0.0f);
+    smoothBuffer.assign ((size_t) hopsFor (kVibratoWindowMaxSec, hopRate, 1), 0.0f);
+    smoothLen = hopsFor (0.5 * kVibratoWindowMaxSec, hopRate, 1);
     haveCfg = false;
     reset();
 }
@@ -202,6 +204,7 @@ void NoteTracker::applySettings (const Settings& s, int offset, MidiEventList& o
     const bool modeChanged  = first || s.bendMode != cfg.bendMode;
     const bool rangeChanged = first || s.bendRangeSemis != cfg.bendRangeSemis;
     const bool responseChanged = first || s.response != cfg.response;
+    const bool smoothingChanged = first || s.vibratoSmoothing != cfg.vibratoSmoothing;
 
     cfg = s;
     haveCfg = true;
@@ -224,6 +227,13 @@ void NoteTracker::applySettings (const Settings& s, int offset, MidiEventList& o
             case Response::Safe:   confirmHops = 5; onsetClarity = 0.86f; stableHops = 3; holdPeriods = 1.50f; onsetPeriods = 2.0f; break;
         }
         sustainClarity = 0.55f;
+    }
+
+    if (smoothingChanged)
+    {
+        smoothLen = std::min ((int) smoothBuffer.size(),
+                              hopsFor ((double) cfg.vibratoSmoothing * kVibratoWindowMaxSec, hopRate, 1));
+        resetSmoother (active ? lastPitch : 60.0f);
     }
 
     if (modeChanged)
@@ -658,7 +668,10 @@ void NoteTracker::acceptPitch (float pitch, float levelDb, bool step, int offset
 
     outPitch = cfg.bendMode == BendMode::Continuous ? pitch : smoothed;
 
-    const bool outOfBendRange = std::abs (outPitch - (float) curNote) > (float) cfg.bendRangeSemis;
+    // Ranges below a semitone clamp at the end of the bend; the next note
+    // starts a little past the half-way point, so vibrato there cannot flutter.
+    const float reach = std::max (cfg.bendRangeSemis, 0.5f + kQuantizeHysteresis);
+    const bool outOfBendRange = std::abs (outPitch - (float) curNote) > reach;
 
     // While the bow attack is still building up, the string has not settled on
     // its pitch yet. A correction during that time is the same note finding
@@ -681,7 +694,7 @@ void NoteTracker::acceptPitch (float pitch, float levelDb, bool step, int offset
 //==============================================================================
 void NoteTracker::sendBend (float semitones, int offset, MidiEventList& out)
 {
-    const float normalised = semitones / (float) cfg.bendRangeSemis;
+    const float normalised = semitones / cfg.bendRangeSemis;
     const int value = clampi (kBendCentre + (int) std::lround (normalised * 8192.0f), 0, 16383);
     sendBendValue (value, offset, out);
 }
@@ -716,13 +729,13 @@ void NoteTracker::sendController (int number, int value, int offset, MidiEventLi
 void NoteTracker::resetSmoother (float pitch) noexcept
 {
     std::fill (smoothBuffer.begin(), smoothBuffer.end(), pitch);
-    smoothSum = (double) pitch * (double) smoothBuffer.size();
+    smoothSum = (double) pitch * (double) smoothLen;
     smoothPos = 0;
 }
 
 float NoteTracker::smooth (float pitch) noexcept
 {
-    const int n = (int) smoothBuffer.size();
+    const int n = smoothLen;
     smoothSum += (double) pitch - (double) smoothBuffer[(size_t) smoothPos];
     smoothBuffer[(size_t) smoothPos] = pitch;
 
@@ -730,8 +743,8 @@ float NoteTracker::smooth (float pitch) noexcept
     {
         smoothPos = 0;
         double exact = 0.0; // recompute once per turn so rounding cannot drift
-        for (float v : smoothBuffer)
-            exact += (double) v;
+        for (int i = 0; i < n; ++i)
+            exact += (double) smoothBuffer[(size_t) i];
         smoothSum = exact;
     }
 

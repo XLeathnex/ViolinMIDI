@@ -10,18 +10,7 @@ namespace
 {
     juce::String text (const char* utf8) { return juce::String::fromUTF8 (utf8); }
 
-    void drawPanel (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& title)
-    {
-        g.fillAll (colour::window);
-        g.setColour (colour::panel);
-        g.fillRoundedRectangle (r, 12.0f);
-        g.setColour (colour::line.withAlpha (0.7f));
-        g.drawRoundedRectangle (r.reduced (0.5f), 12.0f, 1.0f);
-
-        g.setColour (colour::textFaint);
-        g.setFont (headingFont());
-        g.drawText (title, r.reduced (18.0f, 14.0f).removeFromTop (14.0f), juce::Justification::centredLeft);
-    }
+    constexpr float kPad = 24.0f;
 }
 
 juce::String noteName (int midiNote)
@@ -32,218 +21,217 @@ juce::String noteName (int midiNote)
 }
 
 //==============================================================================
-NoteDisplay::NoteDisplay()
+void ButtonRow::add (juce::Button& b)
 {
-    setOpaque (true);
+    items.push_back (&b);
+    addAndMakeVisible (b);
 }
 
-void NoteDisplay::update (const LiveFrame& f, float a4Hz)
+void ButtonRow::resized()
 {
-    const bool changed = f.active != frame.active || f.heard != frame.heard || f.note != frame.note
-                      || std::abs (f.pitch - frame.pitch) > 0.002f || std::abs (f.levelDb - frame.levelDb) > 0.5f;
-    frame = f;
-    a4 = a4Hz;
+    const int n = (int) items.size();
+    if (n == 0)
+        return;
 
-    const float target = (f.active || f.heard) ? (f.pitch - std::round (f.pitch)) * 100.0f : 0.0f;
-    const float before = shownCents;
-    shownCents += (target - shownCents) * 0.45f;
-
-    if (changed || std::abs (shownCents - before) > 0.05f)
-        repaint();
-}
-
-void NoteDisplay::paint (juce::Graphics& g)
-{
-    const auto area = getLocalBounds().toFloat();
-    drawPanel (g, area, "NOTE");
-
-    const bool live = frame.active || frame.heard;
-    const int shownNote = frame.active ? frame.note : (frame.heard ? juce::roundToInt (frame.pitch) : -1);
-
-    // state pill, top right
+    std::vector<float> wanted;
+    float total = 0.0f;
+    for (auto* b : items)
     {
-        const juce::String state = frame.active ? "SENDET" : (frame.heard ? text ("H\xc3\x96RT") : "BEREIT");
-        const auto c = frame.active ? colour::accent : (frame.heard ? colour::textDim : colour::textFaint);
-        auto pill = juce::Rectangle<float> (area.getRight() - 104.0f, 12.0f, 86.0f, 20.0f);
-        g.setColour (c.withAlpha (frame.active ? 0.16f : 0.08f));
-        g.fillRoundedRectangle (pill, 10.0f);
-        g.setColour (c);
-        g.fillEllipse (pill.getX() + 10.0f, pill.getCentreY() - 3.0f, 6.0f, 6.0f);
-        g.setFont (headingFont());
-        g.drawText (state, pill.withTrimmedLeft (22.0f), juce::Justification::centredLeft);
+        wanted.push_back (juce::GlyphArrangement::getStringWidth (font (13.0f), b->getButtonText()));
+        total += wanted.back();
     }
 
-    // the note
-    auto left = area.withWidth (area.getWidth() * 0.46f).withTrimmedTop (30.0f).withTrimmedBottom (12.0f);
-    if (shownNote >= 0)
+    const float spare = juce::jmax (0.0f, (float) getWidth() - total) / (float) n;
+    float x = 0.0f;
+    for (int i = 0; i < n; ++i)
     {
-        const auto name = noteName (shownNote);
-        const auto letter = name.dropLastCharacters (shownNote >= 12 ? 1 : 2);
-        const auto octave = name.substring (letter.length());
-
-        const auto big = font (96.0f, true), small = font (34.0f, true);
-        const float wBig = juce::GlyphArrangement::getStringWidth (big, letter);
-        const float wSmall = juce::GlyphArrangement::getStringWidth (small, octave);
-        const float x = left.getCentreX() - (wBig + wSmall + 4.0f) * 0.5f;
-        const float baseline = left.getCentreY() + 34.0f;
-
-        if (frame.active)
-        {
-            g.setGradientFill (juce::ColourGradient (juce::Colour (0xffffdc9a), x, baseline - 70.0f,
-                                                     colour::accentDeep, x, baseline, false));
-        }
-        else
-        {
-            g.setColour (colour::textDim);
-        }
-        g.setFont (big);
-        g.drawSingleLineText (letter, juce::roundToInt (x), juce::roundToInt (baseline));
-        g.setFont (small);
-        g.drawSingleLineText (octave, juce::roundToInt (x + wBig + 4.0f), juce::roundToInt (baseline));
+        const float right = i == n - 1 ? (float) getWidth() : x + wanted[(size_t) i] + spare;
+        items[(size_t) i]->setBounds (juce::roundToInt (x), 0, juce::roundToInt (right) - juce::roundToInt (x), getHeight());
+        x = right;
     }
-    else
-    {
-        g.setColour (colour::textFaint);
-        g.setFont (font (15.0f));
-        g.drawText (text ("Spiel einen Ton"), left, juce::Justification::centred);
-    }
-
-    // details and tuner on the right
-    auto right = area.withTrimmedLeft (area.getWidth() * 0.46f).reduced (8.0f, 0.0f).withTrimmedRight (18.0f);
-    right.removeFromTop (44.0f);
-
-    const float hz = a4 * std::pow (2.0f, (frame.pitch - 69.0f) / 12.0f);
-    auto info = right.removeFromTop (44.0f);
-    auto infoCol = [&] (juce::Rectangle<float> r, const juce::String& label, const juce::String& value)
-    {
-        g.setColour (colour::textFaint);
-        g.setFont (headingFont());
-        g.drawText (label, r.removeFromTop (16.0f), juce::Justification::centredLeft);
-        g.setColour (live ? colour::text : colour::textFaint);
-        g.setFont (font (17.0f));
-        g.drawText (value, r, juce::Justification::centredLeft);
-    };
-    const float colW = info.getWidth() / 3.0f;
-    infoCol (info.removeFromLeft (colW), "FREQUENZ", live ? juce::String (hz, 1).replaceCharacter ('.', ',') + " Hz" : text ("\xe2\x80\x93"));
-    infoCol (info.removeFromLeft (colW), "MIDI", frame.active ? juce::String (frame.note) : text ("\xe2\x80\x93"));
-    infoCol (info, "PEGEL", frame.levelDb > -100.0f ? juce::String (juce::roundToInt (frame.levelDb)) + " dB" : text ("\xe2\x80\x93"));
-
-    // tuner: where the string sits between two semitones
-    right.removeFromTop (22.0f);
-    auto tuner = right.removeFromTop (30.0f);
-    const float cx = tuner.getCentreX(), cy = tuner.getCentreY();
-    const float half = tuner.getWidth() * 0.5f;
-
-    g.setColour (colour::raised);
-    g.fillRoundedRectangle (tuner.withSizeKeepingCentre (tuner.getWidth(), 6.0f), 3.0f);
-    g.setColour (colour::good.withAlpha (0.25f));
-    g.fillRoundedRectangle (juce::Rectangle<float> (half * 0.2f, 6.0f).withCentre ({ cx, cy }), 3.0f);
-    g.setColour (colour::line.brighter (0.2f));
-    for (int t = -2; t <= 2; ++t)
-    {
-        const float x = cx + (float) t * half * 0.5f;
-        g.fillRect (x - 0.5f, cy - (t == 0 ? 11.0f : 7.0f), 1.0f, t == 0 ? 22.0f : 14.0f);
-    }
-
-    const float cents = juce::jlimit (-50.0f, 50.0f, shownCents);
-    if (live)
-    {
-        const bool inTune = std::abs (cents) <= 5.0f;
-        const auto c = inTune ? colour::good : (frame.active ? colour::accent : colour::textDim);
-        const float x = cx + cents / 50.0f * half;
-        g.setColour (c.withAlpha (0.25f));
-        g.fillRoundedRectangle (juce::Rectangle<float> (10.0f, 28.0f).withCentre ({ x, cy }), 5.0f);
-        g.setColour (c);
-        g.fillRoundedRectangle (juce::Rectangle<float> (4.0f, 24.0f).withCentre ({ x, cy }), 2.0f);
-    }
-
-    auto scale = right.removeFromTop (20.0f);
-    g.setFont (font (11.5f));
-    g.setColour (colour::textFaint);
-    g.drawText (text ("\xe2\x88\x92" "50"), scale, juce::Justification::centredLeft);
-    g.drawText ("+50", scale, juce::Justification::centredRight);
-    g.setColour (live ? colour::text : colour::textFaint);
-    g.setFont (font (13.0f, true));
-    const int c = juce::roundToInt (cents);
-    g.drawText (live ? (c > 0 ? "+" : (c < 0 ? text ("\xe2\x88\x92") : juce::String())) + juce::String (std::abs (c)) + " Cent" : juce::String ("Cent"),
-                scale, juce::Justification::centred);
 }
 
 //==============================================================================
-PitchHistory::PitchHistory()
+LiveDisplay::LiveDisplay()
 {
     setOpaque (true);
 }
 
-void PitchHistory::clear()
-{
-    frames.fill (LiveFrame());
-    idleFrames = kFrames;
-    repaint();
-}
-
-void PitchHistory::push (const LiveFrame& f)
+void LiveDisplay::push (const LiveFrame& f, float a4Hz)
 {
     head = (head + 1) % kFrames;
     frames[(size_t) head] = f;
+    a4 = a4Hz;
 
-    const bool something = f.active || f.heard;
-    idleFrames = something ? 0 : juce::jmin (kFrames, idleFrames + 1);
+    const bool live = f.active || f.heard;
+    const auto& before = frames[(size_t) ((head + kFrames - 1) % kFrames)];
+    const bool changed = f.enabled != before.enabled || f.triadCount != before.triadCount || f.held != before.held;
+    idleFrames = live || changed ? 0 : juce::jmin (kFrames, idleFrames + 1);
 
-    if (something)
+    if (live)
     {
-        const float target = f.active ? f.outputPitch : f.pitch;
-        centre += (target - centre) * 0.06f;
+        centre += ((f.active ? f.outputPitch : f.pitch) - centre) * 0.06f;
+        shownCents += ((f.pitch - std::round (f.pitch)) * 100.0f - shownCents) * 0.45f;
     }
 
-    // Once everything has scrolled out of view there is nothing left to move.
+    // Once everything has scrolled out there is nothing left to move.
     if (idleFrames < kFrames)
         repaint();
 }
 
-void PitchHistory::paint (juce::Graphics& g)
+void LiveDisplay::paint (juce::Graphics& g)
 {
-    const auto area = getLocalBounds().toFloat();
-    drawPanel (g, area, "VERLAUF");
+    g.fillAll (colour::display);
+    auto area = getLocalBounds().toFloat();
 
-    g.setColour (colour::textFaint);
-    g.setFont (font (11.5f));
-    g.drawText (text ("letzte 6 s"), area.reduced (18.0f, 14.0f).removeFromTop (14.0f), juce::Justification::centredRight);
+    auto left = area.removeFromLeft ((float) kNoteWidth);
+    g.setColour (colour::separator);
+    g.fillRect (area.getX(), area.getY() + kPad, 1.0f, area.getHeight() - 2.0f * kPad);
 
-    const auto plot = area.reduced (18.0f, 0.0f).withTrimmedTop (38.0f).withTrimmedBottom (16.0f).withTrimmedLeft (30.0f);
+    paintNote (g, left.reduced (kPad));
+    paintHistory (g, area.reduced (kPad, 20.0f).withTrimmedLeft (8.0f));
+}
+
+void LiveDisplay::paintNote (juce::Graphics& g, juce::Rectangle<float> r)
+{
+    const auto& f = frames[(size_t) head];
+    const bool live = f.active || f.heard;
+    const int shown = f.active ? f.note : (f.heard ? juce::roundToInt (f.pitch) : -1);
+
+    // the note, large: what is sent in the accent colour, what is only heard in grey
+    const float baseline = r.getY() + 74.0f;
+    if (! f.enabled)
+    {
+        g.setColour (colour::tertiary);
+        g.setFont (font (68.0f).withExtraKerningFactor (-0.02f));
+        g.drawSingleLineText ("Aus", juce::roundToInt (r.getX()) - 3, juce::roundToInt (baseline));
+    }
+    else if (shown >= 0)
+    {
+        const auto name = noteName (shown);
+        const auto letter = name.dropLastCharacters (shown >= 12 ? 1 : 2);
+        const auto octave = name.substring (letter.length());
+        const auto big = font (68.0f).withExtraKerningFactor (-0.02f);
+        const auto small = font (24.0f);
+        const float wBig = juce::GlyphArrangement::getStringWidth (big, letter);
+
+        g.setColour (f.active ? colour::accent : colour::secondary);
+        g.setFont (big);
+        g.drawSingleLineText (letter, juce::roundToInt (r.getX()) - 3, juce::roundToInt (baseline));
+        g.setFont (small);
+        g.drawSingleLineText (octave, juce::roundToInt (r.getX() + wBig + 1.0f), juce::roundToInt (baseline));
+    }
+
+    // tuning: a plain scale from -50 to +50 cent
+    const float y = baseline + 34.0f;
+    const auto scale = juce::Rectangle<float> (r.getX(), y, r.getWidth(), 1.0f);
+    g.setColour (colour::separator.brighter (0.25f));
+    g.fillRect (scale);
+    for (int t = -2; t <= 2; ++t)
+    {
+        const float x = scale.getX() + scale.getWidth() * (0.5f + (float) t * 0.25f);
+        const float h = t == 0 ? 10.0f : 5.0f;
+        g.fillRect (x - 0.5f, y - h, 1.0f, h);
+    }
+
+    if (live && f.enabled)
+    {
+        const float cents = juce::jlimit (-50.0f, 50.0f, shownCents);
+        const float x = scale.getX() + scale.getWidth() * (0.5f + cents / 100.0f);
+        g.setColour (f.active ? colour::accent : colour::secondary);
+        g.fillRect (x - 1.0f, y - 12.0f, 2.0f, 16.0f);
+    }
+
+    // numbers under the scale
+    const auto row = juce::Rectangle<float> (r.getX(), y + 12.0f, r.getWidth(), 18.0f);
+    g.setFont (font (13.0f));
+    if (! f.enabled)
+    {
+        g.setColour (colour::tertiary);
+        g.drawText (text ("Es wird nichts gesendet"), row, juce::Justification::centredLeft);
+    }
+    else if (live)
+    {
+        const int c = juce::roundToInt (juce::jlimit (-50.0f, 50.0f, shownCents));
+        const auto centsText = (c > 0 ? "+" : (c < 0 ? text ("\xe2\x88\x92") : juce::String())) + juce::String (std::abs (c)) + " ct";
+        const float hz = a4 * std::pow (2.0f, (f.pitch - 69.0f) / 12.0f);
+        g.setColour (colour::text);
+        g.drawText (centsText, row, juce::Justification::centredLeft);
+        g.setColour (colour::secondary);
+        g.drawText (juce::String (hz, 1).replaceCharacter ('.', ',') + " Hz", row, juce::Justification::centredRight);
+    }
+    else
+    {
+        g.setColour (colour::tertiary);
+        g.drawText (text ("Kein Ton"), row, juce::Justification::centredLeft);
+    }
+
+    // what goes out; the master switch sits below these two lines
+    if (! f.enabled)
+        return;
+
+    auto out = juce::Rectangle<float> (r.getX(), row.getBottom() + 12.0f, r.getWidth(), 17.0f);
+    g.setFont (font (12.5f));
+    g.setColour (f.active ? colour::secondary : colour::tertiary);
+    g.drawText (! f.active ? text ("Keine MIDI-Note")
+                           : "MIDI-Note " + juce::String (f.note) + (f.held ? ", gehalten" : ""),
+                out, juce::Justification::centredLeft);
+
+    if (f.triadCount > 0)
+    {
+        juce::String chord = "Dreiklang";
+        for (int i = 0; i < f.triadCount; ++i)
+            chord << " " << noteName (f.triad[i]);
+        g.drawText (chord, out.translated (0.0f, 17.0f), juce::Justification::centredLeft);
+    }
+}
+
+void LiveDisplay::paintHistory (juce::Graphics& g, juce::Rectangle<float> r)
+{
+    constexpr float labelWidth = 30.0f;
+    const auto plot = r.withTrimmedLeft (labelWidth).withTrimmedBottom (16.0f);
     constexpr float span = 14.0f; // semitones from bottom to top
     const float top = centre + span * 0.5f;
     auto yFor = [&] (float pitch) { return plot.getY() + (top - pitch) / span * plot.getHeight(); };
     auto xFor = [&] (int age) { return plot.getRight() - (float) age / (float) (kFrames - 1) * plot.getWidth(); };
 
-    // semitone grid with the note names
+    // semitone lines; natural notes labelled
     g.saveState();
-    g.reduceClipRegion (plot.expanded (30.0f, 0.0f).toNearestInt());
-    for (int n = (int) std::floor (top - span); n <= (int) std::ceil (top); ++n)
+    g.reduceClipRegion (r.toNearestInt());
+    for (int n = (int) std::floor (top - span) - 1; n <= (int) std::ceil (top) + 1; ++n)
     {
         const float y = yFor ((float) n);
-        const int pitchClass = ((n % 12) + 12) % 12;
-        const bool isC = pitchClass == 0;
-        const bool natural = pitchClass != 1 && pitchClass != 3 && pitchClass != 6 && pitchClass != 8 && pitchClass != 10;
-        g.setColour (colour::line.withAlpha (isC ? 0.9f : (natural ? 0.45f : 0.2f)));
-        g.fillRect (plot.getX(), y - 0.5f, plot.getWidth(), 1.0f);
+        if (y < plot.getY() - 1.0f || y > plot.getBottom() + 1.0f)
+            continue;
+
+        const int pc = ((n % 12) + 12) % 12;
+        const bool natural = pc != 1 && pc != 3 && pc != 6 && pc != 8 && pc != 10;
+        g.setColour (pc == 0 ? colour::separator.brighter (0.15f) : colour::grid);
+        g.fillRect (plot.getX(), std::round (y), plot.getWidth(), 1.0f);
         if (natural)
         {
-            g.setColour (isC ? colour::textDim : colour::textFaint);
-            g.setFont (font (10.5f, isC));
-            g.drawText (noteName (n), juce::Rectangle<float> (plot.getX() - 32.0f, y - 7.0f, 28.0f, 14.0f),
+            g.setColour (pc == 0 ? colour::secondary : colour::tertiary);
+            g.setFont (font (11.0f));
+            g.drawText (noteName (n), juce::Rectangle<float> (r.getX(), y - 7.0f, labelWidth - 8.0f, 14.0f),
                         juce::Justification::centredRight);
         }
     }
+
+    // time marks
+    g.setColour (colour::tertiary);
+    g.setFont (font (11.0f));
+    const auto timeRow = juce::Rectangle<float> (plot.getX(), plot.getBottom() + 3.0f, plot.getWidth(), 13.0f);
+    g.drawText (text ("\xe2\x88\x92" "6 s"), timeRow, juce::Justification::centredLeft);
+    g.drawText (text ("\xe2\x88\x92" "3 s"), timeRow, juce::Justification::centred);
+    g.drawText ("jetzt", timeRow, juce::Justification::centredRight);
     g.restoreState();
 
     g.saveState();
     g.reduceClipRegion (plot.toNearestInt());
 
-    // the notes sent, as bars
+    // the MIDI notes sent, as plain bars
     const float rowH = plot.getHeight() / span;
-    int age = 0;
-    while (age < kFrames)
+    for (int age = 0; age < kFrames;)
     {
         const auto& f = frames[(size_t) ((head - age + kFrames) % kFrames)];
         if (! f.active) { ++age; continue; }
@@ -258,16 +246,13 @@ void PitchHistory::paint (juce::Graphics& g)
         }
 
         const float x0 = xFor (end), x1 = xFor (age);
-        const auto bar = juce::Rectangle<float> (x0, yFor ((float) f.note) - rowH * 0.36f, juce::jmax (3.0f, x1 - x0), rowH * 0.72f);
-        g.setColour (colour::accent.withAlpha (0.16f));
-        g.fillRoundedRectangle (bar, juce::jmin (5.0f, bar.getHeight() * 0.5f));
-        g.setColour (colour::accent.withAlpha (0.35f));
-        g.drawRoundedRectangle (bar, juce::jmin (5.0f, bar.getHeight() * 0.5f), 1.0f);
+        g.setColour (colour::accent.withAlpha (0.18f));
+        g.fillRect (juce::Rectangle<float> (x0, yFor ((float) f.note) - rowH * 0.5f, juce::jmax (2.0f, x1 - x0), rowH));
         age = end + 1;
     }
 
-    // the pitch itself: bright while sent, faint while only heard
-    auto drawTrace = [&] (bool sent)
+    // the pitch itself: accent while sent, grey while only heard
+    for (const bool sent : { false, true })
     {
         juce::Path p;
         bool drawing = false;
@@ -281,30 +266,17 @@ void PitchHistory::paint (juce::Graphics& g)
             if (drawing) p.lineTo (pt); else p.startNewSubPath (pt);
             drawing = true;
         }
-        g.setColour (sent ? colour::accent : colour::textFaint);
-        g.strokePath (p, juce::PathStrokeType (sent ? 2.2f : 1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    };
-    drawTrace (false);
-    drawTrace (true);
-
-    // the newest point
-    const auto& now = frames[(size_t) head];
-    if (now.active || now.heard)
-    {
-        const juce::Point<float> pt (xFor (0), yFor (now.active ? now.outputPitch : now.pitch));
-        const auto c = now.active ? colour::accent : colour::textDim;
-        g.setColour (c.withAlpha (0.25f));
-        g.fillEllipse (juce::Rectangle<float> (14.0f, 14.0f).withCentre (pt));
-        g.setColour (c);
-        g.fillEllipse (juce::Rectangle<float> (6.0f, 6.0f).withCentre (pt));
+        g.setColour (sent ? colour::accent : colour::tertiary);
+        g.strokePath (p, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
     g.restoreState();
 
     if (idleFrames >= kFrames)
     {
-        g.setColour (colour::textFaint);
+        g.setColour (colour::tertiary);
         g.setFont (font (13.0f));
-        g.drawText (text ("Hier erscheint, was du spielst und was als MIDI rausgeht."), plot, juce::Justification::centred);
+        g.drawText (text ("Gespielte T\xc3\xb6ne und gesendete MIDI-Noten der letzten 6 Sekunden"),
+                    plot, juce::Justification::centred);
     }
 }
 
@@ -323,22 +295,21 @@ void LevelMeter::update (float levelDb, float gateDb, bool clipped)
 void LevelMeter::paint (juce::Graphics& g)
 {
     constexpr float low = -72.0f, high = 0.0f;
-    const auto r = getLocalBounds().toFloat().reduced (0.0f, 2.0f);
+    const auto r = getLocalBounds().toFloat().withSizeKeepingCentre ((float) getWidth(), 4.0f);
     auto toX = [&] (float db) { return r.getX() + juce::jlimit (0.0f, 1.0f, (db - low) / (high - low)) * r.getWidth(); };
 
-    g.setColour (colour::raised);
-    g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+    g.setColour (colour::control.brighter (0.12f));
+    g.fillRoundedRectangle (r, 2.0f);
 
     const float x = toX (shown);
-    if (x > r.getX() + 1.0f)
+    if (x > r.getX() + 0.5f)
     {
-        const auto c = clip ? colour::bad : (shown >= gate ? colour::good : colour::textFaint);
-        g.setGradientFill (juce::ColourGradient (c.withAlpha (0.55f), r.getX(), 0.0f, c, x, 0.0f, false));
-        g.fillRoundedRectangle (r.withRight (x), r.getHeight() * 0.5f);
+        // grey below the threshold, accent where a note can start, red when clipping
+        g.setColour (clip ? colour::problem : (shown >= gate ? colour::accent : colour::secondary));
+        g.fillRoundedRectangle (r.withRight (x), 2.0f);
     }
 
-    // gate threshold
-    const float gx = toX (gate);
+    const float gx = std::round (toX (gate));
     g.setColour (colour::text);
-    g.fillRoundedRectangle (gx - 1.0f, r.getY() - 2.0f, 2.0f, r.getHeight() + 4.0f, 1.0f);
+    g.fillRect (gx - 0.5f, (float) getHeight() * 0.5f - 6.0f, 1.0f, 12.0f);
 }

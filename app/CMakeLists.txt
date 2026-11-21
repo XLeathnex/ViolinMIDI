@@ -43,6 +43,9 @@ target_sources(ViolinMIDI PRIVATE
     AudioHost.cpp
     Brand.cpp
     SettingsStore.cpp
+    Params.cpp
+    MidiRemote.cpp
+    MappingPanel.cpp
     Theme.cpp
     Widgets.cpp
     SettingsPanel.cpp

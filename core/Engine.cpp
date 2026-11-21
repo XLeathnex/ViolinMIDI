@@ -51,6 +51,10 @@ void Engine::prepare (double sampleRate)
     const float absMaxHz = (float) noteToHz ((double) kAbsHighestNote + kRangeMarginSemis, kMaxA4Hz);
     detector.prepare (fs, absMinHz, absMaxHz);
     tracker.prepare (fs / (double) hop);
+    stage.prepare (fs / (double) hop);
+    hopEvents.clear();
+    hopEvents.reserve (64);
+    wasEnabled = true;
 
     configured = false;
     currentMeter = Meter();
@@ -63,6 +67,7 @@ void Engine::reset()
     highpass.reset();
     detector.reset();
     tracker.reset();
+    stage.reset();
     hopFill = 0;
     decimPhase = 0;
     currentMeter = Meter();
@@ -71,7 +76,7 @@ void Engine::reset()
 int Engine::maxEventsFor (int numSamples) const noexcept
 {
     const int hops = numSamples / std::max (1, hop * decim) + 2;
-    return hops * kMaxEventsPerHop + 8;
+    return hops * kMaxOutputEventsPerHop + 8;
 }
 
 void Engine::configure (const Settings& s)
@@ -112,6 +117,7 @@ void Engine::configure (const Settings& s)
 void Engine::process (const float* input, int numSamples, const Settings& settings, MidiEventList& out)
 {
     configure (settings);
+    lastSettings = settings;
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -139,6 +145,21 @@ void Engine::analyseHop (const Settings& s, int offset, MidiEventList& out)
 {
     detector.push (hopBuffer.data(), hop);
     ++hopCount;
+
+    if (! s.enabled)
+    {
+        // Master switch off: everything ends once, then only the level is measured.
+        // The history keeps filling, so detection is there at once when it returns.
+        if (wasEnabled)
+            silenceOutput (s, offset, out);
+        wasEnabled = false;
+
+        const int window = (int) std::lround (fs * kLevelWindowSec);
+        currentMeter = Meter();
+        currentMeter.levelDb = (float) (10.0 * std::log10 (detector.meanSquare (window) + 1.0e-12));
+        return;
+    }
+    wasEnabled = true;
 
     const float hint = tracker.isActive()
                          ? (float) (fs / noteToHz ((double) tracker.trackedPitch(), cfgA4))
@@ -174,15 +195,22 @@ void Engine::analyseHop (const Settings& s, int offset, MidiEventList& out)
     in.octaveDoubt = r.octaveDoubt;
     in.levelDb = levelDb;
 
-    tracker.process (in, s, offset, out);
+    hopEvents.clear();
+    tracker.process (in, s, offset, hopEvents);
+    stage.process (hopEvents.data(), (int) hopEvents.size(), levelDb, s, offset, out);
 
     currentMeter.levelDb = levelDb;
     currentMeter.clarity = r.clarity;
     currentMeter.voiced = r.valid;
     currentMeter.pitch = in.pitch;
-    currentMeter.active = tracker.isActive();
-    currentMeter.note = tracker.isActive() ? tracker.note() : -1;
-    currentMeter.outputPitch = tracker.isActive() ? tracker.outputPitch() : 0.0f;
+    currentMeter.active = stage.isSounding();
+    currentMeter.note = stage.note();
+    currentMeter.held = stage.isHeld();
+    currentMeter.outputPitch = ! stage.isSounding() ? 0.0f
+                             : (stage.isHeld() || ! tracker.isActive() ? (float) stage.note() : tracker.outputPitch());
+    currentMeter.triadCount = stage.triadCount();
+    for (int i = 0; i < 3; ++i)
+        currentMeter.triad[i] = i < stage.triadCount() ? stage.triadNote (i) : -1;
 
     if (trace != nullptr)
     {
@@ -193,16 +221,46 @@ void Engine::analyseHop (const Settings& s, int offset, MidiEventList& out)
         row.clarity = r.clarity;
         row.levelDb = levelDb;
         row.active = tracker.isActive();
-        row.note = currentMeter.note;
+        row.note = tracker.isActive() ? tracker.note() : -1;
         trace->push_back (row);
     }
 }
 
 void Engine::shutdown (MidiEventList& out)
 {
-    tracker.shutdown (0, out);
-    currentMeter.active = false;
+    hopEvents.clear();
+    tracker.shutdown (0, hopEvents);
+    stage.process (hopEvents.data(), (int) hopEvents.size(), -120.0f, lastSettings, 0, out);
+    stage.releaseAll (0, out);
+    currentMeter.active = currentMeter.held = false;
     currentMeter.note = -1;
+    currentMeter.triadCount = 0;
+}
+
+void Engine::silenceOutput (const Settings& s, int offset, MidiEventList& out)
+{
+    hopEvents.clear();
+    tracker.shutdown (offset, hopEvents);
+    stage.process (hopEvents.data(), (int) hopEvents.size(), -120.0f, s, offset, out);
+    stage.releaseAll (offset, out);
+
+    // All notes off as well, in case the instrument missed something earlier.
+    const int mainChannel = std::min (std::max (s.midiChannel, 1), 16) - 1;
+    const int triadChannel = std::min (std::max (s.triadChannel, 1), 16) - 1;
+    const int channels[2] = { mainChannel, s.triad && triadChannel != mainChannel ? triadChannel : -1 };
+    for (int channel : channels)
+    {
+        if (channel < 0)
+            continue;
+
+        MidiEvent e;
+        e.sampleOffset = offset;
+        e.size = 3;
+        e.bytes[0] = (uint8_t) (0xB0 | channel);
+        e.bytes[1] = 123;
+        e.bytes[2] = 0;
+        out.push_back (e);
+    }
 }
 
 } // namespace vm

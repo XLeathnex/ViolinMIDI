@@ -15,6 +15,8 @@ struct AppSettings
 {
     vm::Settings engine;
     juce::String midiPortName;
+    juce::String midiInputName;   ///< port for remote control, empty = none
+    juce::String midiMapJson;     ///< remote-control bindings, see MidiRemote::toJson
     bool hasWindowPosition = false;
     int windowX = 0, windowY = 0;
 };
@@ -35,8 +37,11 @@ public:
     /** Writes pending changes to disk now. */
     void flush();
 
-    /** Pitch-bend ranges offered to the user. */
-    static bool isOfferedBendRange (int semitones);
+    /** Pitch-bend ranges offered to the user, in semitones. */
+    static constexpr int kNumBendRanges = 10;
+    static constexpr float kBendRanges[kNumBendRanges] = { 0.2f, 0.3f, 0.4f, 0.5f, 1.0f, 2.0f, 4.0f, 12.0f, 24.0f, 48.0f };
+    /** The offered range closest to the given one. */
+    static int bendRangeIndex (float semitones);
 
 private:
     void migrate();

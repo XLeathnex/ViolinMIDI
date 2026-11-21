@@ -4,7 +4,14 @@
 // the engine exactly as the app does, and checks the MIDI that comes out.
 
 #include "Harness.h"
+#include "../core/OutputStage.h"
+#include "../core/Scale.h"
 
+#include <vector>
+#include <string>
+#include <sstream>
+#include <random>
+#include <algorithm>
 #include <chrono>
 #include <cstdarg>
 #include <cstring>
@@ -76,6 +83,8 @@ vm::Settings baseSettings()
 }
 
 double periodMs (double note) { return 1000.0 / noteToHz (note); }
+
+#include "test_stage.h"
 
 //==============================================================================
 // Single bowed notes over the whole range of a 7-string violin.
@@ -894,7 +903,7 @@ void randomStress()
         s.bendMode = (vm::BendMode) pick (0, 2);
         s.dynamics = (vm::DynamicsMode) pick (0, 2);
         s.response = (vm::Response) pick (0, 2);
-        s.bendRangeSemis = pick (-2, 60);            // includes values outside the valid range
+        s.bendRangeSemis = (float) pick (-2, 60);           // includes values outside the valid range
         s.lowestNote = pick (20, 70);
         s.highestNote = pick (60, 120);
         s.a4Hz = (float) uniform (390.0, 490.0);
@@ -1098,6 +1107,17 @@ const TestCase kTests[] = {
     { "settings changes", settingsChanges },
     { "broken input", garbage },
     { "random stress", randomStress },
+    { "scale tables", scaleTables },
+    { "stage pass-through", stagePassThrough },
+    { "stage key filter", stageKeyFilter },
+    { "stage sustain", stageSustain },
+    { "stage slide-in", stageSlideIn },
+    { "stage triad", stageTriad },
+    { "stage settings", stageSettings },
+    { "stage random", stageRandom },
+    { "bend range small", bendRangeSmall },
+    { "key filter audio", keyFilterAudio },
+    { "master switch", masterSwitch },
     { "performance", performance },
 };
 

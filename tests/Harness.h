@@ -104,6 +104,8 @@ inline void decode (RunResult& r)
         {
             if (e.bytes[1] == 11)
                 r.expression.push_back ({ time, e.bytes[2] });
+            else if (e.bytes[1] == 123)
+                {} // all notes off, sent when the master switch goes off
             else
                 r.problems.push_back ("unexpected controller");
         }

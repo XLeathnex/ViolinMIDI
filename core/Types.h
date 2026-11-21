@@ -37,7 +37,8 @@ struct Settings
     BendMode     bendMode       = BendMode::Continuous;
     DynamicsMode dynamics       = DynamicsMode::Continuous;
     Response     response       = Response::Normal;
-    int          bendRangeSemis = 2;      ///< must match the instrument's pitch-bend range
+    float        bendRangeSemis = 2.0f;   ///< must match the instrument's pitch-bend range, 0.1 .. 96
+    float        vibratoSmoothing = 0.5f; ///< Smoothed mode: 0 = none .. 1 = strongest (0.5 = 180 ms window)
     float        inputGainDb    = 0.0f;
     float        gateDb         = -45.0f; ///< note-on threshold, RMS dBFS after gain
     int          lowestNote     = 34;     ///< B-flat 1, lowest string of a 7-string violin
@@ -45,6 +46,19 @@ struct Settings
     float        a4Hz           = 440.0f;
     int          fixedVelocity  = 100;
     int          midiChannel    = 1;      ///< 1..16
+    bool         enabled        = true;   ///< master switch: off ends every note and sends nothing
+
+    // --- key (see Scale.h and OutputStage.h)
+    bool         keyFilter      = false;  ///< only notes of the key are started
+    int          keyRoot        = 0;      ///< 0 = C .. 11 = B
+    int          scaleMode      = 0;      ///< 0 Ionian, 1 Dorian, 2 Phrygian, 3 Lydian, 4 Mixolydian, 5 Aeolian, 6 Locrian
+    bool         pentatonic     = false;  ///< with keyFilter: only the five pentatonic notes of the mode
+    bool         pentaSustain   = false;  ///< with keyFilter and pentatonic: hold the last valid note through foreign ones
+
+    // --- diatonic triad on a second channel
+    bool         triad          = false;
+    int          triadChannel   = 2;      ///< 1..16
+    bool         triadWithRoot  = true;   ///< false: third and fifth only
 };
 
 /** Limits used when sizing buffers; settings are clamped to these. */

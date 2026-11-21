@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Runs on every Mac that can run a current MainStage, Intel and Apple Silicon.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
-project(ViolinMIDI VERSION 1.2.0 LANGUAGES C CXX)
+project(ViolinMIDI VERSION 1.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,6 +16,7 @@ option(VIOLINMIDI_BUILD_TESTS "Build the tests of the pitch-to-MIDI core" ON)
 add_library(violinmidi_core STATIC
     core/PitchDetector.cpp
     core/NoteTracker.cpp
+    core/OutputStage.cpp
     core/Engine.cpp)
 target_include_directories(violinmidi_core PUBLIC core)
 
