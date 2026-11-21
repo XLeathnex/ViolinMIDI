@@ -1,0 +1,73 @@
+name: Build ViolinMIDI for macOS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS app (Apple Silicon + Intel)
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      APP: build/app/ViolinMIDI_artefacts/Release/ViolinMIDI.app
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Show tools
+        run: |
+          sw_vers
+          xcodebuild -version
+          cmake --version
+
+      - name: Configure (universal binary)
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Core tests (Apple Silicon)
+        run: ./build/violinmidi_tests
+
+      - name: Core tests (Intel code path, via Rosetta)
+        run: |
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            arch -x86_64 ./build/violinmidi_tests
+          else
+            echo "Rosetta is not available on this runner - Intel code path not executed."
+          fi
+
+      - name: Check the app bundle
+        run: |
+          test -d "$APP"
+          lipo -archs "$APP/Contents/MacOS/ViolinMIDI"
+          lipo -archs "$APP/Contents/MacOS/ViolinMIDI" | grep -q arm64
+          lipo -archs "$APP/Contents/MacOS/ViolinMIDI" | grep -q x86_64
+          /usr/libexec/PlistBuddy -c "Print :NSMicrophoneUsageDescription" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :NSAppSleepDisabled" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$APP/Contents/Info.plist" || true
+
+      - name: Self-test of the app (engine and virtual MIDI port)
+        run: '"$APP/Contents/MacOS/ViolinMIDI" --selftest'
+
+      - name: Sign (ad hoc) and package
+        run: |
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          ditto -c -k --keepParent "$APP" ViolinMIDI-macOS.zip
+          ls -l ViolinMIDI-macOS.zip
+          shasum -a 256 ViolinMIDI-macOS.zip
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ViolinMIDI-macOS
+          path: ViolinMIDI-macOS.zip
+          if-no-files-found: error

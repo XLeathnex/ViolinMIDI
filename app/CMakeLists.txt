@@ -1,0 +1,50 @@
+# The application: audio input, virtual MIDI output and a small window.
+
+# JUCE: use a local checkout if one is given, otherwise fetch the pinned release.
+set(VIOLINMIDI_JUCE_DIR "" CACHE PATH "Path to a local JUCE checkout (optional)")
+if(VIOLINMIDI_JUCE_DIR)
+    add_subdirectory("${VIOLINMIDI_JUCE_DIR}" "${CMAKE_BINARY_DIR}/juce" EXCLUDE_FROM_ALL)
+else()
+    include(FetchContent)
+    FetchContent_Declare(JUCE
+        GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+        GIT_TAG 9.0.6
+        GIT_SHALLOW TRUE)
+    FetchContent_MakeAvailable(JUCE)
+endif()
+
+juce_add_gui_app(ViolinMIDI
+    PRODUCT_NAME "ViolinMIDI"
+    COMPANY_NAME "ViolinMIDI"
+    BUNDLE_ID "app.violinmidi.ViolinMIDI"
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "ViolinMIDI wandelt das Signal deiner Geige in MIDI-Noten um."
+    # MainStage is in front while playing. macOS must not put this app to sleep behind it.
+    PLIST_TO_MERGE "<plist version=\"1.0\"><dict><key>NSAppSleepDisabled</key><true/></dict></plist>"
+    NEEDS_CURL FALSE
+    NEEDS_WEB_BROWSER FALSE)
+
+target_sources(ViolinMIDI PRIVATE
+    Main.cpp
+    MainComponent.cpp
+    AudioHost.cpp
+    SelfTest.cpp)
+
+target_compile_definitions(ViolinMIDI PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:ViolinMIDI,JUCE_PRODUCT_NAME>"
+    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:ViolinMIDI,JUCE_VERSION>")
+
+if(MSVC)
+    # The sources contain German text in UTF-8.
+    target_compile_options(ViolinMIDI PRIVATE /utf-8)
+endif()
+
+target_link_libraries(ViolinMIDI
+    PRIVATE
+        violinmidi_core
+        juce::juce_audio_utils
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)

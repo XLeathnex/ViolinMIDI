@@ -1,0 +1,7 @@
+build/
+build-*/
+out/
+*.zip
+.DS_Store
+.vs/
+CMakeUserPresets.json
