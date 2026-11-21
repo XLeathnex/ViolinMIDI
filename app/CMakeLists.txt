@@ -29,6 +29,9 @@ target_sources(ViolinMIDI PRIVATE
     Main.cpp
     MainComponent.cpp
     AudioHost.cpp
+    SettingsPanel.cpp
+    UpdateManager.cpp
+    Updater.cpp
     SelfTest.cpp)
 
 target_compile_definitions(ViolinMIDI PRIVATE
@@ -46,6 +49,7 @@ target_link_libraries(ViolinMIDI
     PRIVATE
         violinmidi_core
         juce::juce_audio_utils
+        juce::juce_cryptography
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)

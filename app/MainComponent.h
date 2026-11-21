@@ -4,6 +4,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include "AudioHost.h"
+#include "UpdateManager.h"
 
 /** UTF-8 text literal to juce::String (the sources contain German text). */
 inline juce::String U (const char* utf8) { return juce::String::fromUTF8 (utf8); }
@@ -41,8 +42,10 @@ class MainComponent final : public juce::Component,
                             private juce::ChangeListener
 {
 public:
-    /** @param openAudio  false shows the window without opening an audio input */
-    explicit MainComponent (bool openAudio);
+    /** @param openAudio            false shows the window without opening an audio input
+        @param startupNotice        something to tell the user in the status lines, or empty
+        @param showSettingsAtStart  opens the settings window right away */
+    MainComponent (bool openAudio, const juce::String& startupNotice, bool showSettingsAtStart);
     ~MainComponent() override;
 
     void paint (juce::Graphics&) override;
@@ -51,13 +54,14 @@ public:
 
 private:
     void timerCallback() override;
-    void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    void changeListenerCallback (juce::ChangeBroadcaster* source) override;
 
     void loadSettings();
     void saveSettings();
     void pushSettings();              // controls -> engine and settings file
     void setMode (int index);
-    void showAudioSettings();
+    void showSettings();
+    void refreshUpdateButton();
     void saveAudioState();
     void updateStatus (const AudioHost::Meters&);
     juce::PropertiesFile* properties();
@@ -66,17 +70,18 @@ private:
     juce::AudioDeviceManager deviceManager;
     juce::ApplicationProperties appProperties;
     juce::TooltipWindow tooltips { this, 600 };
-    juce::Component::SafePointer<juce::DialogWindow> audioDialog;
+    UpdateManager updates;
+    juce::Component::SafePointer<juce::DialogWindow> settingsDialog;
 
     PitchDisplay pitchDisplay;
     LevelMeter levelMeter;
 
     juce::Label gainLabel, gateLabel, bendRangeLabel, dynamicsLabel, velocityLabel;
-    juce::Label responseLabel, lowestLabel, tuningLabel, statusLabel;
+    juce::Label responseLabel, lowestLabel, tuningLabel, channelLabel, statusLabel;
     juce::Slider gainSlider, gateSlider, velocitySlider, tuningSlider;
     juce::TextButton modeButtons[3];
-    juce::ComboBox bendRangeBox, dynamicsBox, responseBox, lowestBox;
-    juce::TextButton audioButton, panicButton;
+    juce::ComboBox bendRangeBox, dynamicsBox, responseBox, lowestBox, channelBox;
+    juce::TextButton settingsButton, updateButton, panicButton;
 
     struct Heading { int y; juce::String text; };
     juce::Array<Heading> headings;

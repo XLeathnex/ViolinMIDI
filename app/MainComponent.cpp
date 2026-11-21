@@ -1,10 +1,12 @@
 #include "MainComponent.h"
 
+#include "SettingsPanel.h"
+
 #include <cmath>
 
 namespace
 {
-    constexpr int kWidth = 560, kHeight = 690;
+    constexpr int kWidth = 560, kHeight = 752;
     constexpr int kMargin = 18, kRow = 26, kGap = 6, kLabelWidth = 200;
     constexpr int kPitchHeight = 150, kStatusHeight = 56;
     constexpr int kTimerHz = 30;
@@ -133,7 +135,7 @@ void LevelMeter::paint (juce::Graphics& g)
 }
 
 //==============================================================================
-MainComponent::MainComponent (bool openAudio)
+MainComponent::MainComponent (bool openAudio, const juce::String& startupNotice, bool showSettingsAtStart)
 {
     setWantsKeyboardFocus (true);
 
@@ -226,15 +228,34 @@ MainComponent::MainComponent (bool openAudio)
     for (auto* s : { &gainSlider, &gateSlider, &velocitySlider, &tuningSlider })
         s->onValueChange = [this] { pushSettings(); };
 
+    // --- MIDI output
+    setupLabel (*this, channelLabel, "MIDI-Kanal");
+    for (int channel = 1; channel <= 16; ++channel)
+        channelBox.addItem ("Kanal " + juce::String (channel), channel);
+    channelBox.setTooltip (U ("Auf diesem Kanal sendet die App. Ein eigener Kanal h\xc3\xa4lt die Geige von anderen MIDI-Ger\xc3\xa4ten getrennt."));
+    channelBox.onChange = [this] { pushSettings(); };
+    addAndMakeVisible (channelBox);
+
     // --- bottom
     statusLabel.setJustificationType (juce::Justification::topLeft);
     statusLabel.setColour (juce::Label::textColourId, kDim);
     statusLabel.setFont (juce::Font (juce::FontOptions (13.0f)));
     addAndMakeVisible (statusLabel);
 
-    audioButton.setButtonText (U ("Audio-Einstellungen\xe2\x80\xa6"));
-    audioButton.onClick = [this] { showAudioSettings(); };
-    addAndMakeVisible (audioButton);
+    settingsButton.setButtonText (U ("Einstellungen\xe2\x80\xa6"));
+    settingsButton.setTooltip (U ("Audio-Eingang w\xc3\xa4hlen, nach Updates suchen und zwischen Versionen wechseln."));
+    settingsButton.onClick = [this] { showSettings(); };
+    addAndMakeVisible (settingsButton);
+
+    // Only shown while a newer version is waiting. One click loads it and restarts.
+    updateButton.setColour (juce::TextButton::buttonColourId, kAccent.darker (0.25f));
+    updateButton.onClick = [this]
+    {
+        const auto version = updates.availableUpdate();
+        if (version.isNotEmpty())
+            updates.switchTo (version);
+    };
+    addChildComponent (updateButton);
 
     panicButton.setButtonText ("Alle Noten aus");
     panicButton.setTooltip (U ("Beendet h\xc3\xa4ngende Noten und stellt Pitch Bend und Expression zur\xc3\xbc" "ck."));
@@ -243,6 +264,17 @@ MainComponent::MainComponent (bool openAudio)
 
     loadSettings();
     setSize (kWidth, kHeight);
+
+    updates.onRestart = [] { juce::JUCEApplication::getInstance()->systemRequestedQuit(); };
+    updates.addChangeListener (this);
+    if (startupNotice.isNotEmpty())
+        updates.setNotice (startupNotice);
+
+    if (showSettingsAtStart)
+    {
+        juce::Component::SafePointer<MainComponent> safeThis (this);
+        juce::MessageManager::callAsync ([safeThis] { if (safeThis != nullptr) safeThis->showSettings(); });
+    }
 
     startTimerHz (kTimerHz);
     if (! openAudio)
@@ -279,14 +311,18 @@ MainComponent::MainComponent (bool openAudio)
 
     deviceManager.addAudioCallback (&host);
     deviceManager.addChangeListener (this);
+
+    // A quiet look for a newer version. Nothing is installed without a click.
+    updates.check();
 }
 
 MainComponent::~MainComponent()
 {
     stopTimer();
-    if (audioDialog != nullptr)
-        delete audioDialog.getComponent();
+    if (settingsDialog != nullptr)
+        delete settingsDialog.getComponent();
 
+    updates.removeChangeListener (this);
     deviceManager.removeChangeListener (this);
     deviceManager.removeAudioCallback (&host); // ends the sounding note, see AudioHost::audioDeviceStopped
     deviceManager.closeAudioDevice();
@@ -325,6 +361,7 @@ void MainComponent::loadSettings()
     gateSlider.setValue (getDouble ("gateDb", defaults.gateDb), juce::dontSendNotification);
     velocitySlider.setValue (getInt ("fixedVelocity", defaults.fixedVelocity), juce::dontSendNotification);
     tuningSlider.setValue (getDouble ("a4Hz", defaults.a4Hz), juce::dontSendNotification);
+    channelBox.setSelectedId (juce::jlimit (1, 16, getInt ("midiChannel", defaults.midiChannel)), juce::dontSendNotification);
 
     loading = false;
     pushSettings();
@@ -346,6 +383,7 @@ void MainComponent::saveSettings()
     p->setValue ("gateDb", (double) s.gateDb);
     p->setValue ("fixedVelocity", s.fixedVelocity);
     p->setValue ("a4Hz", (double) s.a4Hz);
+    p->setValue ("midiChannel", s.midiChannel);
 }
 
 void MainComponent::pushSettings()
@@ -366,6 +404,7 @@ void MainComponent::pushSettings()
     s.gateDb = (float) gateSlider.getValue();
     s.fixedVelocity = juce::roundToInt (velocitySlider.getValue());
     s.a4Hz = (float) tuningSlider.getValue();
+    s.midiChannel = channelBox.getSelectedId() > 0 ? channelBox.getSelectedId() : 1;
     host.setSettings (s);
 
     const bool fixed = s.dynamics == vm::DynamicsMode::Fixed;
@@ -395,25 +434,31 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
 }
 
 //==============================================================================
-void MainComponent::showAudioSettings()
+void MainComponent::showSettings()
 {
-    if (audioDialog != nullptr)
+    if (settingsDialog != nullptr)
     {
-        audioDialog->toFront (true);
+        settingsDialog->toFront (true);
         return;
     }
 
-    auto* selector = new juce::AudioDeviceSelectorComponent (deviceManager, 1, 1, 0, 0, false, false, false, false);
-    selector->setSize (500, 380);
-
     juce::DialogWindow::LaunchOptions options;
-    options.content.setOwned (selector);
-    options.dialogTitle = "Audio-Einstellungen";
+    options.content.setOwned (new SettingsPanel (deviceManager, updates));
+    options.dialogTitle = "Einstellungen";
     options.dialogBackgroundColour = getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;
     options.resizable = false;
-    audioDialog = options.launchAsync();
+    settingsDialog = options.launchAsync();
+}
+
+void MainComponent::refreshUpdateButton()
+{
+    const auto version = updates.availableUpdate();
+    updateButton.setVisible (version.isNotEmpty());
+    updateButton.setEnabled (! updates.isBusy());
+    if (version.isNotEmpty())
+        updateButton.setButtonText ("Update auf " + version + " installieren");
 }
 
 void MainComponent::saveAudioState()
@@ -429,9 +474,12 @@ void MainComponent::saveAudioState()
     }
 }
 
-void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
+void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
-    saveAudioState();
+    if (source == &deviceManager)
+        saveAudioState();
+    else
+        refreshUpdateButton();
 }
 
 //==============================================================================
@@ -468,13 +516,16 @@ void MainComponent::updateStatus (const AudioHost::Meters& m)
     }
     else
     {
-        text << U ("Kein Audio-Eingang aktiv \xe2\x80\x93 bitte unter \xe2\x80\x9e" "Audio-Einstellungen\xe2\x80\x9c w\xc3\xa4hlen")
+        text << U ("Kein Audio-Eingang aktiv \xe2\x80\x93 bitte unter \xe2\x80\x9e" "Einstellungen\xe2\x80\x9c w\xc3\xa4hlen")
              << (audioInitError.isNotEmpty() ? " (" + audioInitError + ")" : juce::String()) << "\n";
     }
 
     const juce::String error = host.lastError();
+    const juce::String updateStatus = updates.statusText();
     if (error.isNotEmpty())
         text << U ("Audio-Fehler: ") << error;
+    else if (updateStatus.isNotEmpty())
+        text << updateStatus;
     else if (m.running && ! m.hasInput)
         text << U ("Das Ger\xc3\xa4t liefert keinen Eingangskanal. Bitte einen Eingang ausw\xc3\xa4hlen.");
     else if (silentTicks > kTimerHz * 3)
@@ -544,9 +595,13 @@ void MainComponent::resized()
     row (lowestLabel, lowestBox);
     row (tuningLabel, tuningSlider);
 
+    heading ("MIDI-AUSGANG");
+    row (channelLabel, channelBox);
+
     auto buttons = area.removeFromBottom (kRow + 2);
-    audioButton.setBounds (buttons.removeFromLeft (200));
-    panicButton.setBounds (buttons.removeFromRight (160));
+    settingsButton.setBounds (buttons.removeFromLeft (150));
+    panicButton.setBounds (buttons.removeFromRight (140));
+    updateButton.setBounds (buttons.reduced (8, 0));
     area.removeFromBottom (kGap);
     statusLabel.setBounds (area.removeFromBottom (kStatusHeight));
 }

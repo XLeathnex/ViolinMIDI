@@ -1,12 +1,16 @@
 name: Build ViolinMIDI for macOS
 
+# Every push to main is built and tested.
+# A tag like v1.2.0 is built, tested and then published as a release,
+# which is where the app's update button looks for new versions.
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # the release step attaches the app to the tag
 
 jobs:
   macos:
@@ -54,9 +58,13 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print :NSMicrophoneUsageDescription" "$APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :NSAppSleepDisabled" "$APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist"
 
       - name: Self-test of the app (engine and virtual MIDI port)
         run: '"$APP/Contents/MacOS/ViolinMIDI" --selftest'
+
+      - name: Update mechanism (install, switch versions, fall back)
+        run: bash .github/scripts/update-test.sh "$APP"
 
       - name: Sign (ad hoc) and package
         run: |
@@ -71,3 +79,16 @@ jobs:
           name: ViolinMIDI-macOS
           path: ViolinMIDI-macOS.zip
           if-no-files-found: error
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
+          # the tag and the version built into the app have to agree
+          test "v$VERSION" = "$GITHUB_REF_NAME"
+          # the notes shown in the app: this version's section of CHANGELOG.md
+          awk -v heading="## $VERSION" '$0 == heading { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md > notes.md
+          test -s notes.md
+          gh release create "$GITHUB_REF_NAME" ViolinMIDI-macOS.zip --title "ViolinMIDI $VERSION" --notes-file notes.md
