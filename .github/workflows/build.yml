@@ -78,6 +78,23 @@ jobs:
           "$BIN" --install-zip "$RUNNER_TEMP/latest.zip"
           ls "$HOME/Library/Application Support/ViolinMIDI/Versions"
 
+      # The one-line installation from the README, also only when started by hand.
+      - name: Install script against the published version
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          sudo rm -rf /Applications/ViolinMIDI.app
+          VIOLINMIDI_NO_OPEN=1 bash install.sh
+          /Applications/ViolinMIDI.app/Contents/MacOS/ViolinMIDI --selftest
+          # a second run replaces the app that is already there
+          VIOLINMIDI_NO_OPEN=1 bash install.sh
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" /Applications/ViolinMIDI.app/Contents/Info.plist
+          # the way it is run by hand: straight from the project page, then started
+          sudo rm -rf /Applications/ViolinMIDI.app
+          curl -fsSL "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$GITHUB_SHA/install.sh" | bash
+          sleep 6
+          pgrep -x ViolinMIDI
+          pkill -x ViolinMIDI || true
+
       - name: Sign (ad hoc) and package
         run: |
           codesign --force --deep --sign - "$APP"

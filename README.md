@@ -11,11 +11,29 @@ Tonabnehmer ausgelegt (B♭1 bis A7).
 
 Das ist nur einmal nötig. Spätere Versionen holt die App selbst, siehe „Updates“.
 
+### Mit einer Zeile im Terminal
+
+1. Das Programm „Terminal“ öffnen (mit Cmd + Leertaste danach suchen).
+2. Diese Zeile einfügen und Enter drücken:
+
+   ```
+   curl -fsSL https://raw.githubusercontent.com/XLeathnex/ViolinMIDI/main/install.sh | bash
+   ```
+
+3. Die App wird geladen, in „Programme“ gelegt und gestartet. Beim ersten Start fragt macOS nach
+   dem Mikrofon-Zugriff. Mit „Erlauben“ bestätigen, sonst kommt kein Signal an.
+
+Dafür muss nichts weiter installiert sein. Liegt schon eine ältere ViolinMIDI-App in „Programme“
+und macOS lässt das Ersetzen nicht zu, sagt die Zeile das. Dann die alte App in den Papierkorb
+legen und die Zeile noch einmal ausführen.
+
+### Von Hand
+
 1. `ViolinMIDI-macOS.zip` von der [Seite mit den Versionen](https://github.com/XLeathnex/ViolinMIDI/releases/latest)
    laden und doppelklicken. Es entsteht `ViolinMIDI.app`.
 2. `ViolinMIDI.app` in den Ordner „Programme“ ziehen.
-3. Die App ist nicht bei Apple registriert. macOS blockiert deshalb den ersten Start. Einmalig im
-   Terminal ausführen:
+3. Die App ist nicht bei Apple registriert. macOS blockiert deshalb den ersten Start, wenn die
+   Datei über den Browser kam. Einmalig im Terminal ausführen:
 
    ```
    xattr -dr com.apple.quarantine /Applications/ViolinMIDI.app
@@ -23,8 +41,7 @@ Das ist nur einmal nötig. Spätere Versionen holt die App selbst, siehe „Upda
 
    Alternativ: App starten, die Meldung schließen, dann unter Systemeinstellungen →
    Datenschutz & Sicherheit auf „Dennoch öffnen“ klicken.
-4. Beim ersten Start fragt macOS nach dem Mikrofon-Zugriff. Mit „Erlauben“ bestätigen, sonst kommt
-   kein Signal an.
+4. Beim ersten Start den Mikrofon-Zugriff erlauben.
 
 Voraussetzung: macOS 11 oder neuer, Intel oder Apple Silicon.
 
