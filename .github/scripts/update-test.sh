@@ -35,7 +35,7 @@ came_up() {
     done
     [ -s "$out" ] || { echo "FAILED: no version reported in ($1)" >&2; exit 1; }
     sleep 1 # let that process end before the next start
-    head -n 1 "$out"
+    head -n 1 "$out" | tr -d '\r'
 }
 
 expect() {

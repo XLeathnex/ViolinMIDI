@@ -111,7 +111,8 @@ public:
         if (arguments.contains ("--write-version-to"))
         {
             const auto file = juce::File::getCurrentWorkingDirectory().getChildFile (valueAfter (arguments, "--write-version-to"));
-            const bool written = file.replaceWithText (updater::runningVersion() + "\n" + updater::runningBundle().getFullPathName() + "\n");
+            const bool written = file.replaceWithText (updater::runningVersion() + "\n" + updater::runningBundle().getFullPathName() + "\n",
+                                                       false, false, "\n");
             updater::startedSuccessfully();
             quitWith (written ? 0 : 1);
             return;
