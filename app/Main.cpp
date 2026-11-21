@@ -45,6 +45,36 @@ namespace
             return 0;
         }
 
+        if (arguments.contains ("--fetch-version"))
+        {
+            // "--fetch-version 1.2.0 --to file.zip" (or "latest"): the download the update button does
+            const auto wanted = valueAfter (arguments, "--fetch-version");
+            const auto target = juce::File::getCurrentWorkingDirectory().getChildFile (valueAfter (arguments, "--to"));
+
+            juce::Array<updater::Release> releases;
+            auto result = updater::fetchReleases (releases);
+            if (result.wasOk() && releases.isEmpty())
+                result = juce::Result::fail ("no published versions");
+
+            if (result.wasOk())
+            {
+                updater::Release chosen;
+                for (const auto& release : releases)
+                    if (release.version == wanted || (wanted == "latest" && chosen.version.isEmpty()))
+                        chosen = release;
+
+                result = chosen.version.isEmpty() ? juce::Result::fail ("version " + wanted + " is not published")
+                                                  : updater::download (chosen, target, nullptr);
+                if (result.wasOk())
+                    say ("fetched " + chosen.version + "  " + juce::String (target.getSize()) + " bytes  "
+                         + (chosen.sha256.isNotEmpty() ? "checksum verified" : "no checksum published"));
+            }
+
+            if (result.failed())
+                say (result.getErrorMessage());
+            return result.wasOk() ? 0 : 1;
+        }
+
         if (arguments.contains ("--install-zip"))
         {
             juce::String installed;

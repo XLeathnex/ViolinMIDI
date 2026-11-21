@@ -66,6 +66,18 @@ jobs:
       - name: Update mechanism (install, switch versions, fall back)
         run: bash .github/scripts/update-test.sh "$APP"
 
+      # Needs published versions, so it only runs when started by hand:
+      # list them, download the newest the way the update button does, unpack and check it.
+      - name: Updater against the published versions
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          BIN="$APP/Contents/MacOS/ViolinMIDI"
+          "$BIN" --list-versions
+          "$BIN" --fetch-version latest --to "$RUNNER_TEMP/latest.zip"
+          rm -rf "$HOME/Library/Application Support/ViolinMIDI/Versions"
+          "$BIN" --install-zip "$RUNNER_TEMP/latest.zip"
+          ls "$HOME/Library/Application Support/ViolinMIDI/Versions"
+
       - name: Sign (ad hoc) and package
         run: |
           codesign --force --deep --sign - "$APP"
