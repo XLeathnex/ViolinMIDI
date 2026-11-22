@@ -8,10 +8,40 @@ namespace
     // Layout sizes are nominal heights; the typeface is set in points so the
     // text has the same size whatever the face's own line height is.
     constexpr float kPointsPerHeight = 0.90f;
+    constexpr float kHeadingWeight = 600.0f;   // semibold on the weight axis of a variable typeface
+
+    /** How wide a sample line is in this face and how much ink it puts down. */
+    struct Sample
+    {
+        explicit Sample (const juce::Typeface::Ptr& face)
+        {
+            const juce::Font f (juce::FontOptions (face).withPointHeight (24.0f));
+            const juce::String text ("Harmonie Erkennung 440");
+            width = juce::GlyphArrangement::getStringWidth (f, text);
+
+            juce::Image image (juce::Image::ARGB, 420, 48, true);
+            {
+                juce::Graphics g (image);
+                g.setColour (juce::Colours::white);
+                g.setFont (f);
+                g.drawSingleLineText (text, 4, 34);
+            }
+
+            const juce::Image::BitmapData pixels (image, juce::Image::BitmapData::readOnly);
+            for (int y = 0; y < image.getHeight(); ++y)
+                for (int x = 0; x < image.getWidth(); ++x)
+                    ink += pixels.getPixelColour (x, y).getFloatAlpha();
+        }
+
+        float width = 0.0f;
+        double ink = 0.0;
+    };
 
     // The typeface is asked for through the system, not by name, so it cannot
-    // quietly turn into another face. The heavier cut has to be looked up by
-    // name; it is used only if the system really answers with the same family.
+    // quietly turn into another face. A heavier cut for headings comes from
+    // the weight axis (San Francisco is a variable typeface) or, failing that,
+    // by name - and is used only if it really draws like a heavier cut of the
+    // same face: about as wide, clearly but not wildly more ink.
     struct Faces final : public juce::DeletedAtShutdown
     {
         Faces()
@@ -27,15 +57,36 @@ namespace
             if (regular == nullptr)
                 return;
 
+            const Sample plain (regular);
+            const auto accept = [this, &plain] (const juce::Typeface::Ptr& face, const juce::String& how)
+            {
+                if (face == nullptr || plain.ink <= 0.0 || plain.width <= 0.0f)
+                    return false;
+
+                const Sample heavy (face);
+                const double inkRatio = heavy.ink / plain.ink, widthRatio = (double) heavy.width / (double) plain.width;
+                if (inkRatio < 1.06 || inkRatio > 1.9 || widthRatio < 0.97 || widthRatio > 1.2)
+                    return false;
+
+                strong = face;
+                strongHow = how + ", " + juce::String (inkRatio, 2) + " x the ink, " + juce::String (widthRatio, 2) + " x the width";
+                return true;
+            };
+
+            const juce::FontFeatureTag weight ("wght");
+            if (const auto range = regular->getRangeForVariable (weight); range.has_value() && range->contains (kHeadingWeight))
+            {
+                const juce::FontVariableSetting setting { weight, kHeadingWeight };
+                if (accept (regular->cloneWithVariableSettings (juce::Span<const juce::FontVariableSetting> (&setting, 1)), "weight axis at 600"))
+                    return;
+            }
+
             for (const char* style : { "Semibold", "Bold" })
             {
                 const juce::Font candidate (juce::FontOptions (regular->getName(), style, 13.0f));
                 const auto face = candidate.getTypefacePtr();
-                if (face != nullptr && face->getName() == regular->getName() && face->getStyle().containsIgnoreCase ("bold"))
-                {
-                    strong = face;
-                    break;
-                }
+                if (face != nullptr && face->getName() == regular->getName() && accept (face, juce::String ("style ") + style))
+                    return;
             }
         }
 
@@ -49,6 +100,7 @@ namespace
         }
 
         juce::Typeface::Ptr regular, strong;
+        juce::String strongHow;
         static inline Faces* instance = nullptr;
     };
 }
@@ -59,10 +111,9 @@ juce::Font font (float height, bool bold)
     if (faces.regular == nullptr)
         return juce::Font (juce::FontOptions (height, bold ? juce::Font::bold : juce::Font::plain));
 
-    if (bold && faces.strong == nullptr)
-        return juce::Font (juce::FontOptions (faces.regular).withPointHeight (height * kPointsPerHeight)).boldened();
-
-    return juce::Font (juce::FontOptions (bold ? faces.strong : faces.regular).withPointHeight (height * kPointsPerHeight));
+    // Without a heavier cut that passed the check, headings stay in the regular one.
+    const auto& face = bold && faces.strong != nullptr ? faces.strong : faces.regular;
+    return juce::Font (juce::FontOptions (face).withPointHeight (height * kPointsPerHeight));
 }
 
 juce::Typeface::Ptr systemTypeface()
@@ -73,11 +124,11 @@ juce::Typeface::Ptr systemTypeface()
 juce::String fontDescription()
 {
     const auto& faces = Faces::get();
-    const auto describe = [] (const juce::Typeface::Ptr& face)
-    {
-        return face != nullptr ? face->getName() + " " + face->getStyle() : juce::String ("none");
-    };
-    return "regular: " + describe (faces.regular) + ", headings: " + describe (faces.strong);
+    if (faces.regular == nullptr)
+        return "the system typeface was not found, using the default";
+
+    return "regular: " + faces.regular->getName() + " " + faces.regular->getStyle()
+         + "; headings: " + (faces.strong != nullptr ? faces.strongHow : juce::String ("no heavier cut passed the check, regular is used"));
 }
 
 void drawMark (juce::Graphics& g, juce::Rectangle<float> a)
