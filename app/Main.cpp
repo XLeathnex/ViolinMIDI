@@ -197,6 +197,9 @@ public:
         options.demo = arguments.contains ("--demo");
         options.showSettingsAtStart = arguments.contains ("--show-settings") || arguments.contains ("--show-mapping");
         options.settingsPage = arguments.contains ("--show-mapping") ? 1 : 0;
+        options.showVoicingAtStart = arguments.contains ("--show-voicing");
+        options.showOctaveAtStart = arguments.contains ("--show-octave");
+        options.showMenuAtStart = arguments.contains ("--show-scales") ? 1 : (arguments.contains ("--show-voicings") ? 2 : 0);
         options.notice = startup.notice;
         mainWindow = std::make_unique<MainWindow> (getApplicationName(), options);
         updater::startedSuccessfully();

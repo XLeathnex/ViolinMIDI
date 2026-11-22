@@ -58,11 +58,16 @@ inline void decode (RunResult& r)
             r.problems.push_back ("events out of order");
         lastSample = te.sample;
 
-        if (e.size != 3 || (e.bytes[0] & 0x80) == 0 || (e.bytes[1] & 0x80) != 0 || (e.bytes[2] & 0x80) != 0)
+        // Three bytes, or two for channel pressure (MPE).
+        const bool pressure = (e.bytes[0] & 0xF0) == 0xD0;
+        if (e.size != (pressure ? 2 : 3) || (e.bytes[0] & 0x80) == 0 || (e.bytes[1] & 0x80) != 0
+            || (! pressure && (e.bytes[2] & 0x80) != 0))
         {
             r.problems.push_back ("malformed MIDI message");
             continue;
         }
+        if (pressure)
+            continue;
 
         const int status = e.bytes[0] & 0xF0, channel = e.bytes[0] & 0x0F;
         const int key = channel * 128 + e.bytes[1];
@@ -106,6 +111,8 @@ inline void decode (RunResult& r)
                 r.expression.push_back ({ time, e.bytes[2] });
             else if (e.bytes[1] == 123)
                 {} // all notes off, sent when the master switch goes off
+            else if (channel == 0 && (e.bytes[1] == 101 || e.bytes[1] == 100 || e.bytes[1] == 6))
+                {} // MPE zone announcement (RPN 6) on the manager channel
             else
                 r.problems.push_back ("unexpected controller");
         }

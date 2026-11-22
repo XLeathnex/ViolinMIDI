@@ -4,8 +4,11 @@
 // Design rules (see README, "Gestaltung"):
 //  - Neutral greys carry the interface. The accent colour is reserved for live
 //    data: what is being played and sent. Red only for problems.
-//  - No cards, pills, glows, gradients or all-caps labels. Groups are made by
+//  - No cards, glows, gradients or all-caps labels. Groups are made by
 //    alignment and spacing; separators are single hairlines.
+//  - Type and control shapes follow macOS: the system typeface, 6 px corners,
+//    and segmented controls with the chosen segment as a lighter plate on the
+//    track. Nothing is rounded more than that.
 //  - One dominant element (the live display); everything else is quiet.
 #pragma once
 
@@ -38,7 +41,19 @@ namespace colour
     inline const juce::Colour problem    { 0xffe5584f };
 }
 
+/** Corner radius of buttons, menus and segmented controls, as macOS draws them. */
+inline constexpr float kControlRadius = 6.0f;
+
+/** Text in the system's own interface typeface: San Francisco on a Mac.
+    `height` is the nominal size the layouts were made for (13 = ordinary
+    control text); `bold` is the semibold cut used for headings. */
 juce::Font font (float height, bool bold = false);
+
+/** The system typeface, for controls that JUCE draws with its default font. */
+juce::Typeface::Ptr systemTypeface();
+
+/** Which faces font() resolved to, for the self-test's log. */
+juce::String fontDescription();
 
 /** The f-hole with rising notes, without background. */
 void drawMark (juce::Graphics&, juce::Rectangle<float> area);

@@ -1,18 +1,23 @@
 #include "Theme.h"
 
 #include "Brand.h"
+#include "Widgets.h"
 
 using namespace brand;
 
 namespace
 {
-    constexpr float kRadius = 5.0f;   // controls; nothing else in the app is rounded more
+    constexpr float kRadius = kControlRadius;   // controls; nothing else in the app is rounded more
 }
 
 Theme::Theme()
 {
     setColourScheme ({ colour::window, colour::control, colour::control, colour::separator,
                        colour::text, colour::selected, colour::text, colour::selected, colour::text });
+
+    // Everything JUCE draws with its default font (dialogs, text fields) uses the system typeface too.
+    if (auto face = systemTypeface())
+        setDefaultSansSerifTypeface (face);
 
     setColour (juce::ResizableWindow::backgroundColourId, colour::window);
     setColour (juce::DocumentWindow::textColourId, colour::text);
@@ -67,6 +72,10 @@ juce::Font Theme::getTextButtonFont (juce::TextButton&, int buttonHeight)
 void Theme::drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour& background,
                                   bool highlighted, bool down)
 {
+    // The segments of a segmented control are drawn by the control as one piece.
+    if (dynamic_cast<ButtonRow*> (b.getParentComponent()) != nullptr)
+        return;
+
     const auto r = b.getLocalBounds().toFloat();
     const bool on = b.getToggleState();
 
@@ -135,7 +144,7 @@ void Theme::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
 //==============================================================================
 int Theme::getSliderThumbRadius (juce::Slider&)
 {
-    return 6;
+    return 7;
 }
 
 void Theme::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
@@ -150,21 +159,31 @@ void Theme::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int he
 
     const bool enabled = slider.isEnabled();
     const float cy = (float) y + (float) height * 0.5f;
-    const juce::Rectangle<float> track ((float) x, cy - 1.5f, (float) width, 3.0f);
+    const juce::Rectangle<float> track ((float) x, cy - 2.0f, (float) width, 4.0f);
 
     g.setColour (colour::control.brighter (0.12f));
-    g.fillRoundedRectangle (track, 1.5f);
+    g.fillRoundedRectangle (track, 2.0f);
     g.setColour (enabled ? colour::secondary : colour::tertiary.withAlpha (0.5f));
-    g.fillRoundedRectangle (track.withRight (sliderPos), 1.5f);
+    g.fillRoundedRectangle (track.withRight (sliderPos), 2.0f);
 
-    const auto thumb = juce::Rectangle<float> (12.0f, 12.0f).withCentre ({ sliderPos, cy });
-    g.setColour (juce::Colours::black.withAlpha (0.4f));
-    g.fillEllipse (thumb.translated (0.0f, 0.5f).expanded (0.5f));
+    // the round knob of a macOS slider, with a thin dark edge instead of a shadow
+    const auto thumb = juce::Rectangle<float> (14.0f, 14.0f).withCentre ({ sliderPos, cy });
+    g.setColour (juce::Colours::black.withAlpha (0.45f));
+    g.fillEllipse (thumb.expanded (1.0f));
     g.setColour (enabled ? colour::text : colour::tertiary);
     g.fillEllipse (thumb);
 }
 
 //==============================================================================
+// Pop-up panels: flat, one hairline, no shadow.
+void Theme::drawCallOutBoxBackground (juce::CallOutBox&, juce::Graphics& g, const juce::Path& path, juce::Image&)
+{
+    g.setColour (brand::colour::window);
+    g.fillPath (path);
+    g.setColour (brand::colour::separator.brighter (0.35f));
+    g.strokePath (path, juce::PathStrokeType (1.0f));
+}
+
 void Theme::drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height)
 {
     const auto r = juce::Rectangle<float> ((float) width, (float) height);

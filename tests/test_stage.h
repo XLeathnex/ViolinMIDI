@@ -88,17 +88,19 @@ inline std::string stKey (const vm::MidiEvent& e)
     else if (stIsOff (e))  std::snprintf (b, sizeof (b), "-%d:%d", ch, (int) e.bytes[1]);
     else if (stIsBend (e)) std::snprintf (b, sizeof (b), "b%d", ch);
     else if (stIsCc (e))   std::snprintf (b, sizeof (b), "c%d:%d", ch, (int) e.bytes[1]);
+    else if (stStatus (e) == 0xD0) std::snprintf (b, sizeof (b), "p%d", ch);
     else                   std::snprintf (b, sizeof (b), "?%02X", (int) e.bytes[0]);
     return b;
 }
 
-/** Name with value: "+1:60v100", "b1=8192", "c1:11=90". */
+/** Name with value: "+1:60v100", "b1=8192", "c1:11=90", "p2=90" (channel pressure). */
 inline std::string stText (const vm::MidiEvent& e)
 {
     char b[24] = "";
     if (stIsOn (e))        std::snprintf (b, sizeof (b), "v%d", (int) e.bytes[2]);
     else if (stIsBend (e)) std::snprintf (b, sizeof (b), "=%d", stBend14 (e));
     else if (stIsCc (e))   std::snprintf (b, sizeof (b), "=%d", (int) e.bytes[2]);
+    else if (stStatus (e) == 0xD0) std::snprintf (b, sizeof (b), "=%d", (int) e.bytes[1]);
     return stKey (e) + b;
 }
 
@@ -167,7 +169,10 @@ inline vm::Settings stageDefaults()
     s.pentaSustain = false;
     s.triad = false;
     s.triadChannel = 2;
-    s.triadWithRoot = true;
+    s.voicing = 0;
+    s.harmonyMode = vm::HarmonyMode::Diatonic;
+    s.mpe = false;
+    s.freezeSolo = s.freezeHarmony = false;
     return s;
 }
 
@@ -184,18 +189,24 @@ struct StageRig
     bool sounding[16][128] = {};
     int lastBend[16];            // last bend sent per channel, -1 = none yet
     int lastCc11[16];            // last CC11 sent per channel, -1 = none yet
+    int lastCc[16][128];         // last value of every controller per channel, -1 = none yet
+    int lastPressure[16];        // last channel pressure per channel, -1 = none yet
     std::string name;
     int hops = 0;
     int offset = 0;
-    float level = -20.0f;        // level of the next hops, the gate is at -45
+    float level = -20.0f;        // level of the next hops, the gate is at -45 (off at -51)
 
     explicit StageRig (const char* caseName) : name (caseName)
     {
         stage.prepare (750.0);
-        out.reserve (256);
+        out.reserve (512);
         s = stageDefaults();
         for (int c = 0; c < 16; ++c)
-            lastBend[c] = lastCc11[c] = -1;
+        {
+            lastBend[c] = lastCc11[c] = lastPressure[c] = -1;
+            for (int k = 0; k < 128; ++k)
+                lastCc[c][k] = -1;
+        }
     }
 
     void key (int root, int mode, bool pentatonic, bool sustain = false)
@@ -244,8 +255,11 @@ struct StageRig
     {
         check (e.sampleOffset == offset, "%s: %s: event %s at sample offset %d, expected the call's offset %d",
                where().c_str(), what, stText (e).c_str(), e.sampleOffset, offset);
-        const bool wellFormed = e.size == 3 && (e.bytes[0] & 0x80) != 0 && (e.bytes[1] & 0x80) == 0 && (e.bytes[2] & 0x80) == 0;
-        check (wellFormed, "%s: %s: malformed event, size %d, bytes %02X %02X %02X (expected 3 bytes, status >= 0x80, data < 0x80)",
+        // 3 bytes, or 2 for channel pressure (MPE)
+        const bool pressure = (e.bytes[0] & 0xF0) == 0xD0;
+        const bool wellFormed = e.size == (pressure ? 2 : 3) && (e.bytes[0] & 0x80) != 0 && (e.bytes[1] & 0x80) == 0
+                             && (pressure || (e.bytes[2] & 0x80) == 0);
+        check (wellFormed, "%s: %s: malformed event, size %d, bytes %02X %02X %02X (expected 3 bytes (2 for 0xD0), status >= 0x80, data < 0x80)",
                where().c_str(), what, (int) e.size, (int) e.bytes[0], (int) e.bytes[1], (int) e.bytes[2]);
         if (! wellFormed)
             return;
@@ -271,10 +285,15 @@ struct StageRig
         {
             if (n == 11)
                 lastCc11[ch] = e.bytes[2];
+            lastCc[ch][n] = e.bytes[2];
+        }
+        else if (pressure)
+        {
+            lastPressure[ch] = n;
         }
         else
         {
-            check (false, "%s: %s: unexpected status byte %02X (expected note, bend or controller)",
+            check (false, "%s: %s: unexpected status byte %02X (expected note, bend, controller or pressure)",
                    where().c_str(), what, (int) e.bytes[0]);
         }
     }
@@ -437,8 +456,10 @@ inline void scaleTables()
         }
     }
 
+    // The old scale::triad (note, root, mode, withRoot) is now voices (..., voicing 0, diatonic,
+    // no free mask, withoutPlayedNote = ! withRoot).
     auto triadText = [] (int note, int root, int mode, bool withRoot) {
-        const vm::scale::Triad t = vm::scale::triad (note, root, mode, withRoot);
+        const vm::scale::Voices t = vm::scale::voices (note, root, mode, 0, true, 0, ! withRoot);
         std::string s;
         for (int i = 0; i < t.count; ++i)
             s += (i == 0 ? "" : " ") + std::to_string (t.notes[i]);
@@ -494,7 +515,8 @@ inline void stagePassThrough()
             rig.s.pentatonic = pick (0, 1) == 1;
             rig.s.pentaSustain = pick (0, 1) == 1;
             rig.s.triadChannel = pick (1, 16);
-            rig.s.triadWithRoot = pick (0, 1) == 1;
+            rig.s.voicing = pick (0, 12);
+            rig.s.gateOffDb = (float) pick (-70, -40);
             rig.s.bendRangeSemis = (float) pick (1, 24);
             if (pick (0, 3) == 0)
             {
@@ -686,20 +708,35 @@ inline void stageSustain()
         rig.notes ("tracker off at -20 dB", "");
         rig.level = -30.0f;
         rig.hop();
-        rig.level = -45.0f;   // equal to the gate: still held (levelDb >= gateDb)
+        rig.level = -48.0f;   // below gateDb, above gateOffDb (-51): still held (R1c/d use gateOffDb)
         rig.hop();
-        rig.notes ("level at the gate", "");
-        rig.soundingNow ("level at the gate", "1:60");
-        rig.level = -45.5f;
+        rig.level = -51.0f;   // equal to gateOffDb: still held (levelDb >= gateOffDb)
         rig.hop();
-        rig.notes ("first hop below the gate", "-1:60");
+        rig.notes ("level at gateOffDb", "");
+        rig.soundingNow ("level at gateOffDb", "1:60");
+        rig.level = -51.5f;
+        rig.hop();
+        rig.notes ("first hop below gateOffDb", "-1:60");
+    }
+    {   // gateOffDb is never above gateDb: with gateOffDb -30 and gateDb -45, -45 counts
+        StageRig rig ("gateOffDb above gateDb is clamped");
+        rig.key (0, 0, true, true);
+        rig.s.gateOffDb = -30.0f;
+        rig.hop ({ noteOn (1, 60, 100) });
+        rig.hop ({ noteOff (1, 60) });
+        rig.level = -40.0f;
+        rig.hop();
+        rig.soundingNow ("-40 dB, gate -45, gateOff -30 clamped to -45", "1:60");
+        rig.level = -46.0f;
+        rig.hop();
+        rig.notes ("below the gate", "-1:60");
     }
     {
         StageRig rig ("release below the gate during a foreign note");
         rig.key (0, 0, true, true);
         rig.hop ({ noteOn (1, 60, 100) });
         rig.hop ({ noteOn (1, 65, 100), noteOff (1, 60) });
-        rig.level = -50.0f;
+        rig.level = -52.0f;
         rig.hop();
         rig.notes ("below the gate", "-1:60");
         rig.hop ({ noteOff (1, 65) });
@@ -718,17 +755,39 @@ inline void stageSustain()
         StageRig rig ("note-off below the gate is sent");
         rig.key (0, 0, true, true);
         rig.hop ({ noteOn (1, 60, 100) });
+        rig.level = -52.0f;
+        rig.hop ({ noteOff (1, 60) });
+        rig.notes ("off at -52 dB", "-1:60");
+    }
+    {
+        StageRig rig ("note-off between gateOffDb and gateDb is held");
+        rig.key (0, 0, true, true);
+        rig.hop ({ noteOn (1, 60, 100) });
         rig.level = -50.0f;
         rig.hop ({ noteOff (1, 60) });
-        rig.notes ("off at -50 dB", "-1:60");
+        rig.notes ("off at -50 dB", "");
+        rig.soundingNow ("off at -50 dB", "1:60");
     }
     {
         StageRig rig ("foreign note below the gate");
         rig.key (0, 0, true, true);
         rig.hop ({ noteOn (1, 60, 100) });
-        rig.level = -50.0f;
+        rig.level = -52.0f;
         rig.hop ({ noteOn (1, 65, 100), noteOff (1, 60) });
-        rig.soundingNow ("60 -> 65 at -50 dB", "");
+        rig.soundingNow ("60 -> 65 at -52 dB", "");
+    }
+    for (int mode : { 10, 11, 12 })
+    {   // R1c: a scale of fewer than seven notes activates the sustain without the pentatonic flag
+        StageRig rig ("sustain with a pentatonic/blues scale");
+        rig.key (0, mode, false, true);
+        rig.hop ({ noteOn (1, 60, 100) });
+        rig.hop ({ noteOn (1, 61, 100), noteOff (1, 60) });
+        rig.notes ("60 -> 61 (foreign in every one)", "");
+        rig.soundingNow ("held", "1:60");
+        rig.hop ({ noteOff (1, 61) });
+        rig.level = -60.0f;
+        rig.hop();
+        rig.soundingNow ("after", "");
     }
     {   // R2: bend back to the centre when the hold begins, tracker bends kept back
         StageRig rig ("bend during a hold");
@@ -963,11 +1022,12 @@ inline void stageTriad()
                rig.where().c_str(), rig.lastCc11[0], rig.lastCc11[1], stList (rig.last).c_str());
     }
     {
-        StageRig rig ("triad without root");
+        // was "triad without root" (triadWithRoot is gone): now the duet voicing 1 - 3
+        StageRig rig ("voicing duet in thirds");
         rig.s.triad = true;
-        rig.s.triadWithRoot = false;
+        rig.s.voicing = 5;
         rig.hop ({ noteOn (1, 62, 90) });
-        rig.noteSet ("on 62", "+1:62 +2:65 +2:69");
+        rig.noteSet ("on 62", "+1:62 +2:62 +2:65");
         rig.hop ({ noteOff (1, 62) });
         rig.soundingNow ("after", "");
     }
@@ -1017,7 +1077,7 @@ inline void stageTriad()
         offsBeforeOns (rig, 2, "62 ends the hold");
         rig.hop ({ noteOn (1, 65, 90), noteOff (1, 62) });
         rig.notes ("hold 62", "");
-        rig.level = -50.0f;
+        rig.level = -52.0f;
         rig.hop();
         rig.noteSet ("below the gate", "-1:62 -2:62 -2:65 -2:69");
         rig.hop ({ noteOff (1, 65) });
@@ -1172,12 +1232,13 @@ inline void stageSettings()
         rig.soundingNow ("after", "");
     }
     {
-        StageRig rig ("triad root switched off");
+        // was "triad root switched off" (triadWithRoot is gone): now a voicing change 1-3-5 -> 1-3
+        StageRig rig ("voicing changed mid-note");
         rig.s.triad = true;
         rig.hop ({ noteOn (1, 60, 88) });
-        rig.s.triadWithRoot = false;
+        rig.s.voicing = 5;
         rig.hop();
-        rig.soundingNow ("with root -> without", "1:60 2:64 2:67");
+        rig.soundingNow ("1-3-5 -> 1-3", "1:60 2:60 2:64");
     }
     {
         StageRig rig ("main channel changed, held note");
@@ -1276,7 +1337,7 @@ inline void stageRandom()
                 case 4: rig.s.pentaSustain = pick (0, 2) != 0; break;
                 case 5: rig.s.triad = pick (0, 1) == 1; break;
                 case 6: rig.s.triadChannel = pick (0, 3) == 0 ? rig.s.midiChannel : pick (1, 16); break;
-                case 7: rig.s.triadWithRoot = pick (0, 1) == 1; break;
+                case 7: rig.s.voicing = pick (0, 12); break;
                 case 8:
                 {
                     const int ch = pick (1, 4);
@@ -1326,26 +1387,27 @@ inline void stageRandom()
         auto context = [&] () {
             char b[512];
             const vm::Settings& c = rig.s;
-            std::snprintf (b, sizeof (b), "\n          settings: filter %d root %d mode %d penta %d sustain %d triad %d triadCh %d withRoot %d mainCh %d (was %d) range %.1f, level %.1f dB"
+            std::snprintf (b, sizeof (b), "\n          settings: filter %d root %d mode %d penta %d sustain %d triad %d triadCh %d voicing %d mainCh %d (was %d) range %.1f, level %.1f dB"
                                           "\n          held %d, in: %s\n          out: %s",
                            (int) c.keyFilter, c.keyRoot, c.scaleMode, (int) c.pentatonic, (int) c.pentaSustain, (int) c.triad,
-                           c.triadChannel, (int) c.triadWithRoot, c.midiChannel, before.midiChannel, (double) c.bendRangeSemis,
+                           c.triadChannel, c.voicing, c.midiChannel, before.midiChannel, (double) c.bendRangeSemis,
                            (double) rig.level, (int) rig.stage.isHeld(), stList (in).c_str(), stList (rig.last).c_str());
             return std::string (b);
         };
 
-        // at most one main note; the triad only together with it
+        // at most one main note; the harmony (up to kMaxVoices) only together with it
         const int mc = rig.s.midiChannel, tc = rig.s.triadChannel;
         const bool separate = rig.s.triad && tc != mc;
         const int total = rig.countAll(), onTriad = separate ? rig.countOn (tc) : 0;
         const int main = total - onTriad;
+        const int maxVoices = vm::scale::kMaxVoices;
         bool countOk = true;
         if (! rig.s.triad)
             countOk = total <= 1;
         else if (! separate)
-            countOk = total <= 3;
+            countOk = total <= 1 + maxVoices;
         else
-            countOk = main <= 1 && onTriad <= 3 && (main > 0 || onTriad == 0);
+            countOk = main <= 1 && onTriad <= maxVoices && (main > 0 || onTriad == 0);
         if (! countOk)
             check (false, "%s: expected at most one main note (plus its triad, triad %d, main channel %d, triad channel %d), found %s%s",
                    rig.where().c_str(), (int) rig.s.triad, mc, tc, rig.soundingText().c_str(), context().c_str());

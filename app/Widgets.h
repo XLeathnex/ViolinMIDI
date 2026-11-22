@@ -20,8 +20,10 @@ struct LiveFrame
     bool  active = false;      ///< a note is being sent
     bool  held = false;        ///< ...kept by the pentatonic sustain
     bool  enabled = true;      ///< master switch
-    int   triadCount = 0;      ///< notes on the triad channel
-    int   triad[3] = { -1, -1, -1 };
+    int   triadCount = 0;      ///< notes on the harmony channel
+    int   triad[vm::scale::kMaxVoices] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+    int   frozenNote = -1;     ///< the note kept by the solo freeze or -1
+    bool  harmonyFrozen = false;
 };
 
 juce::String noteName (int midiNote);
@@ -29,14 +31,22 @@ juce::String noteName (int midiNote);
 //==============================================================================
 /** Buttons side by side as one segmented control. Each segment is as wide as
     its text needs, the rest is shared evenly. */
-class ButtonRow final : public juce::Component
+class ButtonRow final : public juce::Component,
+                        private juce::Button::Listener
 {
 public:
+    ~ButtonRow() override;
+
     void add (juce::Button& b);
     void resized() override;
+    /** The track, the plate under the chosen segment and the hairlines between the others. */
+    void paint (juce::Graphics&) override;
 
 private:
-    std::vector<juce::Button*> items;
+    void buttonClicked (juce::Button*) override {}
+    void buttonStateChanged (juce::Button*) override   { repaint(); }
+
+    std::vector<juce::Component::SafePointer<juce::Button>> items;
 };
 
 //==============================================================================
@@ -67,10 +77,10 @@ class LevelMeter final : public juce::Component,
                          public juce::SettableTooltipClient
 {
 public:
-    void update (float levelDb, float gateDb, bool clipped);
+    void update (float levelDb, float gateDb, float gateOffDb, bool clipped);
     void paint (juce::Graphics&) override;
 
 private:
-    float shown = -120.0f, gate = -45.0f;
+    float shown = -120.0f, gate = -45.0f, gateOff = -51.0f;
     bool clip = false;
 };

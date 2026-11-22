@@ -2,6 +2,23 @@
 
 Der Abschnitt einer Version erscheint in der App unter Einstellungen, wenn man die Version auswählt.
 
+## 1.4.0
+
+- Behoben: Auf dem Harmonie-Kanal kommen jetzt immer alle Stimmen an, auch der gespielte Ton. Die Auswahl „2 Töne“ gibt es nicht mehr.
+- Behoben: Akkorde bleiben in der Tonart. Bisher wurde ein Akkord beim Gleiten und bei tief angesetzten Tönen einfach mitgebogen; so wurde aus C-Dur ein D-Dur mit F♯. Jetzt richtet sich der Akkord nach der Tonhöhe, die wirklich klingt, und wird neu gebildet (in C-Dur auf D also D-Moll).
+- Harmonie-Modus: „Diatonisch“ (Akkorde aus der Tonart) oder „Chromatisch“ (immer dieselben Abstände).
+- Skalen: zusätzlich Harmonisch Moll, Melodisch Moll, Phrygisch Dominant, Dur- und Moll-Pentatonik und Blues-Skala. In der Liste steht unter jedem Namen, wofür die Skala typisch ist.
+- Voicings für die Harmonie: Dreiklang, Septakkord, Open, Power, Quart, Terz- und Sexten-Duett, fünf Oktav-Voicings und ein freies Voicing mit bis zu 10 Stimmen von −24 bis +24 Halbtönen.
+- Freeze: „Solo halten“ und „Harmonie halten“ frieren Ton oder Akkord ein, während auf der anderen Spur weitergespielt wird. Beide lassen sich per MIDI schalten.
+- Zwei Schwellen statt einer: Über der In-Schwelle beginnt ein Ton, erst unter der Out-Schwelle endet er.
+- Presets: Alle Einstellungen lassen sich unter einem Namen speichern, laden, umbenennen und löschen (oben im Fenster). Ein Program Change lädt das Preset mit dieser Nummer; „Nächstes“ und „Vorheriges Preset“ lassen sich einem Fußschalter zuweisen.
+- Oktavsprung-Schutz: Anstreich-Schutz und Oktavsprung-Sperre lassen sich einzeln schalten und in Millisekunden einstellen.
+- MPE-Modus: jede Note auf einem eigenen Kanal (2–16) mit ±48 Halbtönen Pitch Bend.
+- Dynamik: Ziel wählbar (CC11, CC1, CC2 oder CC1 + CC11), dazu eine Glättung von 0 bis 150 ms.
+- Artikulation: erkennt gezupfte und gestrichene Tonanfänge und passt die Anschlagstärke an (Aus, Sanft, Stark).
+- Die Statuszeile zeigt Abtastrate und Puffergröße des Audio-Eingangs.
+- Aussehen: die Systemschrift von macOS (San Francisco) und Schalter in der Form der macOS-Bedienelemente.
+
 ## 1.3.0
 
 - Neuer Name: Archet. Neues Icon.

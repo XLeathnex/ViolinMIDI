@@ -1,6 +1,9 @@
 #include "SelfTest.h"
 
+#include "Brand.h"
 #include "Engine.h"
+#include "PresetStore.h"
+#include "SettingsFields.h"
 
 #include <atomic>
 #include <cmath>
@@ -57,6 +60,100 @@ namespace
     }
 }
 
+namespace
+{
+    /** Presets and the settings file: what is written must come back unchanged. */
+    bool storageCheck()
+    {
+        vm::Settings wanted;
+        wanted.bendMode = vm::BendMode::Smoothed;
+        wanted.bendRangeSemis = 12.0f;
+        wanted.gateDb = -40.5f;
+        wanted.gateOffDb = -57.0f;
+        wanted.keyFilter = true;
+        wanted.keyRoot = 9;
+        wanted.scaleMode = 12;
+        wanted.pentaSustain = true;
+        wanted.triad = true;
+        wanted.triadChannel = 5;
+        wanted.voicing = vm::scale::kFreeVoicing;
+        wanted.harmonyMode = vm::HarmonyMode::Chromatic;
+        wanted.freeVoicing = (1ull << 0) | (1ull << 24) | (1ull << 31) | (1ull << 48);
+        wanted.mpe = true;
+        wanted.octaveAttackGuard = false;
+        wanted.octaveSustainMs = 80.0f;
+        wanted.articulation = vm::Articulation::Strong;
+        wanted.dynamicsTarget = vm::DynamicsTarget::ModAndExpression;
+        wanted.dynamicsSmoothingMs = 120.0f;
+        const auto image = [] (const vm::Settings& s) { return juce::JSON::toString (fields::toVar (s), true); };
+
+        const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                .getChildFile ("ViolinMIDI-selftest-" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt()));
+        bool ok = true;
+        const auto expect = [&ok] (bool condition, const char* what)
+        {
+            if (! condition)
+            {
+                say (juce::String ("storage: FAILED - ") + what);
+                ok = false;
+            }
+        };
+
+        {
+            PresetStore store (folder.getChildFile ("Presets"));
+            expect (store.entries().empty() && store.firstFreeSlot() == 1, "an empty folder has no presets");
+            expect (store.save (3, "Irish Dorisch Pad", wanted), "save");
+            expect (store.save (7, "Zwei", vm::Settings()), "save a second preset");
+
+            vm::Settings loaded;
+            loaded.enabled = false;   // not part of a preset: must survive loading
+            loaded.freezeSolo = true;
+            expect (store.load (3, loaded), "load");
+            expect (image (loaded) == image (wanted), "a loaded preset equals the saved one");
+            expect (! loaded.enabled && loaded.freezeSolo, "master switch and freeze are left alone");
+
+            expect (store.rename (3, "Neuer Name"), "rename");
+            PresetStore again (folder.getChildFile ("Presets"));
+            again.refresh();
+            expect (again.entries().size() == 2 && again.find (3) != nullptr && again.find (3)->name == "Neuer Name", "the renamed preset is found again");
+            expect (again.next (3) == 7 && again.next (7) == 3 && again.previous (3) == 7, "next and previous wrap");
+            expect (again.remove (7) && again.find (7) == nullptr && again.entries().size() == 1, "remove");
+            vm::Settings untouched;
+            expect (! again.load (7, untouched), "a removed preset does not load");
+        }
+
+        {
+            juce::PropertiesFile::Options options;
+            options.millisecondsBeforeSaving = -1;
+            const auto file = folder.getChildFile ("test.settings");
+            {
+                juce::PropertiesFile props (file, options);
+                fields::save (props, wanted);
+                props.save();
+            }
+            juce::PropertiesFile props (file, options);
+            vm::Settings loaded;
+            fields::load (props, loaded);
+            expect (image (loaded) == image (wanted), "the settings file gives back what was stored");
+
+            // a file from version 1.3: one threshold, the pentatonic as a switch
+            juce::PropertiesFile old (folder.getChildFile ("old.settings"), options);
+            old.setValue ("gateDb", -38.0);
+            old.setValue ("scaleMode", 5);
+            old.setValue ("pentatonic", true);
+            old.setValue ("keyFilter", true);
+            vm::Settings migrated;
+            fields::load (old, migrated);
+            expect (migrated.gateOffDb == -44.0f, "an older file ends notes 6 dB below its threshold");
+            expect (migrated.scaleMode == 11 && ! migrated.pentatonic, "the pentatonic switch becomes the pentatonic scale");
+        }
+
+        folder.deleteRecursively();
+        say (ok ? "storage: presets and settings file read back what was written" : "storage: FAILED");
+        return ok;
+    }
+}
+
 /** Listens to the port from the outside, the way MainStage would. */
 struct SelfTest::Collector final : public juce::MidiInputCallback
 {
@@ -88,7 +185,9 @@ SelfTest::~SelfTest()
 void SelfTest::start()
 {
     say (juce::String ("ViolinMIDI self-test, version ") + JUCE_APPLICATION_VERSION_STRING);
+    say ("fonts: " + brand::fontDescription());
     engineOk = engineCheck();
+    engineOk = storageCheck() && engineOk;
 
     // The virtual port, created exactly as the app creates it.
     output = juce::MidiOutput::createNewDevice (kTestPortName);

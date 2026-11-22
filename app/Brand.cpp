@@ -3,9 +3,81 @@
 namespace brand
 {
 
+namespace
+{
+    // Layout sizes are nominal heights; the typeface is set in points so the
+    // text has the same size whatever the face's own line height is.
+    constexpr float kPointsPerHeight = 0.90f;
+
+    // The typeface is asked for through the system, not by name, so it cannot
+    // quietly turn into another face. The heavier cut has to be looked up by
+    // name; it is used only if the system really answers with the same family.
+    struct Faces final : public juce::DeletedAtShutdown
+    {
+        Faces()
+        {
+            regular = juce::Typeface::findSystemTypeface();
+
+           #if JUCE_WINDOWS
+            // Only for looking at the layout on a Windows PC, where that call can come back empty.
+            if (regular == nullptr)
+                regular = juce::Font (juce::FontOptions ("Segoe UI", "Regular", 13.0f)).getTypefacePtr();
+           #endif
+
+            if (regular == nullptr)
+                return;
+
+            for (const char* style : { "Semibold", "Bold" })
+            {
+                const juce::Font candidate (juce::FontOptions (regular->getName(), style, 13.0f));
+                const auto face = candidate.getTypefacePtr();
+                if (face != nullptr && face->getName() == regular->getName() && face->getStyle().containsIgnoreCase ("bold"))
+                {
+                    strong = face;
+                    break;
+                }
+            }
+        }
+
+        ~Faces() override { instance = nullptr; }
+
+        static Faces& get()
+        {
+            if (instance == nullptr)
+                instance = new Faces();
+            return *instance;
+        }
+
+        juce::Typeface::Ptr regular, strong;
+        static inline Faces* instance = nullptr;
+    };
+}
+
 juce::Font font (float height, bool bold)
 {
-    return juce::Font (juce::FontOptions (height, bold ? juce::Font::bold : juce::Font::plain));
+    const auto& faces = Faces::get();
+    if (faces.regular == nullptr)
+        return juce::Font (juce::FontOptions (height, bold ? juce::Font::bold : juce::Font::plain));
+
+    if (bold && faces.strong == nullptr)
+        return juce::Font (juce::FontOptions (faces.regular).withPointHeight (height * kPointsPerHeight)).boldened();
+
+    return juce::Font (juce::FontOptions (bold ? faces.strong : faces.regular).withPointHeight (height * kPointsPerHeight));
+}
+
+juce::Typeface::Ptr systemTypeface()
+{
+    return Faces::get().regular;
+}
+
+juce::String fontDescription()
+{
+    const auto& faces = Faces::get();
+    const auto describe = [] (const juce::Typeface::Ptr& face)
+    {
+        return face != nullptr ? face->getName() + " " + face->getStyle() : juce::String ("none");
+    };
+    return "regular: " + describe (faces.regular) + ", headings: " + describe (faces.strong);
 }
 
 void drawMark (juce::Graphics& g, juce::Rectangle<float> a)

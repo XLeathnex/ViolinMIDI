@@ -17,6 +17,8 @@ AudioHost::AudioHost()
 {
     events.reserve (kEventCapacity);
     silence.assign ((size_t) kChunk, 0.0f);
+    for (auto& note : mTriad)
+        note.store (-1);
 }
 
 AudioHost::~AudioHost() = default;
@@ -36,54 +38,8 @@ bool AudioHost::openMidiPort (const juce::String& name)
 
 void AudioHost::setSettings (const vm::Settings& s) noexcept
 {
-    bendMode.store ((int) s.bendMode);
-    dynamics.store ((int) s.dynamics);
-    response.store ((int) s.response);
-    bendRange.store (s.bendRangeSemis);
-    vibratoSmoothing.store (s.vibratoSmoothing);
-    enabled.store (s.enabled);
-    keyFilter.store (s.keyFilter);
-    keyRoot.store (s.keyRoot);
-    scaleMode.store (s.scaleMode);
-    pentatonic.store (s.pentatonic);
-    pentaSustain.store (s.pentaSustain);
-    triad.store (s.triad);
-    triadChannel.store (s.triadChannel);
-    triadWithRoot.store (s.triadWithRoot);
-    lowestNote.store (s.lowestNote);
-    highestNote.store (s.highestNote);
-    fixedVelocity.store (s.fixedVelocity);
-    midiChannel.store (s.midiChannel);
-    inputGainDb.store (s.inputGainDb);
-    gateDb.store (s.gateDb);
-    a4Hz.store (s.a4Hz);
-}
-
-vm::Settings AudioHost::getSettings() const noexcept
-{
-    vm::Settings s;
-    s.bendMode = (vm::BendMode) juce::jlimit (0, 2, bendMode.load());
-    s.dynamics = (vm::DynamicsMode) juce::jlimit (0, 2, dynamics.load());
-    s.response = (vm::Response) juce::jlimit (0, 2, response.load());
-    s.bendRangeSemis = bendRange.load();
-    s.vibratoSmoothing = vibratoSmoothing.load();
-    s.enabled = enabled.load();
-    s.keyFilter = keyFilter.load();
-    s.keyRoot = keyRoot.load();
-    s.scaleMode = scaleMode.load();
-    s.pentatonic = pentatonic.load();
-    s.pentaSustain = pentaSustain.load();
-    s.triad = triad.load();
-    s.triadChannel = triadChannel.load();
-    s.triadWithRoot = triadWithRoot.load();
-    s.lowestNote = lowestNote.load();
-    s.highestNote = highestNote.load();
-    s.fixedVelocity = fixedVelocity.load();
-    s.midiChannel = midiChannel.load();
-    s.inputGainDb = inputGainDb.load();
-    s.gateDb = gateDb.load();
-    s.a4Hz = a4Hz.load();
-    return s;
+    const juce::SpinLock::ScopedLockType lock (settingsLock);
+    sharedSettings = s;
 }
 
 AudioHost::Meters AudioHost::takeMeters() noexcept
@@ -98,10 +54,10 @@ AudioHost::Meters AudioHost::takeMeters() noexcept
     m.voiced = mVoiced.load();
     m.active = mActive.load();
     m.held = mHeld.load();
-    const int packed = mTriad.load();
-    m.triadCount = juce::jlimit (0, 3, packed >> 24);
-    for (int i = 0; i < 3; ++i)
-        m.triad[i] = i < m.triadCount ? ((packed >> (8 * (2 - i))) & 0x7F) : -1;
+    m.triadCount = juce::jlimit (0, vm::scale::kMaxVoices, mTriadCount.load());
+    for (int i = 0; i < vm::scale::kMaxVoices; ++i)
+        m.triad[i] = i < m.triadCount ? mTriad[i].load() : -1;
+    m.frozenNote = mFrozenNote.load();
     m.running = mRunning.load();
     m.hasInput = mHasInput.load();
     m.sampleRate = mSampleRate.load();
@@ -124,7 +80,8 @@ void AudioHost::send (const vm::MidiEventList& list) noexcept
 
     if (midiOut != nullptr)
         for (const vm::MidiEvent& e : list)
-            midiOut->sendMessageNow (juce::MidiMessage ((int) e.bytes[0], (int) e.bytes[1], (int) e.bytes[2]));
+            midiOut->sendMessageNow (e.size == 2 ? juce::MidiMessage ((int) e.bytes[0], (int) e.bytes[1])
+                                                 : juce::MidiMessage ((int) e.bytes[0], (int) e.bytes[1], (int) e.bytes[2]));
 
     mMidiMessages.fetch_add ((unsigned int) list.size());
 }
@@ -146,27 +103,19 @@ void AudioHost::audioDeviceIOCallbackWithContext (const float* const* inputChann
         input = inputChannelData[ch];
 
     mHasInput.store (input != nullptr);
-    const vm::Settings settings = getSettings();
+    {
+        const juce::SpinLock::ScopedTryLockType lock (settingsLock);
+        if (lock.isLocked())
+            audioSettings = sharedSettings;
+    }
+    const vm::Settings& settings = audioSettings;
 
     if (panic.exchange (false))
     {
         events.clear();
         engine.shutdown (events);
 
-        const int mainChannel = juce::jlimit (1, 16, settings.midiChannel) - 1;
-        const int secondChannel = juce::jlimit (1, 16, settings.triadChannel) - 1;
-        for (int channel : { mainChannel, secondChannel })
-        {
-            if (channel == secondChannel && (channel == mainChannel || ! settings.triad))
-                continue;
-
-            vm::MidiEvent allNotesOff;
-            allNotesOff.size = 3;
-            allNotesOff.bytes[0] = (uint8_t) (0xB0 | channel);
-            allNotesOff.bytes[1] = 123;
-            allNotesOff.bytes[2] = 0;
-            events.push_back (allNotesOff);
-        }
+        vm::Engine::appendAllNotesOff (settings, 0, events);
         send (events);
     }
 
@@ -199,7 +148,10 @@ void AudioHost::audioDeviceIOCallbackWithContext (const float* const* inputChann
     mVoiced.store (meter.voiced);
     mActive.store (meter.active);
     mHeld.store (meter.held);
-    mTriad.store ((meter.triadCount << 24) | ((meter.triad[0] & 0x7F) << 16) | ((meter.triad[1] & 0x7F) << 8) | (meter.triad[2] & 0x7F));
+    for (int i = 0; i < vm::scale::kMaxVoices; ++i)
+        mTriad[i].store (meter.triad[i]);
+    mTriadCount.store (meter.triadCount);
+    mFrozenNote.store (meter.frozenNote);
 }
 
 void AudioHost::audioDeviceAboutToStart (juce::AudioIODevice* device)
@@ -227,7 +179,8 @@ void AudioHost::audioDeviceStopped()
     mRunning.store (false);
     mActive.store (false);
     mHeld.store (false);
-    mTriad.store (0);
+    mTriadCount.store (0);
+    mFrozenNote.store (-1);
     mVoiced.store (false);
     mNote.store (-1);
     mLevelDb.store (-120.0f);

@@ -12,6 +12,7 @@ namespace
     constexpr double kLevelWindowSec = 0.005;
     constexpr float  kRangeMarginSemis = 1.2f;   // search a little beyond the note range
     constexpr float  kIdleSkipDb = 18.0f;        // this far below the gate nothing can start
+    constexpr float  kMpeBendRange = 48.0f;      // what MPE instruments expect on the member channels
 
     inline double noteToHz (double note, double a4) noexcept
     {
@@ -114,8 +115,17 @@ void Engine::configure (const Settings& s)
     highpass.setHighpass (fs, 0.6 * noteToHz ((double) lowest, a4), 0.70710678);
 }
 
-void Engine::process (const float* input, int numSamples, const Settings& settings, MidiEventList& out)
+Settings Engine::effective (const Settings& s) noexcept
 {
+    Settings e = s;
+    if (e.mpe)
+        e.bendRangeSemis = kMpeBendRange;
+    return e;
+}
+
+void Engine::process (const float* input, int numSamples, const Settings& userSettings, MidiEventList& out)
+{
+    const Settings settings = effective (userSettings);
     configure (settings);
     lastSettings = settings;
 
@@ -209,8 +219,9 @@ void Engine::analyseHop (const Settings& s, int offset, MidiEventList& out)
     currentMeter.outputPitch = ! stage.isSounding() ? 0.0f
                              : (stage.isHeld() || ! tracker.isActive() ? (float) stage.note() : tracker.outputPitch());
     currentMeter.triadCount = stage.triadCount();
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < scale::kMaxVoices; ++i)
         currentMeter.triad[i] = i < stage.triadCount() ? stage.triadNote (i) : -1;
+    currentMeter.frozenNote = stage.frozenNote();
 
     if (trace != nullptr)
     {
@@ -235,6 +246,7 @@ void Engine::shutdown (MidiEventList& out)
     currentMeter.active = currentMeter.held = false;
     currentMeter.note = -1;
     currentMeter.triadCount = 0;
+    currentMeter.frozenNote = -1;
 }
 
 void Engine::silenceOutput (const Settings& s, int offset, MidiEventList& out)
@@ -245,12 +257,18 @@ void Engine::silenceOutput (const Settings& s, int offset, MidiEventList& out)
     stage.releaseAll (offset, out);
 
     // All notes off as well, in case the instrument missed something earlier.
+    appendAllNotesOff (s, offset, out);
+}
+
+void Engine::appendAllNotesOff (const Settings& s, int offset, MidiEventList& out)
+{
     const int mainChannel = std::min (std::max (s.midiChannel, 1), 16) - 1;
-    const int triadChannel = std::min (std::max (s.triadChannel, 1), 16) - 1;
-    const int channels[2] = { mainChannel, s.triad && triadChannel != mainChannel ? triadChannel : -1 };
-    for (int channel : channels)
+    const int harmonyChannel = std::min (std::max (s.triadChannel, 1), 16) - 1;
+
+    for (int channel = 0; channel < 16; ++channel)
     {
-        if (channel < 0)
+        const bool solo = s.mpe ? channel >= 1 : channel == mainChannel;
+        if (! solo && ! (s.triad && channel == harmonyChannel))
             continue;
 
         MidiEvent e;

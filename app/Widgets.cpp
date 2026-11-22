@@ -21,9 +21,17 @@ juce::String noteName (int midiNote)
 }
 
 //==============================================================================
+ButtonRow::~ButtonRow()
+{
+    for (auto& b : items)
+        if (b != nullptr)
+            b->removeListener (this);
+}
+
 void ButtonRow::add (juce::Button& b)
 {
     items.push_back (&b);
+    b.addListener (this);
     addAndMakeVisible (b);
 }
 
@@ -35,9 +43,9 @@ void ButtonRow::resized()
 
     std::vector<float> wanted;
     float total = 0.0f;
-    for (auto* b : items)
+    for (auto& b : items)
     {
-        wanted.push_back (juce::GlyphArrangement::getStringWidth (font (13.0f), b->getButtonText()));
+        wanted.push_back (b != nullptr ? juce::GlyphArrangement::getStringWidth (font (13.0f), b->getButtonText()) : 0.0f);
         total += wanted.back();
     }
 
@@ -46,8 +54,49 @@ void ButtonRow::resized()
     for (int i = 0; i < n; ++i)
     {
         const float right = i == n - 1 ? (float) getWidth() : x + wanted[(size_t) i] + spare;
-        items[(size_t) i]->setBounds (juce::roundToInt (x), 0, juce::roundToInt (right) - juce::roundToInt (x), getHeight());
+        if (auto* b = items[(size_t) i].getComponent())
+            b->setBounds (juce::roundToInt (x), 0, juce::roundToInt (right) - juce::roundToInt (x), getHeight());
         x = right;
+    }
+}
+
+void ButtonRow::paint (juce::Graphics& g)
+{
+    const auto r = getLocalBounds().toFloat();
+    const int n = (int) items.size();
+    const auto isOn = [this, n] (int i) { return i >= 0 && i < n && items[(size_t) i] != nullptr && items[(size_t) i]->getToggleState(); };
+    const bool enabled = n == 0 || items.front() == nullptr || items.front()->isEnabled();
+    const float alpha = enabled ? 1.0f : 0.5f;
+
+    g.setColour (colour::control.withMultipliedAlpha (alpha));
+    g.fillRoundedRectangle (r, kControlRadius);
+
+    for (int i = 0; i < n; ++i)
+    {
+        auto* b = items[(size_t) i].getComponent();
+        if (b == nullptr)
+            continue;
+
+        const auto area = b->getBounds().toFloat();
+        const auto plate = area.reduced (2.0f);
+
+        if (isOn (i))
+        {
+            g.setColour (colour::selected.withMultipliedAlpha (alpha));
+            g.fillRoundedRectangle (plate, kControlRadius - 1.5f);
+        }
+        else if (enabled && (b->isOver() || b->isDown()))
+        {
+            g.setColour (juce::Colours::white.withAlpha (b->isDown() ? 0.07f : 0.04f));
+            g.fillRoundedRectangle (plate, kControlRadius - 1.5f);
+        }
+
+        // a hairline only between two segments that are both not chosen
+        if (i < n - 1 && ! isOn (i) && ! isOn (i + 1))
+        {
+            g.setColour (colour::window.withAlpha (0.8f * alpha));
+            g.fillRect (area.getRight() - 0.5f, r.getY() + 6.0f, 1.0f, r.getHeight() - 12.0f);
+        }
     }
 }
 
@@ -65,7 +114,8 @@ void LiveDisplay::push (const LiveFrame& f, float a4Hz)
 
     const bool live = f.active || f.heard;
     const auto& before = frames[(size_t) ((head + kFrames - 1) % kFrames)];
-    const bool changed = f.enabled != before.enabled || f.triadCount != before.triadCount || f.held != before.held;
+    const bool changed = f.enabled != before.enabled || f.triadCount != before.triadCount || f.held != before.held
+                      || f.frozenNote != before.frozenNote || f.harmonyFrozen != before.harmonyFrozen;
     idleFrames = live || changed ? 0 : juce::jmin (kFrames, idleFrames + 1);
 
     if (live)
@@ -172,17 +222,19 @@ void LiveDisplay::paintNote (juce::Graphics& g, juce::Rectangle<float> r)
 
     auto out = juce::Rectangle<float> (r.getX(), row.getBottom() + 12.0f, r.getWidth(), 17.0f);
     g.setFont (font (12.5f));
-    g.setColour (f.active ? colour::secondary : colour::tertiary);
-    g.drawText (! f.active ? text ("Keine MIDI-Note")
-                           : "MIDI-Note " + juce::String (f.note) + (f.held ? ", gehalten" : ""),
+    g.setColour (f.active || f.frozenNote >= 0 ? colour::secondary : colour::tertiary);
+    g.drawText (f.frozenNote >= 0 ? "Solo eingefroren: " + noteName (f.frozenNote)
+                : ! f.active      ? text ("Keine MIDI-Note")
+                                  : "MIDI-Note " + juce::String (f.note) + (f.held ? ", gehalten" : ""),
                 out, juce::Justification::centredLeft);
 
     if (f.triadCount > 0)
     {
-        juce::String chord = "Dreiklang";
+        juce::String chord = f.harmonyFrozen ? "Harmonie eingefroren:" : "Harmonie";
         for (int i = 0; i < f.triadCount; ++i)
             chord << " " << noteName (f.triad[i]);
-        g.drawText (chord, out.translated (0.0f, 17.0f), juce::Justification::centredLeft);
+        g.setColour (colour::secondary);
+        g.drawText (chord, out.translated (0.0f, 17.0f), juce::Justification::centredLeft, true);
     }
 }
 
@@ -281,13 +333,14 @@ void LiveDisplay::paintHistory (juce::Graphics& g, juce::Rectangle<float> r)
 }
 
 //==============================================================================
-void LevelMeter::update (float levelDb, float gateDb, bool clipped)
+void LevelMeter::update (float levelDb, float gateDb, float gateOffDb, bool clipped)
 {
     const float next = juce::jmax (levelDb, shown - 1.5f); // quick up, slower down
-    if (std::abs (next - shown) < 0.05f && gateDb == gate && clipped == clip)
+    if (std::abs (next - shown) < 0.05f && gateDb == gate && gateOffDb == gateOff && clipped == clip)
         return;
     shown = next;
     gate = gateDb;
+    gateOff = gateOffDb;
     clip = clipped;
     repaint();
 }
@@ -309,7 +362,13 @@ void LevelMeter::paint (juce::Graphics& g)
         g.fillRoundedRectangle (r.withRight (x), 2.0f);
     }
 
-    const float gx = std::round (toX (gate));
+    // the two thresholds: a note may start above the tall mark and ends below the short one
+    const float gx = std::round (toX (gate)), ox = std::round (toX (juce::jmin (gate, gateOff)));
+    if (ox < gx)
+    {
+        g.setColour (colour::secondary);
+        g.fillRect (ox - 0.5f, (float) getHeight() * 0.5f - 4.0f, 1.0f, 8.0f);
+    }
     g.setColour (colour::text);
     g.fillRect (gx - 0.5f, (float) getHeight() * 0.5f - 6.0f, 1.0f, 12.0f);
 }

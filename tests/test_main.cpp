@@ -85,6 +85,8 @@ vm::Settings baseSettings()
 double periodMs (double note) { return 1000.0 / noteToHz (note); }
 
 #include "test_stage.h"
+#include "test_stage2.h"
+#include "test_tracker2.h"
 
 //==============================================================================
 // Single bowed notes over the whole range of a 7-string violin.
@@ -1118,7 +1120,22 @@ const TestCase kTests[] = {
     { "bend range small", bendRangeSmall },
     { "key filter audio", keyFilterAudio },
     { "master switch", masterSwitch },
+    { "scales and voicings", scalesAndVoicings },
+    { "harmony follows pitch", harmonyFollowsPitch },
+    { "harmony settings", harmonySettings },
+    { "harmony settings: identical voices kept", harmonyNoRetrigger },
+    { "dynamics controllers", dynamicsControllers },
+    { "mpe", mpeTests },
+    { "freeze", freezeTests },
+    { "freeze collisions", freezeCollisions },
+    { "engine: mpe, freeze, all notes off", engineMpeFreeze },
+    { "stage random 2", stageRandom2 },
     { "performance", performance },
+    { "gate in/out", trackerGateInOut },
+    { "octave guards", trackerOctaveGuards },
+    { "articulation", trackerArticulation },
+    { "dynamics target", trackerDynamicsTarget },
+    { "dynamics smoothing", trackerDynamicsSmoothing },
 };
 
 } // namespace

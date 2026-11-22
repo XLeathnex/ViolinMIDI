@@ -55,14 +55,22 @@ public:
     void cancelLearn();
     int learningIndex() const noexcept { return learning; }
 
+    //--- program change: switches presets; never a binding
+    /** Which channel's program changes are passed on: -1 = none, 0 = every channel, 1..16. */
+    void setProgramChannel (int channel);
+    int  programChannel() const noexcept   { return programChan; }
+
     /** The last message received, for the table ("CC 64, Kanal 1, Wert 127"); empty before the first. */
     juce::String lastMessageText() const { return lastText; }
 
     /** Message thread: a bound controller (value 0..127) or note-on (velocity) arrived. */
     std::function<void (int paramIndex, bool isNote, int value)> onParam;
 
+    /** Message thread: a program change arrived on the chosen channel, program 0..127. */
+    std::function<void (int program)> onProgramChange;
+
 private:
-    struct Message { uint8_t status = 0, number = 0, value = 0; };   // status with channel
+    struct Message { uint8_t status = 0, number = 0, value = 0; };   // status with channel; value is 0 for a program change
 
     void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage&) override;
     void handleAsyncUpdate() override;
@@ -73,6 +81,7 @@ private:
     juce::MidiDeviceListConnection deviceListConnection;
     std::vector<Binding> bindings;
     int learning = -1;
+    int programChan = 0;
 
     // MIDI thread -> message thread
     static constexpr int kQueueSize = 256;

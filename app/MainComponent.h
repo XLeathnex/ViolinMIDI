@@ -1,34 +1,40 @@
-// The main window: the live display across the top, the settings in columns
-// below (in the order the signal takes), one status line at the bottom.
+// The main window: the presets across the top, the live display below them,
+// the settings in columns (in the order the signal takes), one status line at
+// the bottom.
 //
 // Adding a control: create it in the constructor, add it to a column with
-// addItem(), read and write it in pushSettings() / applySettingsToControls()
-// and store its value in SettingsStore. The layout follows by itself. To make
-// it controllable by MIDI as well, add one entry in Params.cpp.
+// addItem(), read and write it in pushSettings() / applySettingsToControls().
+// The layout follows by itself. An engine setting is stored (settings file and
+// presets) by one line in SettingsFields.cpp; to make it controllable by MIDI
+// as well, add one entry in Params.cpp.
 #pragma once
 
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include "AudioHost.h"
 #include "MidiRemote.h"
+#include "PresetBar.h"
+#include "PresetStore.h"
 #include "SettingsStore.h"
 #include "UpdateManager.h"
 #include "Widgets.h"
 
+#include <memory>
 #include <vector>
 
 /** UTF-8 text literal to juce::String (the sources contain German text). */
 inline juce::String U (const char* utf8) { return juce::String::fromUTF8 (utf8); }
 
-/** Two controls in one row: the left one with a fixed width. */
+/** Two controls in one row: one of them with a fixed width. */
 class SplitRow final : public juce::Component
 {
 public:
-    void set (juce::Component& leftControl, juce::Component& rightControl, int leftWidth)
+    void set (juce::Component& leftControl, juce::Component& rightControl, int fixedWidth, bool fixedIsRight = false)
     {
         left = &leftControl;
         right = &rightControl;
-        width = leftWidth;
+        width = fixedWidth;
+        rightFixed = fixedIsRight;
         addAndMakeVisible (leftControl);
         addAndMakeVisible (rightControl);
     }
@@ -36,15 +42,28 @@ public:
     void resized() override
     {
         auto r = getLocalBounds();
-        if (left != nullptr)  left->setBounds (r.removeFromLeft (width));
-        r.removeFromLeft (6);
-        if (right != nullptr) right->setBounds (r);
+        if (left == nullptr || right == nullptr)
+            return;
+
+        if (rightFixed)
+        {
+            right->setBounds (r.removeFromRight (width));
+            r.removeFromRight (6);
+            left->setBounds (r);
+        }
+        else
+        {
+            left->setBounds (r.removeFromLeft (width));
+            r.removeFromLeft (6);
+            right->setBounds (r);
+        }
     }
 
 private:
     juce::Component* left = nullptr;
     juce::Component* right = nullptr;
     int width = 60;
+    bool rightFixed = false;
 };
 
 class MainComponent final : public juce::Component,
@@ -58,6 +77,9 @@ public:
         bool demo = false;              ///< play a built-in melody into the displays
         bool showSettingsAtStart = false;
         int  settingsPage = 0;          ///< page of the settings window opened at start
+        bool showVoicingAtStart = false; ///< open the free-voicing panel (layout checks)
+        bool showOctaveAtStart = false;  ///< open the octave panel (layout checks)
+        int  showMenuAtStart = 0;        ///< 1: open the list of scales, 2: the list of voicings (layout checks)
         juce::String notice;            ///< shown in the status line at start
     };
 
@@ -98,6 +120,7 @@ private:
     void setupBox (juce::ComboBox&, const juce::String& tooltip);
     void setupSegments (juce::TextButton* buttons, ButtonRow& row, int radioGroup,
                         const juce::StringArray& names, const juce::StringArray& tips);
+    void setupLatch (juce::TextButton&, const juce::String& text, const juce::String& tooltip);
     static int selectedSegment (const juce::TextButton* buttons, int count);
 
     void applySettingsToControls();
@@ -105,7 +128,10 @@ private:
     void updateValueLabels();
     void setMode (int index);
     void remoteControl (int paramIndex, bool isNote, int value);
+    void allNotesOff();
     void showSettings();
+    void showVoicingPanel();
+    void showOctavePanel();
     void refreshUpdateButton();
     AudioHost::Meters demoMeters();
     void updateStatus (const AudioHost::Meters&);
@@ -121,20 +147,27 @@ private:
     juce::TooltipWindow tooltips { this, 700 };
     juce::Component::SafePointer<juce::DialogWindow> settingsDialog;
 
+    // presets
+    std::unique_ptr<PresetStore> presets;
+    std::unique_ptr<PresetBar> presetBar;
+    juce::String presetImage;        // the settings as the current preset holds them
+
     LiveDisplay display;
-    juce::TextButton masterButton;   // sits on the display, under the note
+    juce::TextButton masterButton;   // these three sit on the display, under the note
+    juce::TextButton freezeSoloButton, freezeHarmonyButton;
 
     // input
     LevelMeter levelMeter;
-    juce::Label meterName, meterValue, gainName, gainValue, gateName, gateValue;
-    juce::Slider gainSlider, gateSlider;
+    juce::Label meterName, meterValue, gainName, gainValue, gateName, gateValue, gateOffName, gateOffValue;
+    juce::Slider gainSlider, gateSlider, gateOffSlider;
 
     // detection
-    juce::Label responseName, lowestName, tuningName, tuningValue;
-    juce::TextButton responseButtons[3];
-    ButtonRow responseRow;
+    juce::Label responseName, lowestName, tuningName, tuningValue, octaveName, articulationName;
+    juce::TextButton responseButtons[3], articulationButtons[3];
+    ButtonRow responseRow, articulationRow;
     juce::ComboBox lowestBox;
     juce::Slider tuningSlider;
+    juce::TextButton octaveButton;
 
     // pitch
     juce::Label modeName, bendRangeName, smoothingName, smoothingValue;
@@ -143,17 +176,24 @@ private:
     juce::ComboBox bendRangeBox;
     juce::Slider smoothingSlider;
 
-    // key and triad
-    juce::Label keyName, filterName, holdName, triadName;
+    // key
+    juce::Label keyName, filterName, holdName;
     juce::ComboBox rootBox, scaleBox;
     SplitRow keyRow;
-    juce::TextButton filterButtons[3], holdButtons[2], triadButtons[3];
-    ButtonRow filterRow, holdRow, triadRow;
+    juce::TextButton filterButtons[2], holdButtons[2];
+    ButtonRow filterRow, holdRow;
+
+    // harmony
+    juce::Label triadName, voicingName, harmonyModeName, triadChannelName;
+    juce::TextButton triadButtons[2], harmonyModeButtons[2], voicingEditButton;
+    ButtonRow triadRow, harmonyModeRow;
+    juce::ComboBox voicingBox, triadChannelBox;
+    SplitRow voicingRow;
 
     // MIDI
-    juce::Label channelName, triadChannelName, dynamicsName, velocityName, velocityValue;
-    juce::ComboBox channelBox, triadChannelBox, dynamicsBox;
-    juce::Slider velocitySlider;
+    juce::Label channelName, dynamicsName, targetName, dynSmoothingName, dynSmoothingValue, velocityName, velocityValue;
+    juce::ComboBox channelBox, dynamicsBox, targetBox;
+    juce::Slider dynSmoothingSlider, velocitySlider;
 
     // status line
     juce::TextButton settingsButton, updateButton, panicButton;

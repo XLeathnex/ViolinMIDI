@@ -5,7 +5,8 @@
 //   * a finger sliding on the string is a continuous change -> pitch bend
 //   * a new bow stroke on the same pitch (level dips, then rises) -> new note
 //   * vibrato can be passed on, filtered out, or ignored (three bend modes)
-//   * bow loudness is followed continuously with expression (CC11)
+//   * bow loudness is followed continuously with a controller (CC11, CC1 or CC2)
+//   * velocity can also reflect how the note began (plucked or bowed)
 #pragma once
 
 #include "Types.h"
@@ -48,7 +49,9 @@ public:
 
 private:
     void applySettings (const Settings& s, int offset, MidiEventList& out);
-    void updateExpression (float levelDb, int offset, MidiEventList& out, bool force);
+    enum class ExprUpdate { Follow, Raise, Seed };
+    void updateExpression (float levelDb, int offset, MidiEventList& out, ExprUpdate kind);
+    void handBackControllers (unsigned mask, int offset, MidiEventList& out);
     void processIdle (const Input& in, int offset, MidiEventList& out);
     void processActive (const Input& in, int offset, MidiEventList& out);
     void startNote (float pitch, float levelDb, int offset, MidiEventList& out);
@@ -59,6 +62,8 @@ private:
     void sendBendValue (int value14, int offset, MidiEventList& out);
     void sendController (int number, int value, int offset, MidiEventList& out);
     int  velocityFor (float levelDb) const noexcept;
+    int  noteOnVelocity (float levelDb, bool softStart) const noexcept;
+    float attackSlopeDbPerMs() const noexcept;
     int  clampNote (int n) const noexcept;
     float periodInHops (float pitch) const noexcept;
     bool  attackInProgress() const noexcept;
@@ -79,6 +84,7 @@ private:
     float onsetClarity = 0.80f, sustainClarity = 0.55f, holdPeriods = 1.15f, onsetPeriods = 1.0f;
     float peakDecayPerHop = 0.004f, recentDecayPerHop = 0.08f, onsetGateDecayPerHop = 0.027f;
     float exprAttack = 0.2f, exprRelease = 0.03f;
+    float exprSmoothCoeff = 1.0f;   // extra one-pole on the controller level, 1 = none
 
     // note state
     bool  active = false;
@@ -99,6 +105,11 @@ private:
     static constexpr int kLevelHistory = 16;
     float levelHistory[kLevelHistory] = {};
     int   levelHistoryPos = 0;
+
+    // longer level memory, only read at a note-on (articulation)
+    static constexpr int kRiseHistory = 64;
+    float riseHistory[kRiseHistory] = {};
+    int   riseHistoryPos = 0;
 
     // onset
     int   candCount = 0;
@@ -133,7 +144,8 @@ private:
     int   lastExpression = -1;
     int   hopsSinceExpression = 1000;
     float expressionDb = -120.0f;
-    bool  expressionOwned = false; // we have sent CC11 and must hand it back
+    float exprSmoothDb = -120.0f;  // expressionDb after the extra smoothing
+    unsigned ownedControllers = 0; // kOwn* bits: sent by us, must be handed back
 };
 
 } // namespace vm

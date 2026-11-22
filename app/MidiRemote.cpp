@@ -232,14 +232,28 @@ void MidiRemote::cancelLearn()
     sendChangeMessage();
 }
 
+void MidiRemote::setProgramChannel (int channel)
+{
+    channel = juce::jlimit (-1, 16, channel);
+
+    if (programChan == channel)
+        return;
+
+    programChan = channel;
+    sendChangeMessage();
+}
+
 //==============================================================================
 void MidiRemote::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message)
 {
     // MIDI thread: no locks, no allocation, no device calls.
-    if (! (message.isController() || message.isNoteOn()))   // isNoteOn() is false for velocity 0
+    const bool isProgram = message.isProgramChange();
+
+    if (! (message.isController() || message.isNoteOn() || isProgram))   // isNoteOn() is false for velocity 0
         return;
 
-    if (message.getRawDataSize() < 3)
+    // A program change has one data byte, the others two.
+    if (message.getRawDataSize() < (isProgram ? 2 : 3))
         return;
 
     const auto* data = message.getRawData();
@@ -253,7 +267,7 @@ void MidiRemote::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMe
     auto& slot = queue[(size_t) start1];
     slot.status = data[0];
     slot.number = (uint8_t) (data[1] & 0x7f);
-    slot.value  = (uint8_t) (data[2] & 0x7f);
+    slot.value  = isProgram ? (uint8_t) 0 : (uint8_t) (data[2] & 0x7f);
     fifo.finishedWrite (1);
 
     triggerAsyncUpdate();
@@ -272,8 +286,20 @@ void MidiRemote::handleAsyncUpdate()
         const auto m = queue[(size_t) start1];
         fifo.finishedRead (1);
 
+        const bool isProgram = (m.status & 0xf0) == 0xc0;
         const bool isNote = (m.status & 0xf0) == 0x90;
         const int channel = (m.status & 0x0f) + 1;
+
+        if (isProgram)
+        {
+            lastText = "Program Change " + juce::String ((int) m.number) + ", Kanal " + juce::String (channel);
+
+            // Never learned, never a binding: it only switches presets.
+            if (programChan >= 0 && (programChan == 0 || programChan == channel) && onProgramChange)
+                onProgramChange ((int) m.number);
+
+            continue;
+        }
 
         lastText = juce::String (isNote ? "Note " : "CC ") + juce::String ((int) m.number)
                  + ", Kanal " + juce::String (channel)

@@ -31,7 +31,7 @@ namespace
     constexpr double kVibratoWindowMaxSec = 0.36; // at vibratoSmoothing = 1; the default 0.5 gives 180 ms
 
     // --- level
-    constexpr float kGateHysteresisDb = 6.0f;    // note ends this far below the gate
+    // A note starts above Settings::gateDb ("in") and ends below Settings::gateOffDb ("out").
     constexpr float kRelativeDropDb   = 30.0f;   // ...or this far below its own peak
     constexpr float kDipDb            = 9.0f;    // a new bow stroke: level dips this much...
     constexpr float kRiseDb           = 6.0f;    // ...and comes back up by this much
@@ -54,8 +54,51 @@ namespace
     constexpr float kDynFloorDb       = -54.0f;  // level mapped to the softest value
     constexpr float kDynCeilDb        = -12.0f;  // level mapped to the loudest value
     constexpr int   kExpressionFloor  = 40;
-    constexpr int   kExpressionController = 11;
     constexpr int   kBendCentre       = 8192;
+
+    // --- controllers that may carry the bow loudness (Settings::dynamicsTarget)
+    // Sent in this order; each is handed back to its neutral value.
+    constexpr unsigned kOwnModWheel   = 1u;   // CC 1  -> 0
+    constexpr unsigned kOwnBreath     = 2u;   // CC 2  -> 127
+    constexpr unsigned kOwnExpression = 4u;   // CC 11 -> 127
+    struct LoudnessController { unsigned bit; int number; int neutral; };
+    constexpr LoudnessController kLoudnessControllers[] = {
+        { kOwnModWheel,    1,  0   },
+        { kOwnBreath,      2,  127 },
+        { kOwnExpression,  11, 127 }
+    };
+
+    inline unsigned controllersFor (DynamicsTarget t) noexcept
+    {
+        switch (t)
+        {
+            case DynamicsTarget::ModWheel:         return kOwnModWheel;
+            case DynamicsTarget::Breath:           return kOwnBreath;
+            case DynamicsTarget::ModAndExpression: return kOwnModWheel | kOwnExpression;
+            case DynamicsTarget::Expression:       break;
+        }
+        return kOwnExpression;
+    }
+
+    // --- articulation (Settings::articulation)
+    // The steepness of a start is how fast the level climbed through the band
+    // from 36 dB to 12 dB below its value at the note-on, in dB per ms. The
+    // band sits low because a bowed note is often started while its level is
+    // still rising; what tells a pluck from a bow is how it leaves the floor
+    // (a pluck jumps 30..50 dB within one or two hops, a bow climbs 5..10 dB
+    // per hop). Measured with tests/Synth.h at 750 hops/s, notes 57..93,
+    // -14 and -28 dB: plucks (2 ms attack) 10.8 .. 20 dB/ms, bowed starts
+    // (20 and 40 ms bow attack, notes 45..93) 2.0 .. 6.4 dB/ms. Low strings
+    // read slower, since the level is measured over whole periods: a loud
+    // pluck on A2 (45) measures about 4.5 dB/ms.
+    constexpr float kArticBandLowDb     = 36.0f;
+    constexpr float kArticBandHighDb    = 12.0f;
+    constexpr float kArticFloorMarginDb = 3.0f;  // a high noise floor: the band starts this far above it
+    constexpr float kArticMinBandDb     = 12.0f; // less rise than this out of the floor: a soft start
+    constexpr float kArticSoftDbPerMs   = 7.5f;  // this slow or slower: soft start, 45..65
+    constexpr float kArticSteepDbPerMs  = 9.5f;  // this steep or steeper: hard start, 95..127
+    constexpr int   kArticSoftLow  = 45, kArticSoftHigh  = 65;
+    constexpr int   kArticSteepLow = 95, kArticSteepHigh = 127;
 
     inline float clampf (float v, float lo, float hi) noexcept { return std::min (hi, std::max (lo, v)); }
     inline int   clampi (int v, int lo, int hi) noexcept       { return std::min (hi, std::max (lo, v)); }
@@ -72,6 +115,15 @@ namespace
         return std::max (minimum, (int) std::lround (seconds * hopRate));
     }
 
+    /** Hops for an octave guard: none when off or at 0 ms. The defaults (50 / 11 ms)
+        give exactly the former fixed hopsFor (0.050 / 0.011, hopRate, 3). */
+    inline int guardHops (bool on, float ms, double hopRate) noexcept
+    {
+        if (! on || ! (ms > 0.0f))
+            return 0;
+        return hopsFor ((double) ms / 1000.0, hopRate, 3);
+    }
+
     Settings sanitised (Settings s) noexcept
     {
         s.bendRangeSemis = clampf (s.bendRangeSemis, 0.1f, 96.0f);
@@ -81,6 +133,14 @@ namespace
         s.fixedVelocity  = clampi (s.fixedVelocity, 1, 127);
         s.midiChannel    = clampi (s.midiChannel, 1, 16);
         s.gateDb         = clampf (s.gateDb, -90.0f, 0.0f);
+        s.gateOffDb      = std::min (clampf (s.gateOffDb, -96.0f, 0.0f), s.gateDb); // out never above in
+        s.octaveAttackMs  = clampf (s.octaveAttackMs, 0.0f, 60.0f);
+        s.octaveSustainMs = clampf (s.octaveSustainMs, 0.0f, 100.0f);
+        s.dynamicsSmoothingMs = clampf (s.dynamicsSmoothingMs, 0.0f, 150.0f);
+        if ((int) s.articulation < 0 || (int) s.articulation > 2)
+            s.articulation = Articulation::Off;
+        if ((int) s.dynamicsTarget < 0 || (int) s.dynamicsTarget > 3)
+            s.dynamicsTarget = DynamicsTarget::Expression;
         s.a4Hz           = clampf (s.a4Hz, kMinA4Hz, kMaxA4Hz);
         return s;
     }
@@ -124,7 +184,7 @@ void NoteTracker::reset() noexcept
     quietHops = 0;
     noteAgeHops = 0;
     dipArmed = false;
-    notePeakDb = recentMaxDb = expressionDb = lastLevelDb = -120.0f;
+    notePeakDb = recentMaxDb = expressionDb = exprSmoothDb = lastLevelDb = -120.0f;
     onsetGateDb = -200.0f;
     idleMinDb = -200.0f;
     hopsSinceNoteEnd = 1000000;
@@ -134,10 +194,13 @@ void NoteTracker::reset() noexcept
     for (float& l : levelHistory)
         l = -120.0f;
     levelHistoryPos = 0;
+    for (float& l : riseHistory)
+        l = -120.0f;
+    riseHistoryPos = 0;
     lastBend14 = -1;
     lastExpression = -1;
     hopsSinceExpression = 1000;
-    expressionOwned = false;
+    ownedControllers = 0;
     resetSmoother (60.0f);
     fillHistory (60.0f);
 }
@@ -146,10 +209,12 @@ void NoteTracker::reset() noexcept
 void NoteTracker::process (const Input& in, const Settings& settings, int offset, MidiEventList& out)
 {
     applySettings (sanitised (settings), offset, out);
-    updateExpression (in.levelDb, offset, out, false);
+    updateExpression (in.levelDb, offset, out, ExprUpdate::Follow);
     lastLevelDb = in.levelDb;
     levelHistory[levelHistoryPos] = in.levelDb;
     levelHistoryPos = (levelHistoryPos + 1) % kLevelHistory;
+    riseHistory[riseHistoryPos] = in.levelDb;
+    riseHistoryPos = (riseHistoryPos + 1) % kRiseHistory;
 
     if (active)
         processActive (in, offset, out);
@@ -166,8 +231,7 @@ void NoteTracker::shutdown (int offset, MidiEventList& out)
     {
         if (lastBend14 != kBendCentre && lastBend14 >= 0)
             sendBendValue (kBendCentre, offset, out);
-        if (expressionOwned)
-            sendController (kExpressionController, 127, offset, out);
+        handBackControllers (ownedControllers, offset, out);
     }
 
     reset();
@@ -184,19 +248,23 @@ void NoteTracker::applySettings (const Settings& s, int offset, MidiEventList& o
             endNote (offset, out);
         if (lastBend14 != kBendCentre && lastBend14 >= 0)
             sendBendValue (kBendCentre, offset, out);
-        if (expressionOwned)
-            sendController (kExpressionController, 127, offset, out);
+        handBackControllers (ownedControllers, offset, out);
         lastBend14 = -1;
         lastExpression = -1;
-        expressionOwned = false;
     }
 
     if (! first && cfg.dynamics == DynamicsMode::Continuous && s.dynamics != DynamicsMode::Continuous)
     {
         // Hand the instrument's volume back, otherwise it would stay quiet.
-        if (expressionOwned)
-            sendController (kExpressionController, 127, offset, out);
-        expressionOwned = false;
+        handBackControllers (ownedControllers, offset, out);
+        lastExpression = -1;
+    }
+
+    if (! first && s.dynamicsTarget != cfg.dynamicsTarget)
+    {
+        // Controllers no longer used go back at once; the new ones carry the
+        // level from the next update on.
+        handBackControllers (ownedControllers & ~controllersFor (s.dynamicsTarget), offset, out);
         lastExpression = -1;
     }
 
@@ -205,6 +273,11 @@ void NoteTracker::applySettings (const Settings& s, int offset, MidiEventList& o
     const bool rangeChanged = first || s.bendRangeSemis != cfg.bendRangeSemis;
     const bool responseChanged = first || s.response != cfg.response;
     const bool smoothingChanged = first || s.vibratoSmoothing != cfg.vibratoSmoothing;
+    const bool guardsChanged = first || s.octaveAttackGuard != cfg.octaveAttackGuard
+                            || s.octaveAttackMs != cfg.octaveAttackMs
+                            || s.octaveSustainGuard != cfg.octaveSustainGuard
+                            || s.octaveSustainMs != cfg.octaveSustainMs;
+    const bool exprSmoothingChanged = first || s.dynamicsSmoothingMs != cfg.dynamicsSmoothingMs;
 
     cfg = s;
     haveCfg = true;
@@ -227,6 +300,20 @@ void NoteTracker::applySettings (const Settings& s, int offset, MidiEventList& o
             case Response::Safe:   confirmHops = 5; onsetClarity = 0.86f; stableHops = 3; holdPeriods = 1.50f; onsetPeriods = 2.0f; break;
         }
         sustainClarity = 0.55f;
+    }
+
+    if (guardsChanged)
+    {
+        doubtHops        = guardHops (cfg.octaveAttackGuard, cfg.octaveAttackMs, hopRate);
+        octaveStableHops = guardHops (cfg.octaveSustainGuard, cfg.octaveSustainMs, hopRate);
+    }
+
+    if (exprSmoothingChanged)
+    {
+        exprSmoothCoeff = cfg.dynamicsSmoothingMs > 0.0f
+                            ? (float) (1.0 - std::exp (-1.0 / ((double) cfg.dynamicsSmoothingMs * 0.001 * hopRate)))
+                            : 1.0f;
+        exprSmoothDb = expressionDb;
     }
 
     if (smoothingChanged)
@@ -252,30 +339,60 @@ void NoteTracker::applySettings (const Settings& s, int offset, MidiEventList& o
 }
 
 //==============================================================================
-void NoteTracker::updateExpression (float levelDb, int offset, MidiEventList& out, bool force)
+void NoteTracker::updateExpression (float levelDb, int offset, MidiEventList& out, ExprUpdate kind)
 {
     if (hopsSinceExpression < 100000)
         ++hopsSinceExpression;
 
+    const bool force = kind != ExprUpdate::Follow;
     levelDb = clampf (levelDb, -120.0f, 20.0f);
     if (! force)
         expressionDb += (levelDb - expressionDb) * (levelDb > expressionDb ? exprAttack : exprRelease);
     else
         expressionDb = std::max (expressionDb, levelDb);
 
+    // Optional extra smoothing (dynamicsSmoothingMs). A new note starts from
+    // its own level; a finger change only lifts it, like expressionDb above.
+    float driveDb = expressionDb;
+    if (exprSmoothCoeff < 1.0f)
+    {
+        if (kind == ExprUpdate::Seed)
+            exprSmoothDb = expressionDb;
+        else if (kind == ExprUpdate::Raise)
+            exprSmoothDb = std::max (exprSmoothDb, expressionDb);
+        else
+            exprSmoothDb += (expressionDb - exprSmoothDb) * exprSmoothCoeff;
+        driveDb = exprSmoothDb;
+    }
+    else
+    {
+        exprSmoothDb = expressionDb;
+    }
+
     if (cfg.dynamics != DynamicsMode::Continuous)
         return;
 
-    const float x = clampf ((expressionDb - kDynFloorDb) / (kDynCeilDb - kDynFloorDb), 0.0f, 1.0f);
+    const float x = clampf ((driveDb - kDynFloorDb) / (kDynCeilDb - kDynFloorDb), 0.0f, 1.0f);
     const int value = kExpressionFloor + (int) std::lround (x * (float) (127 - kExpressionFloor));
 
     if (value != lastExpression && (force || hopsSinceExpression >= ccMinHops))
     {
-        sendController (kExpressionController, value, offset, out);
+        const unsigned targets = controllersFor (cfg.dynamicsTarget);
+        for (const LoudnessController& c : kLoudnessControllers)
+            if ((targets & c.bit) != 0)
+                sendController (c.number, value, offset, out);
         lastExpression = value;
         hopsSinceExpression = 0;
-        expressionOwned = true;
+        ownedControllers |= targets;
     }
+}
+
+void NoteTracker::handBackControllers (unsigned mask, int offset, MidiEventList& out)
+{
+    for (const LoudnessController& c : kLoudnessControllers)
+        if ((mask & ownedControllers & c.bit) != 0)
+            sendController (c.number, c.neutral, offset, out);
+    ownedControllers &= ~mask;
 }
 
 int NoteTracker::velocityFor (float levelDb) const noexcept
@@ -285,6 +402,66 @@ int NoteTracker::velocityFor (float levelDb) const noexcept
 
     const float x = clampf ((levelDb - kDynFloorDb) / (kDynCeilDb - kDynFloorDb), 0.0f, 1.0f);
     return clampi (1 + (int) std::lround (x * 126.0f), 1, 127);
+}
+
+float NoteTracker::attackSlopeDbPerMs() const noexcept
+{
+    // How fast did the level climb through the band kArticBandLowDb ..
+    // kArticBandHighDb below the level at the note-on? Crossing times are
+    // interpolated between hops. A start that does not come up from below the
+    // band within the memory (a re-bow out of a dip, a rise out of ringing)
+    // counts as soft.
+    auto level = [this] (int j) { return riseHistory[(riseHistoryPos + j) % kRiseHistory]; }; // 0 = oldest
+    const int n = kRiseHistory;
+    const float now = level (n - 1);
+    float floorDb = now;
+    for (int j = 0; j < n; ++j)
+        floorDb = std::min (floorDb, level (j));
+    // Over a noise floor less than 36 dB down, the band starts just above that floor.
+    const float lo = std::max (now - kArticBandLowDb, floorDb + kArticFloorMarginDb);
+    const float hi = now - kArticBandHighDb;
+    if (hi - lo < kArticMinBandDb)
+        return 0.0f;
+
+    int iLo = -1;
+    for (int j = n - 2; j >= 0; --j)
+        if (level (j) <= lo) { iLo = j; break; }
+    if (iLo < 0)
+        return 0.0f;
+
+    int iHi = -1;
+    for (int j = iLo + 1; j < n; ++j)
+        if (level (j) >= hi) { iHi = j; break; }
+    if (iHi < 0)
+        return 0.0f;
+
+    auto crossing = [&level] (int j, float threshold) // between hop j and j + 1
+    {
+        const float a = level (j), b = level (j + 1);
+        return (float) j + (b > a ? clampf ((threshold - a) / (b - a), 0.0f, 1.0f) : 0.0f);
+    };
+    const float hops = std::max (0.25f, crossing (iHi - 1, hi) - crossing (iLo, lo));
+    return (hi - lo) / (float) ((double) hops * 1000.0 / hopRate);
+}
+
+int NoteTracker::noteOnVelocity (float levelDb, bool softStart) const noexcept
+{
+    const int plain = velocityFor (levelDb);
+    if (cfg.dynamics == DynamicsMode::Fixed || cfg.articulation == Articulation::Off)
+        return plain;
+
+    // Steepness picks the range, loudness the place inside it.
+    const float steep = softStart ? 0.0f
+                                  : clampf ((attackSlopeDbPerMs() - kArticSoftDbPerMs)
+                                              / (kArticSteepDbPerMs - kArticSoftDbPerMs), 0.0f, 1.0f);
+    const float low  = (float) kArticSoftLow  + steep * (float) (kArticSteepLow  - kArticSoftLow);
+    const float high = (float) kArticSoftHigh + steep * (float) (kArticSteepHigh - kArticSoftHigh);
+    const float loud = clampf ((levelDb - kDynFloorDb) / (kDynCeilDb - kDynFloorDb), 0.0f, 1.0f);
+    const int strong = clampi ((int) std::lround (low + loud * (high - low)), 1, 127);
+
+    if (cfg.articulation == Articulation::Strong)
+        return strong;
+    return clampi ((plain + strong + 1) / 2, 1, 127);
 }
 
 float NoteTracker::periodInHops (float pitch) const noexcept
@@ -363,7 +540,7 @@ void NoteTracker::processIdle (const Input& in, int offset, MidiEventList& out)
     if ((float) hopsSinceNoteEnd < 3.0f * periodHops + (float) confirmHops)
         needed = std::max (needed, (int) std::ceil (holdPeriods * periodHops));
     if (in.octaveDoubt)
-        needed = std::max (needed, doubtHops); // might be an overtone squeak: wait and see
+        needed = std::max (needed, doubtHops); // might be an overtone squeak: wait and see (0: guard off)
     if (cfg.bendMode == BendMode::Quantized)
         needed = std::max (needed, (int) std::ceil (2.0f * periodHops) + 2); // no bend to correct it later
 
@@ -419,14 +596,14 @@ void NoteTracker::startNote (float pitch, float levelDb, int offset, MidiEventLi
         outPitch = pitch;
         sendBend (outPitch - (float) curNote, offset, out);
     }
-    updateExpression (levelDb, offset, out, true);
+    updateExpression (levelDb, offset, out, ExprUpdate::Seed);
 
     MidiEvent e;
     e.sampleOffset = offset;
     e.size = 3;
     e.bytes[0] = (uint8_t) (0x90 | curChannel);
     e.bytes[1] = (uint8_t) curNote;
-    e.bytes[2] = (uint8_t) velocityFor (levelDb);
+    e.bytes[2] = (uint8_t) noteOnVelocity (levelDb, false);
     out.push_back (e);
 }
 
@@ -466,7 +643,7 @@ void NoteTracker::switchNote (int newNote, float levelDb, int offset, MidiEventL
     else
         sendBend (outPitch - (float) curNote, offset, out);
 
-    updateExpression (levelDb, offset, out, true);
+    updateExpression (levelDb, offset, out, ExprUpdate::Raise);
 
     // New note first, then release the old one: mono instruments in legato
     // mode slur, polyphonic instruments simply play the next note.
@@ -475,7 +652,7 @@ void NoteTracker::switchNote (int newNote, float levelDb, int offset, MidiEventL
     on.size = 3;
     on.bytes[0] = (uint8_t) (0x90 | curChannel);
     on.bytes[1] = (uint8_t) curNote;
-    on.bytes[2] = (uint8_t) velocityFor (levelDb);
+    on.bytes[2] = (uint8_t) noteOnVelocity (levelDb, true); // no new attack: a soft start
     out.push_back (on);
 
     MidiEvent off;
@@ -499,7 +676,7 @@ void NoteTracker::processActive (const Input& in, int offset, MidiEventList& out
     notePeakDb  = std::max (notePeakDb - peakDecayPerHop, in.levelDb);
     recentMaxDb = std::max (recentMaxDb - recentDecayPerHop, in.levelDb);
 
-    const bool quiet = in.levelDb < cfg.gateDb - kGateHysteresisDb
+    const bool quiet = in.levelDb < cfg.gateOffDb
                     || in.levelDb < notePeakDb - kRelativeDropDb;
     if (quiet)
     {
@@ -604,14 +781,19 @@ void NoteTracker::processActive (const Input& in, int offset, MidiEventList& out
     const float interval = std::abs (in.pitch - frozenPitch);
     const float periodHops = periodInHops (in.pitch);
     int needed = std::max (stableHops, (int) std::ceil (holdPeriods * periodHops) + 1);
-    if (isOctaveLike (interval))
+    const bool octaveGuard = cfg.octaveSustainGuard;
+    if (octaveGuard && isOctaveLike (interval))
         needed = std::max (needed, octaveStableHops);
-    const int timeout = std::max (transitionMaxHops, (int) std::ceil (kTransitionMaxPeriods * periodHops));
+    int timeout = std::max (transitionMaxHops, (int) std::ceil (kTransitionMaxPeriods * periodHops));
+    // A longer octave time than the transition limit must not be cut short by
+    // it. At the default 11 ms this changes nothing (transitionMaxHops is larger).
+    if (octaveGuard && isOctaveLike (interval))
+        timeout = std::max (timeout, octaveStableHops);
 
     // An estimate one or more octaves down while the note's own period is
     // still clearly there is the detector slipping to a multiple of the
     // period (noise does that), not a new note. Only believed if it persists.
-    if (in.pitch < frozenPitch && isOctaveLike (interval)
+    if (octaveGuard && in.pitch < frozenPitch && isOctaveLike (interval)
         && in.hintClarity >= kSubharmonicHintClarity && transitionHops < subharmonicGuardHops)
         return;
 

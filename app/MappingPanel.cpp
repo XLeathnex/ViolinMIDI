@@ -187,6 +187,26 @@ MappingPanel::MappingPanel (MidiRemote& midiRemote)
     lastLabel.setMinimumHorizontalScale (0.8f);
     addAndMakeVisible (lastLabel);
 
+    const auto presetTip = text ("Ein Program Change auf diesem Kanal l\xc3\xa4" "dt das Preset mit dieser Nummer: "
+                                 "Program 0 l\xc3\xa4" "dt Preset 001, Program 127 Preset 128.");
+
+    programLabel.setText ("Presets per Program Change", juce::dontSendNotification);
+    programLabel.setFont (brand::font (13.0f));
+    programLabel.setColour (juce::Label::textColourId, kDim);
+    programLabel.setBorderSize ({ 1, 0, 1, 0 });
+    programLabel.setJustificationType (juce::Justification::centredLeft);
+    programLabel.setMinimumHorizontalScale (0.8f);
+    programLabel.setTooltip (presetTip);
+    addAndMakeVisible (programLabel);
+
+    programBox.addItem ("Aus", 1);
+    programBox.addItem (text ("Alle Kan\xc3\xa4le"), 2);
+    for (int channel = 1; channel <= 16; ++channel)
+        programBox.addItem ("Kanal " + juce::String (channel), channel + 2);
+    programBox.setTooltip (presetTip);
+    programBox.onChange = [this] { remote.setProgramChannel (programBox.getSelectedId() - 2); };
+    addAndMakeVisible (programBox);
+
     const auto& all = params::all();
     for (size_t i = 0; i < all.size(); ++i)
     {
@@ -200,6 +220,7 @@ MappingPanel::MappingPanel (MidiRemote& midiRemote)
 
     remote.addChangeListener (this);
     rebuildInputList();
+    refreshProgramBox();
     refreshLastMessage();
     startTimerHz (5);
 }
@@ -215,6 +236,7 @@ MappingPanel::~MappingPanel()
 void MappingPanel::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     rebuildInputList();
+    refreshProgramBox();
     refreshRows();
 }
 
@@ -263,6 +285,11 @@ void MappingPanel::refreshRows()
         row->refresh();
 }
 
+void MappingPanel::refreshProgramBox()
+{
+    programBox.setSelectedId (remote.programChannel() + 2, juce::dontSendNotification);
+}
+
 void MappingPanel::refreshLastMessage()
 {
     const auto last = remote.lastMessageText();
@@ -303,6 +330,13 @@ void MappingPanel::resized()
 
     area.removeFromTop (6);
     lastLabel.setBounds (area.removeFromTop (20));
+    area.removeFromTop (12);
+
+    // Same label column and control width as the port row.
+    auto programRow = area.removeFromTop (kRowHeight);
+    const auto programColumns = columnsFor (programRow);
+    programLabel.setBounds (programColumns.name);
+    programBox.setBounds (programRow.withLeft (programColumns.type.getX()));
     area.removeFromTop (12);
 
     separatorY = area.getY();

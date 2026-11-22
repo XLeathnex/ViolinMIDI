@@ -32,6 +32,30 @@ enum class Response : int
     Safe   = 2
 };
 
+/** How the harmony voices are derived from the played note (see Scale.h). */
+enum class HarmonyMode : int
+{
+    Diatonic  = 0, ///< counted in steps of the key: major, minor or diminished as the degree demands
+    Chromatic = 1  ///< always the same semitone distances
+};
+
+/** Which controller carries the bow loudness (DynamicsMode::Continuous). */
+enum class DynamicsTarget : int
+{
+    Expression       = 0, ///< CC 11
+    ModWheel         = 1, ///< CC 1
+    Breath           = 2, ///< CC 2
+    ModAndExpression = 3  ///< CC 1 and CC 11 with the same value
+};
+
+/** Velocity from the way a note begins (plucked or bowed). */
+enum class Articulation : int
+{
+    Off    = 0, ///< velocity from the level only, as before
+    Gentle = 1, ///< half way between Off and Strong
+    Strong = 2  ///< steep start 95..127, soft start 45..65
+};
+
 struct Settings
 {
     BendMode     bendMode       = BendMode::Continuous;
@@ -40,25 +64,46 @@ struct Settings
     float        bendRangeSemis = 2.0f;   ///< must match the instrument's pitch-bend range, 0.1 .. 96
     float        vibratoSmoothing = 0.5f; ///< Smoothed mode: 0 = none .. 1 = strongest (0.5 = 180 ms window)
     float        inputGainDb    = 0.0f;
-    float        gateDb         = -45.0f; ///< note-on threshold, RMS dBFS after gain
+    float        gateDb         = -45.0f; ///< "in": a note may start above this level, RMS dBFS after gain
+    float        gateOffDb      = -51.0f; ///< "out": a note ends below this level; never above gateDb
     int          lowestNote     = 34;     ///< B-flat 1, lowest string of a 7-string violin
     int          highestNote    = 105;    ///< A7
     float        a4Hz           = 440.0f;
     int          fixedVelocity  = 100;
-    int          midiChannel    = 1;      ///< 1..16
+    int          midiChannel    = 1;      ///< 1..16; not used while mpe is on
     bool         enabled        = true;   ///< master switch: off ends every note and sends nothing
+
+    // --- protection against octave errors (NoteTracker)
+    bool         octaveAttackGuard  = true;  ///< at the start of a note: wait if the octave below is possible
+    float        octaveAttackMs     = 50.0f; ///< how long to wait at most, 0 .. 60
+    bool         octaveSustainGuard = true;  ///< inside a note: a jump of an octave must last before it is believed
+    float        octaveSustainMs    = 11.0f; ///< how long it must last, 0 .. 100
+
+    // --- loudness
+    Articulation   articulation       = Articulation::Off;
+    DynamicsTarget dynamicsTarget     = DynamicsTarget::Expression;
+    float          dynamicsSmoothingMs = 0.0f; ///< extra smoothing of the controller, 0 .. 150
 
     // --- key (see Scale.h and OutputStage.h)
     bool         keyFilter      = false;  ///< only notes of the key are started
     int          keyRoot        = 0;      ///< 0 = C .. 11 = B
-    int          scaleMode      = 0;      ///< 0 Ionian, 1 Dorian, 2 Phrygian, 3 Lydian, 4 Mixolydian, 5 Aeolian, 6 Locrian
-    bool         pentatonic     = false;  ///< with keyFilter: only the five pentatonic notes of the mode
-    bool         pentaSustain   = false;  ///< with keyFilter and pentatonic: hold the last valid note through foreign ones
+    int          scaleMode      = 0;      ///< index into scale::kScales, 0 .. scale::kScaleCount - 1
+    bool         pentatonic     = false;  ///< with keyFilter: only the five pentatonic notes of the scale's family
+    bool         pentaSustain   = false;  ///< with keyFilter and a scale of fewer than seven notes: hold the last valid note through foreign ones
 
-    // --- diatonic triad on a second channel
-    bool         triad          = false;
+    // --- harmony voices on a second channel (the names date from when it was a triad only)
+    bool         triad          = false;  ///< harmony on
     int          triadChannel   = 2;      ///< 1..16
-    bool         triadWithRoot  = true;   ///< false: third and fifth only
+    int          voicing        = 0;      ///< index into scale::kVoicings, 0 .. scale::kVoicingCount - 1
+    HarmonyMode  harmonyMode    = HarmonyMode::Diatonic;
+    uint64_t     freeVoicing    = (1ull << 24) | (1ull << 28) | (1ull << 31); ///< free voicing: bit (semitones + 24) for -24 .. +24, at most 10 set
+
+    // --- MPE: every note on its own channel 2..16, bend range 48 (OutputStage)
+    bool         mpe            = false;
+
+    // --- freeze: what sounds on that track stays, nothing new is sent there (OutputStage). Not stored.
+    bool         freezeSolo     = false;
+    bool         freezeHarmony  = false;
 };
 
 /** Limits used when sizing buffers; settings are clamped to these. */

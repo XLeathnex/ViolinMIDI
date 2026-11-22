@@ -28,11 +28,12 @@ private:
     void rebuildInputList();
     void refreshRows();
     void refreshLastMessage();
+    void refreshProgramBox();
 
     MidiRemote& remote;
 
-    juce::Label inputLabel, lastLabel;
-    juce::ComboBox inputBox;
+    juce::Label inputLabel, lastLabel, programLabel;
+    juce::ComboBox inputBox, programBox;   // programBox: item id = channel + 2 (1 = off, 2 = every channel)
     juce::StringArray inputNames;   // port behind each list entry, "" = no input
     bool listedMissing = false;     // the last entry is a port that is not plugged in
 

@@ -29,8 +29,9 @@ public:
         bool  voiced      = false;
         bool  active      = false;  ///< a note is being sent
         bool  held        = false;  ///< ...kept by the pentatonic sustain
-        int   triadCount  = 0;
-        int   triad[3]    = { -1, -1, -1 };
+        int   triadCount  = 0;      ///< notes sounding on the harmony channel
+        int   triad[scale::kMaxVoices] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+        int   frozenNote  = -1;     ///< the note kept by the solo freeze or -1
     };
 
     /** One row per analysis hop, for tests and offline analysis only. */
@@ -44,9 +45,13 @@ public:
     };
 
     /** The tracker emits at most this many events per analysis hop. */
-    static constexpr int kMaxEventsPerHop = 8;
-    /** After the output stage (key filter, triad). */
-    static constexpr int kMaxOutputEventsPerHop = OutputStage::maxEventsFor (kMaxEventsPerHop) + 4;
+    static constexpr int kMaxEventsPerHop = 10;
+    /** After the output stage (key filter, harmony, freeze, MPE). */
+    static constexpr int kMaxOutputEventsPerHop = OutputStage::maxEventsFor (kMaxEventsPerHop) + 20;
+
+    /** "All notes off" (controller 123) on every channel these settings send
+        notes on. For the panic button and the master switch. */
+    static void appendAllNotesOff (const Settings& settings, int sampleOffset, MidiEventList& out);
 
     void prepare (double sampleRate);
 
@@ -72,6 +77,7 @@ public:
 private:
     void configure (const Settings& s);
     void analyseHop (const Settings& s, int offset, MidiEventList& out);
+    static Settings effective (const Settings& s) noexcept;
     void silenceOutput (const Settings& s, int offset, MidiEventList& out);
 
     double fsIn = 48000.0, fs = 48000.0;

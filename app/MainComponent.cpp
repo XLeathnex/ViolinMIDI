@@ -1,9 +1,13 @@
 #include "MainComponent.h"
 
 #include "Brand.h"
+#include "DescribedMenu.h"
+#include "OctavePanel.h"
 #include "Params.h"
 #include "Scale.h"
+#include "SettingsFields.h"
 #include "SettingsPanel.h"
+#include "VoicingPanel.h"
 
 #include <cmath>
 
@@ -11,12 +15,14 @@ using namespace brand;
 
 namespace
 {
-    constexpr int kWidth = 1120, kHeight = 626;
-    constexpr int kDisplayHeight = 292;
+    constexpr int kWidth = 1260, kHeight = 724;
+    constexpr int kHeaderHeight = 44;
+    constexpr int kDisplayHeight = 300;
     constexpr int kStatusHeight = 40;
     constexpr int kMargin = 24, kColumnGap = 28;
-    constexpr int kTitleHeight = 18, kTitleGap = 12, kNameHeight = 16, kNameGap = 6, kControlHeight = 24, kItemGap = 14;
+    constexpr int kTitleHeight = 18, kTitleGap = 12, kNameHeight = 16, kNameGap = 6, kControlHeight = 24, kItemGap = 12;
     constexpr int kTimerHz = 30;
+    constexpr int kMpeItem = 17;   // the entry after the sixteen channels
 
     juce::String decimalComma (double value, int places)
     {
@@ -27,6 +33,54 @@ namespace
     {
         return (value < 0.0 ? U ("\xe2\x88\x92") : juce::String()) + decimalComma (std::abs (value), 1) + " dB";
     }
+
+    juce::String milliseconds (double value)
+    {
+        return juce::String (juce::roundToInt (value)) + " ms";
+    }
+
+    /** The settings a preset holds, as text: two of these compare equal exactly
+        when a preset would not change anything. */
+    juce::String image (const vm::Settings& e)
+    {
+        return juce::JSON::toString (fields::toVar (e), true);
+    }
+
+    struct Described { int index; const char* name; const char* description; };
+
+    // In the order of the menu; `index` is what the engine and the files use.
+    const Described kScaleMenu[] = {
+        { 0,  "Dur (Ionisch)",              "Klassischer Pop, Folk, Singer-Songwriter, fr\xc3\xb6hliche Hymnen." },
+        { 5,  "Nat\xc3\xbcrliches Moll (\xc3\x84olisch)", "Melancholische Balladen, Rock, Pop, dramatische St\xc3\xbc" "cke." },
+        { 1,  "Dorisch",                    "Irish Folk / Celtic (Jigs, Reels, traditionelle Tunes), Folk-Rock, Modal Jazz, mystische Passagen." },
+        { 4,  "Mixolydisch",                "Classic Rock, Blues-Rock, Celtic-Rock, treibende Folk-Grooves (Dur-Charakter mit kleiner Septime)." },
+        { 7,  "Harmonisch Moll",            "Dramatischer Prog-Rock, Neoklassik, osteurop\xc3\xa4ischer und Balkan-Einschlag, spannungsgeladene Soli." },
+        { 8,  "Melodisch Moll",             "Jazz, Fusion, moderne progressive Linien." },
+        { 2,  "Phrygisch",                  "D\xc3\xbcsterer Prog-Metal, spanische und mystische Klangfarben." },
+        { 9,  "Phrygisch Dominant",         "Flamenco, orientalische und mediterrane Klangfarben." },
+        { 10, "Dur-Pentatonik",             "Country, Folk, eing\xc3\xa4ngige Pop-Melodien (ohne Reibungst\xc3\xb6ne)." },
+        { 11, "Moll-Pentatonik",            "Blues, Rock, Solospiel \xc3\xbc" "ber fast alle Akkordfolgen." },
+        { 12, "Blues-Skala",                "Blues, Classic Rock, expressive Slides und Bendings." },
+        { 3,  "Lydisch",                    "Hell und schwebend (Dur mit erh\xc3\xb6hter Quarte): Filmmusik, Fusion, tr\xc3\xa4umerische Passagen." },
+        { 6,  "Lokrisch",                   "Instabil und d\xc3\xbcster (verminderte Quinte): selten, f\xc3\xbcr Spannung und Metal." }
+    };
+
+    // The closed box shows the name; the steps stand in front of the description.
+    const Described kVoicingMenu[] = {
+        { 0,  "Enger Dreiklang",        "1 \xe2\x80\x93 3 \xe2\x80\x93 5 \xc2\xb7 Kompakter, klassischer Chor- oder Streichersatz (diatonisch Dur/Moll je nach Tonstufe); funktioniert gut in mittleren bis hohen Lagen." },
+        { 1,  "Vierklang / Septakkord", "1 \xe2\x80\x93 3 \xe2\x80\x93 5 \xe2\x80\x93 7 \xc2\xb7 Voller, jazzig-warmer 4-stimmiger Akkord (inkl. Septime); erzeugt automatisch Major-7-, Moll-7- und Dominant-7-Akkorde passend zur Tonart." },
+        { 2,  "Open / Drop-2",          "1 \xe2\x80\x93 5 \xe2\x80\x93 10 \xc2\xb7 Sehr weiter, luftiger und monumentaler Klang; ideal f\xc3\xbcr schwebende Ambient-Pads und breite Synth-Teppiche ohne Frequenz-Mulm." },
+        { 3,  "Power-Voicing",          "1 \xe2\x80\x93 5 \xe2\x80\x93 8 \xc2\xb7 Kraftvoll, neutral und durchsetzungsf\xc3\xa4hig ohne Dur/Moll-Festlegung; ideal f\xc3\xbcr verzerrte Sounds und Prog-Rock." },
+        { 4,  "Quart-Voicing",          "1 \xe2\x80\x93 4 \xe2\x80\x93 7 \xc2\xb7 Schwebend, offen und modern (Modal Jazz / Filmscore); erzeugt geheimnisvolle, nicht-aufgel\xc3\xb6ste Spannungen." },
+        { 5,  "Terz-Duett",             "1 \xe2\x80\x93 3 \xc2\xb7 Zweistimmige, warme und gesangliche Begleitung." },
+        { 6,  "Sexten-Duett",           "1 \xe2\x80\x93 6 \xc2\xb7 Zweistimmige, offene, folkige und klassisch-melodische Begleitung." },
+        { 7,  "Sub-Oktave",             "Oktave \xe2\x88\x92" "12 \xc2\xb7 Doppelt die Melodie eine Oktave tiefer f\xc3\xbcr ein warmes, fettes Bass-Fundament." },
+        { 8,  "Doppel-Sub",             "Oktave \xe2\x88\x92" "12 / \xe2\x88\x92" "24 \xc2\xb7 Massiver, extrem tiefer Sub-Bass-Teppich \xc3\xbc" "ber zwei Oktaven nach unten." },
+        { 9,  "Oktav-Klammer",          "Oktave \xe2\x88\x92" "12 / +12 \xc2\xb7 Rahmt den gespielten Ton gleichzeitig nach unten und oben ein \xe2\x80\x93 sehr breit und orchestraler Orgel-Charakter." },
+        { 10, "Hohe Oktave",            "Oktave +12 \xc2\xb7 Doppelt die Melodie eine Oktave h\xc3\xb6her f\xc3\xbcr brillante Pr\xc3\xa4senz und Durchsetzungskraft." },
+        { 11, "Shimmer-Oktaven",        "Oktave +12 / +24 \xc2\xb7 Glitzernde, strahlende H\xc3\xb6henstaffelung \xc3\xbc" "ber zwei Oktaven nach oben f\xc3\xbcr sph\xc3\xa4rische Leads und Pads." },
+        { 12, "Free-Voicing \xe2\x80\xa6",         "\xc3\x96" "ffnet ein Auswahlfeld von \xe2\x88\x92" "24 bis +24 Halbt\xc3\xb6nen, in dem du bis zu 10 eigene Harmoniestimmen frei kombinieren und im Preset speichern kannst." }
+    };
 }
 
 //==============================================================================
@@ -45,18 +99,37 @@ MainComponent::MainComponent (const Options& o) : options (o)
     store = std::make_unique<SettingsStore> (*appProperties.getUserSettings());
     settings = store->load();
 
+    // --- presets: readable files next to the settings file
+    presets = std::make_unique<PresetStore> (appProperties.getUserSettings()->getFile().getParentDirectory().getChildFile ("Presets"));
+    presetBar = std::make_unique<PresetBar> (*presets);
+    presetBar->currentSettings = [this] { return settings.engine; };
+    presetBar->onLoad = [this] (const vm::Settings& loaded)
+    {
+        settings.engine = loaded;
+        presetImage = image (loaded);
+        applySettingsToControls();
+    };
+    presetBar->onSlotChanged = [this] (int slot)
+    {
+        settings.presetSlot = slot;
+        presetImage = image (settings.engine);
+        store->save (settings);
+    };
+    addAndMakeVisible (*presetBar);
+
     addAndMakeVisible (display);
 
-    masterButton.setClickingTogglesState (true);
-    masterButton.setTooltip (U ("Schaltet die Tonh\xc3\xb6henerkennung ein und aus. Aus beendet sofort alle Noten. Leertaste."));
-    masterButton.onClick = [this] { pushSettings(); };
-    addAndMakeVisible (masterButton);
+    setupLatch (masterButton, {}, U ("Schaltet die Tonh\xc3\xb6henerkennung ein und aus. Aus beendet sofort alle Noten. Leertaste."));
+    const auto freezeTip = U ("Freeze (Halten): Friert den aktuell gespielten Ton bzw. Akkord als endlos stehenden Klangteppich (Drone) ein, "
+                              "w\xc3\xa4hrend du auf der anderen Spur frei weiterspielen kannst. Klingt gerade nichts, wird der n\xc3\xa4" "chste Ton eingefroren.");
+    setupLatch (freezeSoloButton, "Solo halten", freezeTip);
+    setupLatch (freezeHarmonyButton, "Harmonie halten", freezeTip);
 
     // --- input
     addColumn ("Eingang");
     setupName (meterName, "Pegel");
     setupValue (meterValue);
-    levelMeter.setTooltip (U ("Die wei\xc3\x9f" "e Marke ist die Schwelle. Dar\xc3\xbc" "ber kann eine Note beginnen."));
+    levelMeter.setTooltip (U ("Die hohe Marke ist die In-Schwelle: dar\xc3\xbc" "ber kann eine Note beginnen. Die kurze Marke ist die Out-Schwelle: darunter endet sie."));
     addAndMakeVisible (levelMeter);
     addItem (meterName, levelMeter, &meterValue);
 
@@ -67,12 +140,20 @@ MainComponent::MainComponent (const Options& o) : options (o)
     gainSlider.setTooltip (U ("Bei kr\xc3\xa4" "ftigem Spiel soll der Pegel weit nach rechts gehen, ohne rot zu werden. Doppelklick: 0 dB."));
     addItem (gainName, gainSlider, &gainValue);
 
-    setupName (gateName, "Schwelle");
+    setupName (gateName, "In-Schwelle");
     setupValue (gateValue);
     setupSlider (gateSlider, -70.0, -20.0, 0.5);
     gateSlider.setDoubleClickReturnValue (true, -45.0);
-    gateSlider.setTooltip (U ("Knapp \xc3\xbc" "ber das Grundrauschen legen. Niedriger spricht fr\xc3\xbc" "her an, h\xc3\xb6her verhindert Geisternoten."));
+    gateSlider.setTooltip (U ("Einschalt-Schwelle (In): Ab dieser Lautst\xc3\xa4rke wird ein neuer Ton ausgel\xc3\xb6st. H\xc3\xb6her stellen, um Nebenger\xc3\xa4usche und Saitenrascheln auszublenden."));
     addItem (gateName, gateSlider, &gateValue);
+
+    setupName (gateOffName, "Out-Schwelle");
+    setupValue (gateOffValue);
+    setupSlider (gateOffSlider, -80.0, -20.0, 0.5);
+    gateOffSlider.setDoubleClickReturnValue (true, -51.0);
+    gateOffSlider.setTooltip (U ("Ausschalt-Schwelle (Out): Erst wenn der Ton unter diesen Wert abf\xc3\xa4llt, wird er beendet. "
+                                 "Ein niedrigerer Wert als die In-Schwelle verhindert abgehackte T\xc3\xb6ne beim leisen Streichen. Sie kann nie \xc3\xbc" "ber der In-Schwelle liegen."));
+    addItem (gateOffName, gateOffSlider, &gateOffValue);
 
     // --- detection
     addColumn ("Erkennung");
@@ -103,6 +184,25 @@ MainComponent::MainComponent (const Options& o) : options (o)
     tuningSlider.setTooltip (U ("Doppelklick: 440 Hz."));
     addItem (tuningName, tuningSlider, &tuningValue);
 
+    setupName (octaveName, "Oktavsprung-Schutz");
+    octaveButton.setTooltip (U ("Zwei Schutzmechanismen gegen Oktavfehler auf den tiefen Saiten: der Anstreich-Schutz beim Tonbeginn und die "
+                                "Oktavsprung-Sperre im gehaltenen Ton. Ein Klick \xc3\xb6" "ffnet die Einstellungen."));
+    octaveButton.setWantsKeyboardFocus (false);
+    octaveButton.onClick = [this] { showOctavePanel(); };
+    addAndMakeVisible (octaveButton);
+    addItem (octaveName, octaveButton);
+
+    setupName (articulationName, "Artikulation (Pizzicato/Legato)");
+    {
+        const auto tip = U ("Erkennt anhand des Einschwingverhaltens, ob gezupft (Pizzicato/Spiccato) oder weich gestrichen (Legato) wird, "
+                            "und passt die Anschlagst\xc3\xa4rke (Velocity) automatisch an.");
+        setupSegments (articulationButtons, articulationRow, 7, { "Aus", "Sanft", "Stark" },
+                       { tip + U (" Aus: Die Anschlagst\xc3\xa4rke folgt nur dem Pegel."),
+                         tip + U (" Sanft: halbe Wirkung."),
+                         tip + U (" Stark: Gezupftes klingt knackig (95\xe2\x80\x93" "127), Gestrichenes weich (45\xe2\x80\x93" "65).") });
+    }
+    addItem (articulationName, articulationRow);
+
     // --- pitch
     addColumn (U ("Tonh\xc3\xb6he"));
     setupName (modeName, "Bewegung");
@@ -121,7 +221,8 @@ MainComponent::MainComponent (const Options& o) : options (o)
                               i + 1);
     }
     setupBox (bendRangeBox, U ("Muss mit dem Pitch-Bend-Bereich des Instruments \xc3\xbc" "bereinstimmen. Ein gr\xc3\xb6\xc3\x9f" "erer Bereich erlaubt "
-                               "l\xc3\xa4ngere Glissandi ohne neuen Anschlag. Wird der Bereich \xc3\xbc" "berschritten, bleibt der Bend am Anschlag stehen."));
+                               "l\xc3\xa4ngere Glissandi ohne neuen Anschlag. Wird der Bereich \xc3\xbc" "berschritten, bleibt der Bend am Anschlag stehen. "
+                               "Im MPE-Modus sind es immer \xc2\xb1" "48 Halbt\xc3\xb6ne."));
     addItem (bendRangeName, bendRangeBox);
 
     setupName (smoothingName, U ("Vibrato-Gl\xc3\xa4ttung"));
@@ -131,62 +232,113 @@ MainComponent::MainComponent (const Options& o) : options (o)
     smoothingSlider.setTooltip (U ("Wie stark Vibrato in der Bewegung \xe2\x80\x9eGegl\xc3\xa4ttet\xe2\x80\x9c herausgefiltert wird. Doppelklick: 50 %."));
     addItem (smoothingName, smoothingSlider, &smoothingValue);
 
-    // --- key and triad
+    // --- key
     addColumn ("Tonart");
-    setupName (keyName, "Tonart");
+    setupName (keyName, "Tonart / Skala");
     static const char* roots[] = { "C", "C\xe2\x99\xaf", "D", "D\xe2\x99\xaf", "E", "F", "F\xe2\x99\xaf", "G", "G\xe2\x99\xaf", "A", "A\xe2\x99\xaf", "B" };
     for (int i = 0; i < 12; ++i)
         rootBox.addItem (U (roots[i]), i + 1);
-    static const char* modes[] = { "Dur (ionisch)", "Dorisch", "Phrygisch", "Lydisch", "Mixolydisch", "Moll (\xc3\xa4olisch)", "Lokrisch" };
-    for (int i = 0; i < 7; ++i)
-        scaleBox.addItem (U (modes[i]), i + 1);
+    for (const auto& entry : kScaleMenu)
+        addDescribedItem (scaleBox, entry.index + 1, U (entry.name), U (entry.description));
     setupBox (rootBox, "Grundton der Tonart.");
-    setupBox (scaleBox, U ("Kirchentonart. Sie bestimmt auch, welche Dreikl\xc3\xa4nge entstehen."));
+    setupBox (scaleBox, U ("Die Skala. Sie bestimmt, welche T\xc3\xb6ne zur Tonart geh\xc3\xb6ren und welche Akkorde die Harmonie bildet. "
+                           "In der Liste steht unter jedem Namen, wof\xc3\xbcr die Skala typisch ist."));
     keyRow.set (rootBox, scaleBox, 58);
     addAndMakeVisible (keyRow);
     addItem (keyName, keyRow);
 
     setupName (filterName, U ("Nur T\xc3\xb6ne der Tonart"));
-    setupSegments (filterButtons, filterRow, 3, { "Aus", "Skala", "Pentatonik" },
+    setupSegments (filterButtons, filterRow, 3, { "Aus", "An" },
                    { U ("Jeder gespielte Ton wird gesendet."),
-                     U ("Nur die sieben T\xc3\xb6ne der Tonart werden angeschlagen. Ein fremder Ton beendet die Note."),
-                     U ("Nur die f\xc3\xbcnf T\xc3\xb6ne der Pentatonik: Dur-Pentatonik bei Dur, Lydisch und Mixolydisch, sonst Moll-Pentatonik.") });
+                     U ("Nur die T\xc3\xb6ne der gew\xc3\xa4hlten Skala werden angeschlagen. Ein fremder Ton beendet die Note.") });
     addItem (filterName, filterRow);
 
     setupName (holdName, "Pentatonik-Ton halten");
     setupSegments (holdButtons, holdRow, 4, { "Aus", "An" },
                    { U ("Ein fremder Ton beendet die Note."),
-                     U ("Der letzte g\xc3\xbcltige Ton klingt weiter, solange der Pegel \xc3\xbc" "ber der Schwelle liegt, bis der n\xc3\xa4" "chste g\xc3\xbcltige Ton kommt.") });
+                     U ("Bei Pentatonik- und Blues-Skala: Der letzte g\xc3\xbcltige Ton klingt weiter, solange der Pegel \xc3\xbc" "ber der Out-Schwelle liegt, bis der n\xc3\xa4" "chste g\xc3\xbcltige Ton kommt.") });
     addItem (holdName, holdRow);
 
-    setupName (triadName, "Dreiklang");
-    setupSegments (triadButtons, triadRow, 5, { "Aus", U ("3 T\xc3\xb6ne"), U ("2 T\xc3\xb6ne") },
-                   { U ("Kein Dreiklang."),
-                     U ("Zu jedem Ton erklingen Grundton, Terz und Quinte aus der Tonart auf dem Dreiklang-Kanal."),
-                     U ("Nur Terz und Quinte auf dem Dreiklang-Kanal, der Grundton bleibt allein auf dem MIDI-Kanal.") });
+    // --- harmony
+    addColumn ("Harmonie");
+    setupName (triadName, "Harmonie");
+    setupSegments (triadButtons, triadRow, 5, { "Aus", "An" },
+                   { U ("Keine Harmoniestimmen."),
+                     U ("Zu jedem Ton erklingen die Stimmen des gew\xc3\xa4hlten Voicings auf dem Harmonie-Kanal, immer vollst\xc3\xa4ndig, also mit dem gespielten Ton.") });
     addItem (triadName, triadRow);
+
+    setupName (voicingName, "Voicing");
+    for (const auto& entry : kVoicingMenu)
+        addDescribedItem (voicingBox, entry.index + 1, U (entry.name), U (entry.description));
+    voicingBox.setTooltip (U ("Welche Stimmen die Harmonie bildet. In der Liste steht unter jedem Namen die Klangwirkung."));
+    voicingBox.onChange = [this]
+    {
+        pushSettings();
+        if (! loading && settings.engine.voicing == vm::scale::kFreeVoicing)
+            showVoicingPanel();
+    };
+    voicingEditButton.setButtonText (U ("\xe2\x80\xa6"));
+    voicingEditButton.setTooltip (U ("Free-Voicing: \xc3\x96" "ffnet ein Auswahlfeld von \xe2\x88\x92" "24 bis +24 Halbt\xc3\xb6nen, in dem du bis zu 10 eigene "
+                                     "Harmoniestimmen frei kombinieren und im Preset speichern kannst."));
+    voicingEditButton.setWantsKeyboardFocus (false);
+    voicingEditButton.onClick = [this] { showVoicingPanel(); };
+    voicingRow.set (voicingBox, voicingEditButton, 30, true);
+    addAndMakeVisible (voicingRow);
+    addItem (voicingName, voicingRow);
+
+    setupName (harmonyModeName, "Harmonie-Modus");
+    setupSegments (harmonyModeButtons, harmonyModeRow, 6, { "Diatonisch", "Chromatisch" },
+                   { U ("Diatonisch (Empfohlen): Passt Akkorde automatisch an die gew\xc3\xa4hlte Tonart an \xe2\x80\x93 spielt je nach Tonstufe automatisch "
+                        "Dur-, Moll- oder 7er-Akkorde, sodass kein Ton schief klingt."),
+                     U ("Chromatisch (Starr): Verschiebt die Akkord-Intervalle immer um exakt dieselben Halbtonschritte "
+                        "(z. B. f\xc3\xbcr parallele Powerchords oder experimentelle Effekte au\xc3\x9f" "erhalb der Tonart).") });
+    addItem (harmonyModeName, harmonyModeRow);
+
+    setupName (triadChannelName, "Harmonie-Kanal");
+    for (int channel = 1; channel <= 16; ++channel)
+        triadChannelBox.addItem ("Kanal " + juce::String (channel), channel);
+    setupBox (triadChannelBox, U ("Auf diesem Kanal erklingt die Harmonie, zum Beispiel mit einem Pad oder Streichern."));
+    addItem (triadChannelName, triadChannelBox);
 
     // --- MIDI
     addColumn ("MIDI");
     setupName (channelName, "MIDI-Kanal");
-    setupName (triadChannelName, "Dreiklang-Kanal");
     for (int channel = 1; channel <= 16; ++channel)
-    {
         channelBox.addItem ("Kanal " + juce::String (channel), channel);
-        triadChannelBox.addItem ("Kanal " + juce::String (channel), channel);
-    }
-    setupBox (channelBox, U ("Ein eigener Kanal h\xc3\xa4lt die Geige in MainStage von anderen MIDI-Ger\xc3\xa4ten getrennt."));
-    setupBox (triadChannelBox, U ("Auf diesem Kanal erklingt der Dreiklang, zum Beispiel mit einem zweiten Instrument."));
+    channelBox.addSeparator();
+    addDescribedItem (channelBox, kMpeItem, U ("MPE (Kan\xc3\xa4le 2\xe2\x80\x93" "16)"),
+                      U ("Jede Note auf einem eigenen Kanal mit \xc2\xb1" "48 Halbt\xc3\xb6nen Pitch-Bend, f\xc3\xbcr MPE-f\xc3\xa4hige Synthesizer."));
+    setupBox (channelBox, U ("Ein eigener Kanal h\xc3\xa4lt die Geige in MainStage von anderen MIDI-Ger\xc3\xa4ten getrennt. "
+                             "MPE-Modus (MIDI Polyphonic Expression): Sendet jede Note auf einem eigenen MIDI-Kanal (2\xe2\x80\x93" "16) mit \xc2\xb1" "48 Halbt\xc3\xb6nen Pitch-Bend. "
+                             "Verhindert Tonh\xc3\xb6henspr\xc3\xbcnge bei \xc3\xbc" "berlappenden Legato-B\xc3\xb6gen und erm\xc3\xb6glicht unabh\xc3\xa4ngiges Vibrato sowie Glissandi pro Stimme "
+                             "in MPE-f\xc3\xa4higen Synthesizern."));
     addItem (channelName, channelBox);
-    addItem (triadChannelName, triadChannelBox);
 
     setupName (dynamicsName, "Dynamik");
-    dynamicsBox.addItem ("Anschlag und Expression", 1);
+    dynamicsBox.addItem ("Anschlag und Verlauf", 1);
     dynamicsBox.addItem ("Nur Anschlag", 2);
     dynamicsBox.addItem (U ("Feste St\xc3\xa4rke"), 3);
-    setupBox (dynamicsBox, U ("Anschlag und Expression: An- und Abschwellen des Bogens steuert laufend die Lautst\xc3\xa4rke (CC 11). "
+    setupBox (dynamicsBox, U ("Anschlag und Verlauf: An- und Abschwellen des Bogens steuert laufend den Controller, der unter \xe2\x80\x9e" "Dynamik-Ziel\xe2\x80\x9c gew\xc3\xa4hlt ist. "
                               "Bewegen sich dabei Regler anderer Ger\xc3\xa4te mit, \xe2\x80\x9eNur Anschlag\xe2\x80\x9c w\xc3\xa4hlen."));
     addItem (dynamicsName, dynamicsBox);
+
+    const auto dynamicsTip = U ("Dynamik-Gl\xc3\xa4ttung & Ziel-CC: Bestimmt, auf welchen MIDI-Controller der Bogendruck gesendet wird "
+                                "(CC11 Lautst\xc3\xa4rke, CC1 Filter/Modwheel, CC2 Breath) und gl\xc3\xa4ttet schnelle Pegelschwankungen f\xc3\xbcr weiche "
+                                "Streicher-Crescendi ohne Zittern.");
+    setupName (targetName, "Dynamik-Ziel");
+    targetBox.addItem ("CC11 (Expression)", 1);
+    targetBox.addItem ("CC1 (Modwheel)", 2);
+    targetBox.addItem ("CC2 (Breath Controller)", 3);
+    targetBox.addItem ("CC1 + CC11 (Kombi)", 4);
+    setupBox (targetBox, dynamicsTip);
+    addItem (targetName, targetBox);
+
+    setupName (dynSmoothingName, U ("Dynamik-Gl\xc3\xa4ttung"));
+    setupValue (dynSmoothingValue);
+    setupSlider (dynSmoothingSlider, 0.0, 150.0, 1.0);
+    dynSmoothingSlider.setDoubleClickReturnValue (true, 0.0);
+    dynSmoothingSlider.setTooltip (dynamicsTip + U (" Doppelklick: 0 ms."));
+    addItem (dynSmoothingName, dynSmoothingSlider, &dynSmoothingValue);
 
     setupName (velocityName, U ("Feste Anschlagst\xc3\xa4rke"));
     setupValue (velocityValue);
@@ -196,12 +348,14 @@ MainComponent::MainComponent (const Options& o) : options (o)
     // --- status line
     settingsButton.setButtonText (U ("Einstellungen \xe2\x80\xa6"));
     settingsButton.setTooltip (U ("Audio-Eingang, MIDI-Steuerung, Updates und fr\xc3\xbchere Versionen."));
+    settingsButton.setWantsKeyboardFocus (false);
     settingsButton.onClick = [this] { showSettings(); };
     addAndMakeVisible (settingsButton);
 
     // the one prominent button, and only while an update is waiting
     updateButton.setColour (juce::TextButton::buttonColourId, colour::accent);
     updateButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff1a1a1a));
+    updateButton.setWantsKeyboardFocus (false);
     updateButton.onClick = [this]
     {
         const auto version = updates.availableUpdate();
@@ -211,17 +365,35 @@ MainComponent::MainComponent (const Options& o) : options (o)
     addChildComponent (updateButton);
 
     panicButton.setButtonText ("Alle Noten aus");
-    panicButton.setTooltip (U ("Beendet h\xc3\xa4ngende Noten und setzt Pitch Bend und Expression zur\xc3\xbc" "ck."));
-    panicButton.onClick = [this] { host.requestAllNotesOff(); };
+    panicButton.setTooltip (U ("Beendet alle Noten, auch eingefrorene, und setzt Pitch Bend und Controller zur\xc3\xbc" "ck."));
+    panicButton.setWantsKeyboardFocus (false);
+    panicButton.onClick = [this] { allNotesOff(); };
     addAndMakeVisible (panicButton);
 
     applySettingsToControls();
     setSize (kWidth, kHeight);
 
+    // The preset of the last session is shown again, marked if the settings have moved on since.
+    {
+        vm::Settings fromFile = settings.engine;
+        if (settings.presetSlot > 0 && presets->load (settings.presetSlot, fromFile))
+        {
+            presetImage = image (fromFile);
+            presetBar->setCurrentSlot (settings.presetSlot);
+            presetBar->setModified (image (settings.engine) != presetImage);
+        }
+        else
+        {
+            settings.presetSlot = 0;
+        }
+    }
+
     // --- remote control by MIDI
     remote.setExcludedName (settings.midiPortName);
     remote.fromJson (settings.midiMapJson);
+    remote.setProgramChannel (settings.midiProgramChannel);
     remote.onParam = [this] (int index, bool isNote, int value) { remoteControl (index, isNote, value); };
+    remote.onProgramChange = [this] (int program) { presetBar->loadSlot (program + 1); };
     remote.addChangeListener (this);
 
     updates.onRestart = [] { juce::JUCEApplication::getInstance()->systemRequestedQuit(); };
@@ -229,10 +401,19 @@ MainComponent::MainComponent (const Options& o) : options (o)
     if (options.notice.isNotEmpty())
         updates.setNotice (options.notice);
 
-    if (options.showSettingsAtStart)
+    if (options.showSettingsAtStart || options.showVoicingAtStart || options.showOctaveAtStart || options.showMenuAtStart > 0)
     {
         juce::Component::SafePointer<MainComponent> safeThis (this);
-        juce::MessageManager::callAsync ([safeThis] { if (safeThis != nullptr) safeThis->showSettings(); });
+        juce::Timer::callAfterDelay (600, [safeThis]
+        {
+            if (safeThis == nullptr)
+                return;
+            if (safeThis->options.showSettingsAtStart) safeThis->showSettings();
+            if (safeThis->options.showVoicingAtStart)  safeThis->showVoicingPanel();
+            if (safeThis->options.showOctaveAtStart)   safeThis->showOctavePanel();
+            if (safeThis->options.showMenuAtStart == 1) safeThis->scaleBox.showPopup();
+            if (safeThis->options.showMenuAtStart == 2) safeThis->voicingBox.showPopup();
+        });
     }
 
     startTimerHz (kTimerHz);
@@ -280,6 +461,7 @@ MainComponent::~MainComponent()
         delete settingsDialog.getComponent();
 
     remote.onParam = nullptr;
+    remote.onProgramChange = nullptr;
     remote.removeChangeListener (this);
     updates.removeChangeListener (this);
     deviceManager.removeChangeListener (this);
@@ -330,6 +512,7 @@ void MainComponent::setupSlider (juce::Slider& slider, double low, double high, 
     slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     slider.setRange (low, high, step);
     slider.setMouseDragSensitivity (300);
+    slider.setWantsKeyboardFocus (false);
     slider.onValueChange = [this] { pushSettings(); };
     addAndMakeVisible (slider);
 }
@@ -353,10 +536,21 @@ void MainComponent::setupSegments (juce::TextButton* buttons, ButtonRow& row, in
         b.setClickingTogglesState (true);
         b.setRadioGroupId (radioGroup);
         b.setConnectedEdges ((i > 0 ? juce::Button::ConnectedOnLeft : 0) | (i < count - 1 ? juce::Button::ConnectedOnRight : 0));
+        b.setWantsKeyboardFocus (false);   // the space bar belongs to the master switch
         b.onClick = [this, &b] { if (b.getToggleState()) pushSettings(); };
         row.add (b);
     }
     addAndMakeVisible (row);
+}
+
+void MainComponent::setupLatch (juce::TextButton& button, const juce::String& text, const juce::String& tooltip)
+{
+    button.setButtonText (text);
+    button.setTooltip (tooltip);
+    button.setClickingTogglesState (true);
+    button.setWantsKeyboardFocus (false);
+    button.onClick = [this] { pushSettings(); };
+    addAndMakeVisible (button);
 }
 
 int MainComponent::selectedSegment (const juce::TextButton* buttons, int count)
@@ -375,25 +569,33 @@ void MainComponent::applySettingsToControls()
     const auto quiet = juce::dontSendNotification;
 
     masterButton.setToggleState (e.enabled, quiet);
+    freezeSoloButton.setToggleState (e.freezeSolo, quiet);
+    freezeHarmonyButton.setToggleState (e.freezeHarmony, quiet);
     modeButtons[juce::jlimit (0, 2, (int) e.bendMode)].setToggleState (true, quiet);
     responseButtons[juce::jlimit (0, 2, (int) e.response)].setToggleState (true, quiet);
-    filterButtons[! e.keyFilter ? 0 : (e.pentatonic ? 2 : 1)].setToggleState (true, quiet);
+    articulationButtons[juce::jlimit (0, 2, (int) e.articulation)].setToggleState (true, quiet);
+    filterButtons[e.keyFilter ? 1 : 0].setToggleState (true, quiet);
     holdButtons[e.pentaSustain ? 1 : 0].setToggleState (true, quiet);
-    triadButtons[! e.triad ? 0 : (e.triadWithRoot ? 1 : 2)].setToggleState (true, quiet);
+    triadButtons[e.triad ? 1 : 0].setToggleState (true, quiet);
+    harmonyModeButtons[e.harmonyMode == vm::HarmonyMode::Chromatic ? 1 : 0].setToggleState (true, quiet);
 
     bendRangeBox.setSelectedId (SettingsStore::bendRangeIndex (e.bendRangeSemis) + 1, quiet);
     dynamicsBox.setSelectedId ((int) e.dynamics + 1, quiet);
+    targetBox.setSelectedId (juce::jlimit (0, 3, (int) e.dynamicsTarget) + 1, quiet);
     lowestBox.setSelectedId (e.lowestNote, quiet);
-    channelBox.setSelectedId (e.midiChannel, quiet);
+    channelBox.setSelectedId (e.mpe ? kMpeItem : e.midiChannel, quiet);
     triadChannelBox.setSelectedId (e.triadChannel, quiet);
     rootBox.setSelectedId (e.keyRoot + 1, quiet);
-    scaleBox.setSelectedId (e.scaleMode + 1, quiet);
+    scaleBox.setSelectedId (vm::scale::clampMode (e.scaleMode) + 1, quiet);
+    voicingBox.setSelectedId (vm::scale::clampVoicing (e.voicing) + 1, quiet);
 
     gainSlider.setValue (e.inputGainDb, quiet);
     gateSlider.setValue (e.gateDb, quiet);
+    gateOffSlider.setValue (e.gateOffDb, quiet);
     velocitySlider.setValue (e.fixedVelocity, quiet);
     tuningSlider.setValue (e.a4Hz, quiet);
     smoothingSlider.setValue (e.vibratoSmoothing, quiet);
+    dynSmoothingSlider.setValue (e.dynamicsSmoothingMs, quiet);
 
     loading = false;
     pushSettings();
@@ -404,35 +606,51 @@ void MainComponent::pushSettings()
     if (loading)
         return;
 
+    const auto quiet = juce::dontSendNotification;
     auto& e = settings.engine;
     e.enabled  = masterButton.getToggleState();
+
+    // Switching the detection off ends everything, frozen notes included.
+    if (! e.enabled)
+    {
+        freezeSoloButton.setToggleState (false, quiet);
+        freezeHarmonyButton.setToggleState (false, quiet);
+    }
+    e.freezeSolo = freezeSoloButton.getToggleState();
+    e.freezeHarmony = freezeHarmonyButton.getToggleState();
+
     e.bendMode = (vm::BendMode) selectedSegment (modeButtons, 3);
     e.response = (vm::Response) selectedSegment (responseButtons, 3);
-
-    // "Aus" leaves the choice between scale and pentatonic as it was.
-    const int filter = selectedSegment (filterButtons, 3);
-    e.keyFilter = filter > 0;
-    if (filter > 0)
-        e.pentatonic = filter == 2;
+    e.articulation = (vm::Articulation) selectedSegment (articulationButtons, 3);
+    e.keyFilter = selectedSegment (filterButtons, 2) == 1;
+    e.pentatonic = false;   // the pentatonic scales are in the list of scales
     e.pentaSustain = selectedSegment (holdButtons, 2) == 1;
-
-    const int triad = selectedSegment (triadButtons, 3);
-    e.triad = triad > 0;
-    if (triad > 0)
-        e.triadWithRoot = triad == 1;
+    e.triad = selectedSegment (triadButtons, 2) == 1;
+    e.harmonyMode = selectedSegment (harmonyModeButtons, 2) == 1 ? vm::HarmonyMode::Chromatic : vm::HarmonyMode::Diatonic;
 
     e.bendRangeSemis = SettingsStore::kBendRanges[juce::jlimit (0, SettingsStore::kNumBendRanges - 1, bendRangeBox.getSelectedId() - 1)];
     e.dynamics = (vm::DynamicsMode) juce::jlimit (0, 2, dynamicsBox.getSelectedId() - 1);
+    e.dynamicsTarget = (vm::DynamicsTarget) juce::jlimit (0, 3, targetBox.getSelectedId() - 1);
     e.lowestNote = lowestBox.getSelectedId() > 0 ? lowestBox.getSelectedId() : 34;
-    e.midiChannel = juce::jlimit (1, 16, channelBox.getSelectedId());
+    e.mpe = channelBox.getSelectedId() == kMpeItem;
+    if (channelBox.getSelectedId() >= 1 && channelBox.getSelectedId() <= 16)
+        e.midiChannel = channelBox.getSelectedId();
     e.triadChannel = juce::jlimit (1, 16, triadChannelBox.getSelectedId());
     e.keyRoot = juce::jlimit (0, 11, rootBox.getSelectedId() - 1);
-    e.scaleMode = juce::jlimit (0, 6, scaleBox.getSelectedId() - 1);
+    e.scaleMode = vm::scale::clampMode (scaleBox.getSelectedId() - 1);
+    e.voicing = vm::scale::clampVoicing (voicingBox.getSelectedId() - 1);
     e.inputGainDb = (float) gainSlider.getValue();
-    e.gateDb = (float) gateSlider.getValue();
     e.fixedVelocity = juce::roundToInt (velocitySlider.getValue());
     e.a4Hz = (float) tuningSlider.getValue();
     e.vibratoSmoothing = (float) smoothingSlider.getValue();
+    e.dynamicsSmoothingMs = (float) dynSmoothingSlider.getValue();
+
+    // Out never above In: whichever slider moves, Out gives way.
+    e.gateDb = (float) gateSlider.getValue();
+    if (gateOffSlider.getValue() > gateSlider.getValue())
+        gateOffSlider.setValue (gateSlider.getValue(), quiet);
+    e.gateOffDb = (float) gateOffSlider.getValue();
+
     host.setSettings (e);
 
     // controls that do nothing right now are dimmed, not hidden
@@ -445,14 +663,29 @@ void MainComponent::pushSettings()
         if (value != nullptr)
             value->setAlpha (on ? 1.0f : 0.5f);
     };
+    const bool continuous = e.dynamics == vm::DynamicsMode::Continuous;
     dim (e.dynamics == vm::DynamicsMode::Fixed, velocitySlider, velocityName, &velocityValue);
-    dim (e.bendMode != vm::BendMode::Quantized, bendRangeBox, bendRangeName);
+    dim (e.dynamics != vm::DynamicsMode::Fixed, articulationRow, articulationName);
+    dim (continuous, targetBox, targetName);
+    dim (continuous, dynSmoothingSlider, dynSmoothingName, &dynSmoothingValue);
+    dim (e.bendMode != vm::BendMode::Quantized && ! e.mpe, bendRangeBox, bendRangeName);
     dim (e.bendMode == vm::BendMode::Smoothed, smoothingSlider, smoothingName, &smoothingValue);
-    dim (e.keyFilter && e.pentatonic, holdRow, holdName);
+    dim (e.keyFilter && vm::scale::noteCount (e.scaleMode) < 7, holdRow, holdName);
+    dim (e.triad, voicingRow, voicingName);
+    dim (e.triad, harmonyModeRow, harmonyModeName);
     dim (e.triad, triadChannelBox, triadChannelName);
+    voicingEditButton.setEnabled (e.triad && e.voicing == vm::scale::kFreeVoicing);
+    freezeSoloButton.setEnabled (e.enabled);
+    freezeHarmonyButton.setEnabled (e.enabled && e.triad);
 
     masterButton.setButtonText (e.enabled ? "Erkennung an" : "Erkennung aus");
+    octaveButton.setButtonText ((e.octaveAttackGuard ? milliseconds (e.octaveAttackMs) : juce::String ("Aus")) + "  /  "
+                                + (e.octaveSustainGuard ? milliseconds (e.octaveSustainMs) : juce::String ("Aus")) + U (" \xe2\x80\xa6"));
     updateValueLabels();
+
+    if (presetBar->currentSlot() > 0)
+        presetBar->setModified (image (e) != presetImage);
+
     store->save (settings);
 }
 
@@ -462,15 +695,25 @@ void MainComponent::updateValueLabels()
     const auto quiet = juce::dontSendNotification;
     gainValue.setText (signedDb (e.inputGainDb), quiet);
     gateValue.setText (signedDb (e.gateDb), quiet);
+    gateOffValue.setText (signedDb (e.gateOffDb), quiet);
     velocityValue.setText (juce::String (e.fixedVelocity), quiet);
     tuningValue.setText (decimalComma (e.a4Hz, 1) + " Hz", quiet);
     smoothingValue.setText (juce::String (juce::roundToInt (e.vibratoSmoothing * 100.0f)) + " %", quiet);
+    dynSmoothingValue.setText (milliseconds (e.dynamicsSmoothingMs), quiet);
 }
 
 void MainComponent::setMode (int index)
 {
     modeButtons[juce::jlimit (0, 2, index)].setToggleState (true, juce::sendNotification);
     pushSettings();
+}
+
+void MainComponent::allNotesOff()
+{
+    freezeSoloButton.setToggleState (false, juce::dontSendNotification);
+    freezeHarmonyButton.setToggleState (false, juce::dontSendNotification);
+    pushSettings();
+    host.requestAllNotesOff();
 }
 
 void MainComponent::remoteControl (int paramIndex, bool isNote, int value)
@@ -483,10 +726,14 @@ void MainComponent::remoteControl (int paramIndex, bool isNote, int value)
     if (! params::applyMidi (param, settings, isNote, value))
         return;
 
-    if (param.kind == Param::Kind::Trigger)
-        host.requestAllNotesOff();
-    else
+    if (param.kind != Param::Kind::Trigger)
         applySettingsToControls();
+    else if (param.id == "presetNext")
+        presetBar->step (1);
+    else if (param.id == "presetPrevious")
+        presetBar->step (-1);
+    else
+        allNotesOff();
 }
 
 bool MainComponent::keyPressed (const juce::KeyPress& key)
@@ -550,6 +797,45 @@ void MainComponent::showSettings()
     settingsDialog = launch.launchAsync();
 }
 
+void MainComponent::showVoicingPanel()
+{
+    auto panel = std::make_unique<VoicingPanel> (settings.engine.freeVoicing);
+    juce::Component::SafePointer<MainComponent> safeThis (this);
+    panel->onChange = [safeThis] (uint64_t mask)
+    {
+        if (safeThis == nullptr)
+            return;
+        safeThis->settings.engine.freeVoicing = mask;
+        safeThis->pushSettings();
+    };
+    juce::CallOutBox::launchAsynchronously (std::move (panel), voicingRow.getScreenBounds(), nullptr);
+}
+
+void MainComponent::showOctavePanel()
+{
+    const auto& e = settings.engine;
+    OctavePanel::Values values;
+    values.attackOn = e.octaveAttackGuard;
+    values.attackMs = e.octaveAttackMs;
+    values.sustainOn = e.octaveSustainGuard;
+    values.sustainMs = e.octaveSustainMs;
+
+    auto panel = std::make_unique<OctavePanel> (values);
+    juce::Component::SafePointer<MainComponent> safeThis (this);
+    panel->onChange = [safeThis] (const OctavePanel::Values& v)
+    {
+        if (safeThis == nullptr)
+            return;
+        auto& engine = safeThis->settings.engine;
+        engine.octaveAttackGuard = v.attackOn;
+        engine.octaveAttackMs = v.attackMs;
+        engine.octaveSustainGuard = v.sustainOn;
+        engine.octaveSustainMs = v.sustainMs;
+        safeThis->pushSettings();
+    };
+    juce::CallOutBox::launchAsynchronously (std::move (panel), octaveButton.getScreenBounds(), nullptr);
+}
+
 void MainComponent::refreshUpdateButton()
 {
     const auto version = updates.availableUpdate();
@@ -577,6 +863,7 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
     {
         settings.midiInputName = remote.inputName();
         settings.midiMapJson = remote.toJson();
+        settings.midiProgramChannel = remote.programChannel();
         store->save (settings);
     }
     else
@@ -629,7 +916,8 @@ AudioHost::Meters MainComponent::demoMeters()
 
     if (e.triad)
     {
-        const auto chord = vm::scale::triad (step.note, e.keyRoot, e.scaleMode, e.triadWithRoot && e.triadChannel != e.midiChannel);
+        const auto chord = vm::scale::voices (step.note, e.keyRoot, e.scaleMode, e.voicing, e.harmonyMode == vm::HarmonyMode::Diatonic,
+                                              e.freeVoicing, ! e.mpe && e.triadChannel == e.midiChannel);
         m.triadCount = chord.count;
         for (int i = 0; i < chord.count; ++i)
             m.triad[i] = chord.notes[i];
@@ -654,13 +942,15 @@ void MainComponent::timerCallback()
     f.note = m.note;
     f.active = m.active && e.enabled;
     f.held = m.held;
-    f.heard = e.enabled && m.voiced && m.levelDb >= e.gateDb - 6.0f;
-    f.triadCount = f.active ? m.triadCount : 0;
-    for (int i = 0; i < 3; ++i)
+    f.heard = e.enabled && m.voiced && m.levelDb >= e.gateOffDb;
+    f.frozenNote = e.enabled && e.freezeSolo ? m.frozenNote : -1;
+    f.harmonyFrozen = e.enabled && e.freezeHarmony && m.triadCount > 0;
+    f.triadCount = f.active || f.harmonyFrozen ? m.triadCount : 0;
+    for (int i = 0; i < vm::scale::kMaxVoices; ++i)
         f.triad[i] = m.triad[i];
 
     display.push (f, e.a4Hz);
-    levelMeter.update (f.levelDb, e.gateDb, clipTicks > 0);
+    levelMeter.update (f.levelDb, e.gateDb, e.gateOffDb, clipTicks > 0);
 
     // the level as a number; a change of a whole dB is enough to read it
     if (std::abs (f.levelDb - lastLevelDb) >= 1.0f)
@@ -711,17 +1001,26 @@ void MainComponent::updateStatus (const AudioHost::Meters& m)
         }
         else
         {
+            // the audio configuration as it is right now: rate | buffer (its length)
+            juce::String audio;
+            if (m.running && m.sampleRate > 0.0)
+            {
+                const double kHz = m.sampleRate / 1000.0;
+                const bool whole = std::abs (kHz - std::round (kHz)) < 0.005;
+                audio = (whole ? juce::String (juce::roundToInt (kHz)) : decimalComma (kHz, 1)) + " kHz | "
+                      + juce::String (m.blockSize) + " Samples (~" + decimalComma (1000.0 * m.blockSize / m.sampleRate, 1) + " ms)";
+            }
+
             juce::String input = options.demo ? juce::String ("Demo") : juce::String ("Ohne Audio");
             if (auto* device = deviceManager.getCurrentAudioDevice(); device != nullptr && m.running && ! options.demo)
-            {
-                const double ms = m.sampleRate > 0.0 ? 1000.0 * m.blockSize / m.sampleRate : 0.0;
-                input = device->getName() + ", " + decimalComma (m.sampleRate / 1000.0, 1) + " kHz, "
-                      + decimalComma (ms, 1) + " ms Puffer";
-            }
-            text = input + U ("   \xe2\x86\x92   MIDI-Ausgang \xe2\x80\x9e") + settings.midiPortName
-                 + U ("\xe2\x80\x9c, Kanal ") + juce::String (e.midiChannel);
+                input = device->getName();
+            if (audio.isNotEmpty())
+                input << U ("  \xc2\xb7  ") << audio;
+
+            text = input + U ("   \xe2\x86\x92   MIDI-Ausgang \xe2\x80\x9e") + settings.midiPortName + U ("\xe2\x80\x9c, ")
+                 + (e.mpe ? U ("MPE auf Kanal 2\xe2\x80\x93" "16") : "Kanal " + juce::String (e.midiChannel));
             if (e.triad)
-                text << ", Dreiklang auf Kanal " << e.triadChannel;
+                text << ", Harmonie auf Kanal " << e.triadChannel;
         }
     }
 
@@ -738,9 +1037,10 @@ void MainComponent::paint (juce::Graphics& g)
 {
     g.fillAll (colour::window);
 
-    // hairline under the display
+    // hairlines under the presets and under the display
     g.setColour (juce::Colours::black.withAlpha (0.6f));
-    g.fillRect (0, kDisplayHeight, getWidth(), 1);
+    g.fillRect (0, kHeaderHeight - 1, getWidth(), 1);
+    g.fillRect (0, kHeaderHeight + kDisplayHeight, getWidth(), 1);
 
     // column titles
     g.setFont (font (13.0f, true));
@@ -761,8 +1061,21 @@ void MainComponent::paint (juce::Graphics& g)
 void MainComponent::resized()
 {
     auto area = getLocalBounds();
-    display.setBounds (area.removeFromTop (kDisplayHeight));
-    masterButton.setBounds (kMargin, kDisplayHeight - kMargin - 28, LiveDisplay::kNoteWidth - 2 * kMargin, 28);
+
+    auto header = area.removeFromTop (kHeaderHeight);
+    presetBar->setBounds (header.withSizeKeepingCentre (header.getWidth() - 2 * kMargin, PresetBar::kHeight)
+                                .withWidth (juce::jmin (640, header.getWidth() - 2 * kMargin)));
+
+    const auto displayArea = area.removeFromTop (kDisplayHeight);
+    display.setBounds (displayArea);
+
+    // under the note: the master switch, below it the two freeze buttons side by side
+    const int buttonsWidth = LiveDisplay::kNoteWidth - 2 * kMargin;
+    auto freezeRow = juce::Rectangle<int> (kMargin, displayArea.getBottom() - kMargin - 26, buttonsWidth, 26);
+    masterButton.setBounds (freezeRow.translated (0, -32).withHeight (26));
+    freezeSoloButton.setBounds (freezeRow.removeFromLeft ((buttonsWidth - 6) / 2));
+    freezeRow.removeFromLeft (6);
+    freezeHarmonyButton.setBounds (freezeRow);
 
     auto status = area.removeFromBottom (kStatusHeight).reduced (kMargin, 8);
     panicButton.setBounds (status.removeFromRight (116));

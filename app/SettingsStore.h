@@ -1,9 +1,9 @@
 // Everything the app remembers between runs, in one file shared by all
 // versions: going forward or back keeps the settings.
 //
-// Adding a setting: a field in AppSettings, one line in load() and one in
-// save(). Older versions ignore keys they do not know, so nothing breaks when
-// switching back. If a key ever changes meaning, raise kSchema and convert the
+// Adding an engine setting: one line in SettingsFields.cpp. Anything else: a
+// field in AppSettings, one line in load() and one in save(). Older versions
+// ignore keys they do not know, so nothing breaks when switching back. If a key ever changes meaning, raise kSchema and convert the
 // old value in migrate().
 #pragma once
 
@@ -17,6 +17,8 @@ struct AppSettings
     juce::String midiPortName;
     juce::String midiInputName;   ///< port for remote control, empty = none
     juce::String midiMapJson;     ///< remote-control bindings, see MidiRemote::toJson
+    int midiProgramChannel = 0;   ///< program changes load presets: -1 = off, 0 = every channel, 1..16
+    int presetSlot = 0;           ///< the preset last loaded or saved, 0 = none
     bool hasWindowPosition = false;
     int windowX = 0, windowY = 0;
 };
