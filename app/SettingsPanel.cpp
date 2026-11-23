@@ -23,7 +23,7 @@ namespace
 
 SettingsPanel::SettingsPanel (juce::AudioDeviceManager& deviceManager, UpdateManager& updateManager, MidiRemote& remote, int firstPage)
     : updates (updateManager),
-      selector (deviceManager, 1, 1, 0, 0, false, false, false, false),
+      selector (deviceManager, 1, 1, 0, 2, false, false, false, false),
       mapping (remote)
 {
     static const char* names[] = { "Audio", "MIDI-Steuerung", "Version" };

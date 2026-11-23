@@ -79,6 +79,17 @@ struct Settings
     bool         octaveSustainGuard = true;  ///< inside a note: a jump of an octave must last before it is believed
     float        octaveSustainMs    = 11.0f; ///< how long it must last, 0 .. 100
 
+    // --- playing aids (NoteTracker)
+    bool         jumpGuard          = false; ///< a wide leap right after a note has started must last before it is believed
+    int          jumpIntervalSemis  = 7;     ///< "wide" starts here, 5 .. 24 semitones
+    float        jumpWindowMs       = 80.0f; ///< how long after the start of a note the guard watches, 10 .. 200
+    float        jumpLockMs         = 50.0f; ///< how long the leap must last, 20 .. 150
+    float        bridgeMs           = 30.0f; ///< a note survives this long without a detectable pitch while the level stays above gateOffDb, 0 .. 200
+
+    // --- ringing on (OutputStage for MIDI, Harmonizer for audio)
+    float        overlapMs          = 0.0f;  ///< at a change of note the previous one stays this long, 0 .. 1500
+    float        releaseMs          = 0.0f;  ///< after the end of playing the note fades out over this time, 0 .. 3000
+
     // --- loudness
     Articulation   articulation       = Articulation::Off;
     DynamicsTarget dynamicsTarget     = DynamicsTarget::Expression;
@@ -97,6 +108,17 @@ struct Settings
     int          voicing        = 0;      ///< index into scale::kVoicings, 0 .. scale::kVoicingCount - 1
     HarmonyMode  harmonyMode    = HarmonyMode::Diatonic;
     uint64_t     freeVoicing    = (1ull << 24) | (1ull << 28) | (1ull << 31); ///< free voicing: bit (semitones + 24) for -24 .. +24, at most 10 set
+    float        harmonyOffset  = 0.0f;   ///< harmony softer than the played note: -0.5 .. 0 (velocity and dynamics controllers are scaled by 1 + this)
+
+    // --- the harmony as sound: the violin's own tone, shifted (Harmonizer)
+    bool         audioHarmony   = false;
+    float        bodyKeep       = 1.0f;     ///< 1: the resonance of the body stays where it is, 0: it moves with the pitch
+    float        humanize       = 0.2f;     ///< small differences in pitch and time between the voices, 0 .. 1
+    float        vibratoCoupling = 1.0f;    ///< how much of the player's vibrato the voices follow, 0 .. 1
+    float        stereoSpread   = 0.5f;     ///< voices spread left and right, 0 .. 1
+    float        hiCutHz        = 10000.0f; ///< low-pass for the voices only, 4000 .. 16000
+    float        harmonyGainDb  = 0.0f;     ///< level of the voices, -60 (treated as off) .. +6
+    bool         dryKill        = false;    ///< the violin's own sound is left out of the output
 
     // --- MPE: every note on its own channel 2..16, bend range 48 (OutputStage)
     bool         mpe            = false;

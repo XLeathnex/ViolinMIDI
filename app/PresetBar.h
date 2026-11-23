@@ -23,6 +23,7 @@ public:
     std::function<vm::Settings()> currentSettings;           ///< what "Speichern" writes
     std::function<void (const vm::Settings&)> onLoad;        ///< a preset was chosen: apply it
     std::function<void (int slot)> onSlotChanged;            ///< to remember it for the next start (0 = none)
+    std::function<void()> onFactory;                         ///< the factory preset "Lowest Latenz" was chosen
 
     /** Shows that slot as current without loading it (0 or a missing slot = none). */
     void setCurrentSlot (int slot);
@@ -45,6 +46,7 @@ private:
     void updateTexts();
 
     void showMenu();
+    void chooseFactory();
     void showMoreMenu();
     void saveCurrent();
     void saveAs();

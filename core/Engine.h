@@ -5,6 +5,7 @@
 #pragma once
 
 #include "Biquad.h"
+#include "Harmonizer.h"
 #include "NoteTracker.h"
 #include "OutputStage.h"
 #include "PitchDetector.h"
@@ -58,8 +59,13 @@ public:
     /** Clears the audio history without sending MIDI. */
     void reset();
 
-    /** Processes one block of mono input. Events are appended to `out`. */
-    void process (const float* input, int numSamples, const Settings& settings, MidiEventList& out);
+    /** Processes one block of mono input. Events are appended to `out`.
+
+        `left` and `right` (both or neither) receive the sound output: the
+        harmony voices played with the violin's own tone (Settings::audioHarmony),
+        silence otherwise. They must not overlap the input. */
+    void process (const float* input, int numSamples, const Settings& settings, MidiEventList& out,
+                  float* left = nullptr, float* right = nullptr);
 
     /** Ends the sounding note and returns the controllers to neutral. */
     void shutdown (MidiEventList& out);
@@ -78,6 +84,7 @@ private:
     void configure (const Settings& s);
     void analyseHop (const Settings& s, int offset, MidiEventList& out);
     static Settings effective (const Settings& s) noexcept;
+    void updateHarmonizerFrame (const Settings& s) noexcept;
     void silenceOutput (const Settings& s, int offset, MidiEventList& out);
 
     double fsIn = 48000.0, fs = 48000.0;
@@ -91,6 +98,14 @@ private:
     PitchDetector detector;
     NoteTracker tracker;
     OutputStage stage;
+
+    // the harmony as sound
+    Harmonizer harmonizer;
+    Harmonizer::Frame frame;         // what the harmonizer is told at the next hop boundary
+    bool  harmonizerOn = false;
+    bool  frameFrozen = false;
+    float frozenPitch = 60.0f;       // the played pitch when the harmony was frozen
+    int   lastRoot = -1;             // the last root the harmony was built on
     MidiEventList hopEvents;      // what the tracker produced in one hop
     Settings lastSettings;
     bool wasEnabled = true;

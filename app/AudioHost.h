@@ -43,6 +43,14 @@ public:
 
     void setSettings (const vm::Settings& s) noexcept;
 
+    /** Sends a controller on the main channel at the next audio block (channel 1
+        with MPE). Only the newest value waits: meant for a slow source such as
+        the camera, from the message thread. */
+    void sendController (int number, int value) noexcept
+    {
+        pendingController.store (((number & 0x7F) << 8) | (value & 0x7F));
+    }
+
     /** Ends the sounding note and resets the controllers at the next audio block. */
     void requestAllNotesOff() noexcept { panic.store (true); }
 
@@ -64,7 +72,7 @@ private:
 
     vm::Engine engine;
     vm::MidiEventList events;
-    std::vector<float> silence;
+    std::vector<float> silence, outLeft, outRight;   // one chunk each
     std::unique_ptr<juce::MidiOutput> midiOut;
 
     // Settings: written by the window, read by the audio thread. The audio
@@ -74,6 +82,7 @@ private:
     vm::Settings sharedSettings;     // guarded by settingsLock
     vm::Settings audioSettings;      // the audio thread's own copy
     std::atomic<bool>  panic { false };
+    std::atomic<int>   pendingController { -1 };   // number << 8 | value, -1 = none
 
     // meters: written by the audio thread, read by the window
     std::atomic<float> mLevelDb { -120.0f }, mInputPeak { 0.0f }, mClarity { 0.0f };

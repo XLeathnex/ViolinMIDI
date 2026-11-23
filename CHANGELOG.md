@@ -2,6 +2,16 @@
 
 Der Abschnitt einer Version erscheint in der App unter Einstellungen, wenn man die Version auswählt.
 
+## 1.5.0
+
+- Verzögerung: Die Erkennung war nie langsamer geworden, aber zwei Dinge konnten bremsen. Der Audio-Puffer fiel unter Umständen unbemerkt auf 512 Samples zurück (etwa 10 ms mehr); er wird jetzt bei jedem Start klein gehalten, solange man ihn nicht selbst in den Einstellungen wählt. Und die Harmonie setzte in 1.4.0 bis zu 29 ms nach dem Soloton ein; sie beginnt jetzt wieder im selben Augenblick.
+- Werks-Preset „Lowest Latenz“ (im Preset-Menü ganz oben): stellt Ansprache, Glättungen, Filter und Puffer auf die kürzeste Verzögerung.
+- Tracking-Filter (Spalte „Erkennung“): Sprungschutz gegen versehentlich angerissene Nachbarsaiten und einstellbare Überbrückung für Bogenwechsel, zusammen mit dem Oktavsprung-Schutz.
+- Nachklingen: „Spiel-Überlappung“ lässt den vorherigen Ton beim Tonwechsel weiterklingen, „Ausklingen (Spielende)“ blendet den letzten Ton aus, statt ihn abzuschneiden.
+- Harmonie-Offset: Die Harmoniestimmen lassen sich bis zu 50 % leiser als der Soloton ausgeben.
+- Audio-Harmonizer (Knopf oben rechts): spielt die Harmoniestimmen mit dem eigenen Klang der Geige über den Audio-Ausgang, mit Korpus-Erhalt, Bogen-Variation, Vibrato-Kopplung, Stereo-Panorama, Piezo-Glättung, Pegel und Dry-Kill.
+- Kamera-Steuerung (Knopf oben rechts): Die Höhe des Geigenhalses steuert einen Controller oder den Harmonie-Mix, Nicken und Kopfschütteln schalten Funktionen. Das Bild wird nur auf dem Mac ausgewertet und nicht gespeichert.
+
 ## 1.4.0
 
 - Behoben: Auf dem Harmonie-Kanal kommen jetzt immer alle Stimmen an, auch der gespielte Ton. Die Auswahl „2 Töne“ gibt es nicht mehr.

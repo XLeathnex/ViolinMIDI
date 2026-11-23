@@ -11,8 +11,8 @@ namespace
     constexpr int    kCentre = 8192;
     constexpr double kSettleSec = 0.030;
     constexpr float  kSettleTolerance = 0.30f;
-    constexpr float  kHarmonyClear = 0.25f;       // R4b: this close to a semitone the pitch is clear
     constexpr float  kHarmonyHysteresis = 0.15f;  // R4c: semitones past the half-way point
+    constexpr int    kFadeController = 11;        // R8: what rings on is faded with expression
 
     // The controllers that may carry the bow loudness, and where they rest.
     constexpr int kDynNumber[3]  = { 1, 2, 11 };
@@ -34,7 +34,8 @@ namespace
 
 void OutputStage::prepare (double hopsPerSecond) noexcept
 {
-    settleHops = std::max (1, (int) std::lround (kSettleSec * std::max (50.0, hopsPerSecond)));
+    hopRate = std::max (50.0, hopsPerSecond);
+    settleHops = std::max (1, (int) std::lround (kSettleSec * hopRate));
     reset();
 }
 
@@ -42,6 +43,8 @@ void OutputStage::reset() noexcept
 {
     cur = Voice();
     old = Voice();
+    for (Tail& t : tails)
+        t = Tail();
     haveCfg = false;
     scaleMask = 0xFFFu;
     srcActive = false;
@@ -59,9 +62,8 @@ void OutputStage::reset() noexcept
     triadCount_ = 0;
     triadBend14 = kCentre;
     triadBendMoved = false;
-    harmActive = harmPending = false;
+    harmActive = false;
     harmRoot = -1;
-    harmWait = 0;
     harmCand = -1;
     harmCount = 0;
     soloFreeze = harmFreeze = Freeze::Off;
@@ -96,6 +98,9 @@ void OutputStage::emitAlways (int offset, int status, int channel, int data1, in
     channel &= 0x0F;
     data1 &= 0x7F;
     data2 &= 0x7F;
+
+    if (status == 0x90)
+        takeFromTails (channel, data1, offset, out);  // R8d: off first, never two of the same note
 
     MidiEvent e;
     e.sampleOffset = offset;
@@ -142,7 +147,21 @@ void OutputStage::emit (Track track, int offset, int status, int channel, int da
         && soloFreeze == Freeze::On && soloDrone.channel == (channel & 0x0F))
         return;
 
+    if (heldBack (track, status, channel & 0x0F, data1))   // R8e
+        return;
+
     emitAlways (offset, status, channel, data1, data2, out);
+}
+
+bool OutputStage::heldBack (Track track, int status, int channel, int data1) const noexcept
+{
+    if (status != 0xE0 && ! (status == 0xB0 && data1 == kFadeController))
+        return false;
+
+    if (! tailOn (channel))
+        return false;
+
+    return track == Track::Solo ? cur.note < 0 : ! harmActive;
 }
 
 bool OutputStage::soloHas (int channel, int note) const noexcept
@@ -178,6 +197,7 @@ void OutputStage::process (const MidiEvent* in, int numIn, float levelDb, const 
                            int offset, MidiEventList& out)
 {
     applySettings (settings, offset, out);
+    advanceTails (offset, out);
 
     for (int i = 0; i < numIn; ++i)
     {
@@ -239,6 +259,7 @@ void OutputStage::releaseAll (int offset, MidiEventList& out)
     const bool harmWasFrozen = harmFreeze == Freeze::On;
     const int  droneChannel = harmDroneChan;
 
+    flushTails (offset, out);
     endVoice (old, offset, out);
     endVoice (cur, offset, out);
     endTriad (offset, out);
@@ -341,6 +362,8 @@ void OutputStage::applySettings (const Settings& s, int offset, MidiEventList& o
         return;
     }
 
+    flushTails (offset, out);                         // R8f
+
     if (mpeChanged)
     {
         // R5d: the solo track changes its channels. Everything there ends where it was started.
@@ -434,7 +457,7 @@ void OutputStage::applySettings (const Settings& s, int offset, MidiEventList& o
                 startTriad (offset, out);
             }
         }
-        else if (! harmPending)
+        else
         {
             beginHarmony (offset, out);
         }
@@ -458,7 +481,7 @@ void OutputStage::applyFreeze (const Settings& n, int offset, MidiEventList& out
         if (! n.freezeHarmony)
             releaseHarmony (offset, out);
         else if (triadCount_ > 0)
-            captureHarmony();
+            captureHarmony (offset, out);
         else
             harmFreeze = Freeze::Armed;
     }
@@ -495,7 +518,7 @@ void OutputStage::handle (const MidiEvent& e, bool noteOnAhead, float levelDb, i
                 else
                 {
                     // Legato from the tracker: new note on, then its note-off for the old one.
-                    endTriad (offset, out);
+                    endTriad (offset, out, overlapHops(), false);
                     old = cur;
                     cur = Voice();
                 }
@@ -520,14 +543,14 @@ void OutputStage::handle (const MidiEvent& e, bool noteOnAhead, float levelDb, i
     {
         if (old.note >= 0 && old.src == data1)
         {
-            endVoice (old, offset, out);
+            endVoice (old, offset, out, overlapHops(), cfg.mpe);      // R8a
         }
         else if (cur.note >= 0 && ! cur.held && cur.src == data1)
         {
             if (canHold() && levelDb >= cfg.gateOffDb)
                 beginHold (offset, out);
             else
-                endVoice (cur, offset, out);
+                endVoice (cur, offset, out, releaseHops(), true);     // R8b
         }
         // else: this note was never sent
 
@@ -559,7 +582,7 @@ void OutputStage::handle (const MidiEvent& e, bool noteOnAhead, float levelDb, i
             return;
         }
 
-        if (soloFreeze != Freeze::On)
+        if (soloFreeze != Freeze::On && ! heldBack (Track::Solo, status, channel, data1))
             append (e, out);                          // R0: exactly as it came
         sentBend14 = srcBend14;
         mirrorBend (offset, out);
@@ -572,7 +595,7 @@ void OutputStage::handle (const MidiEvent& e, bool noteOnAhead, float levelDb, i
 
         if (! cfg.mpe)
         {
-            if (soloFreeze != Freeze::On)
+            if (soloFreeze != Freeze::On && ! heldBack (Track::Solo, status, channel, data1))
                 append (e, out);
         }
         else if (k < 0)
@@ -619,10 +642,15 @@ void OutputStage::startMain (int note, int vel, int srcNoteFor, int channel, int
     cur.held = false;
     lastMainChannel = cur.channel;
 
+    if (soloFreeze != Freeze::On)
+        stopFades (cur.channel, offset, out);         // R8c
+
+    // What the channel really has: a bend may have been held back while a note rang on there.
+    sentBend14 = chanBend[cur.channel];
+
     if (cfg.mpe)
     {
         // R6: a channel of its own. It is brought to the tracker's state before the note starts.
-        sentBend14 = chanBend[cur.channel];
 
         for (int k = 0; k < kDynCount; ++k)
         {
@@ -645,17 +673,24 @@ void OutputStage::startMain (int note, int vel, int srcNoteFor, int channel, int
     beginHarmony (offset, out);
 }
 
-void OutputStage::endVoice (Voice& v, int offset, MidiEventList& out)
+void OutputStage::endVoice (Voice& v, int offset, MidiEventList& out, int tailHops, bool fade)
 {
     if (v.note < 0)
         return;
 
-    emit (Track::Solo, offset, 0x80, v.channel, v.note, 0, out);
+    // R8: the note rings on instead of ending - unless it is not really sounding (frozen track, R7).
+    // No fade on a channel that holds frozen harmony notes (R4f): they would be faded too (R7).
+    if (tailHops > 0 && soloFreeze != Freeze::On && ! frozenHas (v.channel, v.note))
+        startTail (v.channel, &v.note, 1, tailHops,
+                   fade && ! (harmFreeze == Freeze::On && harmDroneCount > 0 && harmDroneChan == v.channel), offset, out);
+    else
+        emit (Track::Solo, offset, 0x80, v.channel, v.note, 0, out);
+
     const bool wasCurrent = &v == &cur;
     v = Voice();
 
     if (wasCurrent)
-        endTriad (offset, out);
+        endTriad (offset, out, tailHops, fade);
 }
 
 void OutputStage::beginHold (int offset, MidiEventList& out)
@@ -756,9 +791,17 @@ void OutputStage::mirrorDynamics (int k, int value, int offset, MidiEventList& o
     if (! mirror())
         return;
 
+    value = forHarmony (value);
     emit (Track::Harmony, offset, 0xB0, cfg.triadChannel - 1, kDynNumber[k], value, out);
     triadDyn[k] = value;
     triadDynMoved[k] = value != kDynNeutral[k];
+}
+
+int OutputStage::forHarmony (int value) const noexcept
+{
+    // Settings::harmonyOffset: the harmony is this much softer than the played note.
+    const float factor = 1.0f + clampf (cfg.harmonyOffset, -0.5f, 0.0f);
+    return factor >= 1.0f ? value : clampi ((int) std::lround ((float) value * factor), 0, 127);
 }
 
 void OutputStage::beginHarmony (int offset, MidiEventList& out)
@@ -766,8 +809,6 @@ void OutputStage::beginHarmony (int offset, MidiEventList& out)
     if (! cfg.triad || cur.note < 0)
         return;
 
-    harmPending = false;
-    harmWait = 0;
     harmCand = -1;
     harmCount = 0;
 
@@ -778,18 +819,11 @@ void OutputStage::beginHarmony (int offset, MidiEventList& out)
         return;
     }
 
-    const float pitch = harmonyPitch();
-    const int nearest = clampi ((int) std::lround (pitch), 0, 127);
-
-    if (std::abs (pitch - (float) nearest) <= kHarmonyClear)
-    {
-        harmRoot = nearest;
-        startTriad (offset, out);
-    }
-    else
-    {
-        harmPending = true;                           // R4b: wait for the pitch to settle
-    }
+    // R4b: at once, on the semitone nearest to the pitch. Waiting for the pitch to
+    // settle first (as 1.4.0 did) made the harmony up to 30 ms late and gained
+    // nothing: the nearest semitone is the same before and after.
+    harmRoot = clampi ((int) std::lround (harmonyPitch()), 0, 127);
+    startTriad (offset, out);
 }
 
 void OutputStage::updateHarmony (int offset, MidiEventList& out)
@@ -799,17 +833,6 @@ void OutputStage::updateHarmony (int offset, MidiEventList& out)
 
     const float pitch = harmonyPitch();
     const int nearest = clampi ((int) std::lround (pitch), 0, 127);
-
-    if (harmPending)
-    {
-        if (std::abs (pitch - (float) nearest) <= kHarmonyClear || ++harmWait >= settleHops)
-        {
-            harmPending = false;
-            harmRoot = nearest;
-            startTriad (offset, out);
-        }
-        return;
-    }
 
     if (! harmActive)
         return;
@@ -829,7 +852,7 @@ void OutputStage::updateHarmony (int offset, MidiEventList& out)
 
     if (++harmCount >= settleHops)                    // R4c
     {
-        endTriad (offset, out);
+        endTriad (offset, out, overlapHops(), false);
         harmRoot = nearest;
         harmCand = -1;
         harmCount = 0;
@@ -848,6 +871,9 @@ void OutputStage::startTriad (int offset, MidiEventList& out)
     triadChan = cfg.triadChannel - 1;
     harmActive = true;
 
+    if (harmFreeze != Freeze::On)
+        stopFades (triadChan, offset, out);           // R8c
+
     if (ownChannel)
     {
         // The second channel starts at the same pitch and loudness as the first.
@@ -863,33 +889,49 @@ void OutputStage::startTriad (int offset, MidiEventList& out)
 
         for (int k = 0; k < kDynCount; ++k)
         {
-            if (sentDyn[k] >= 0 && triadDyn[k] != sentDyn[k])
+            const int wanted = sentDyn[k] >= 0 ? forHarmony (sentDyn[k]) : -1;
+            if (wanted >= 0 && triadDyn[k] != wanted)
             {
-                emit (Track::Harmony, offset, 0xB0, triadChan, kDynNumber[k], sentDyn[k], out);
-                triadDyn[k] = sentDyn[k];
-                triadDynMoved[k] = sentDyn[k] != kDynNeutral[k];
+                emit (Track::Harmony, offset, 0xB0, triadChan, kDynNumber[k], wanted, out);
+                triadDyn[k] = wanted;
+                triadDynMoved[k] = wanted != kDynNeutral[k];
             }
         }
     }
 
     for (int i = 0; i < v.count; ++i)
     {
-        emit (Track::Harmony, offset, 0x90, triadChan, v.notes[i], velocity, out);
+        emit (Track::Harmony, offset, 0x90, triadChan, v.notes[i], harmonyVelocity(), out);
         triadNotes[triadCount_++] = v.notes[i];
     }
 
     if (harmFreeze == Freeze::Armed && triadCount_ > 0)
-        captureHarmony();                             // R7a
+        captureHarmony (offset, out);                 // R7a
 }
 
-void OutputStage::endTriad (int offset, MidiEventList& out)
+void OutputStage::endTriad (int offset, MidiEventList& out, int tailHops, bool fade)
 {
-    for (int i = 0; i < triadCount_; ++i)
-        emit (Track::Harmony, offset, 0x80, triadChan, triadNotes[i], 0, out);
+    if (tailHops > 0 && harmFreeze != Freeze::On)
+    {
+        // R8: the voices ring on. A voice a frozen note stands for (R7e) is not sounding by itself.
+        int ringing[scale::kMaxVoices];
+        int count = 0;
+        for (int i = 0; i < triadCount_; ++i)
+            if (! frozenHas (triadChan, triadNotes[i]))
+                ringing[count++] = triadNotes[i];
+
+        // R7e: no fade on a channel that holds a frozen solo note - it would fade that note as well.
+        const bool canFade = fade && ! (soloFreeze == Freeze::On && soloDrone.channel == triadChan);
+        startTail (triadChan, ringing, count, tailHops, canFade, offset, out);
+    }
+    else
+    {
+        for (int i = 0; i < triadCount_; ++i)
+            emit (Track::Harmony, offset, 0x80, triadChan, triadNotes[i], 0, out);
+    }
 
     triadCount_ = 0;
     harmActive = false;
-    harmPending = false;
 }
 
 void OutputStage::neutraliseTriadChannel (int channel, int offset, MidiEventList& out)
@@ -928,6 +970,7 @@ void OutputStage::captureSolo (int offset, MidiEventList& out)
     if (old.note >= 0)
         endVoice (old, offset, out);                  // its note-off would be swallowed otherwise
 
+    flushTailsOn (cur.channel, offset, out);
     soloDrone = cur;
     soloFreeze = Freeze::On;
 }
@@ -971,8 +1014,10 @@ void OutputStage::releaseSolo (int offset, MidiEventList& out)
     }
 }
 
-void OutputStage::captureHarmony() noexcept
+void OutputStage::captureHarmony (int offset, MidiEventList& out)
 {
+    flushTailsOn (triadChan, offset, out);
+
     harmDroneCount = triadCount_;
     harmDroneChan = triadChan;
     for (int i = 0; i < triadCount_; ++i)
@@ -1017,7 +1062,248 @@ void OutputStage::releaseHarmony (int offset, MidiEventList& out)
 
     if (! same)
         for (int i = 0; i < triadCount_; ++i)
-            emit (Track::Harmony, offset, 0x90, triadChan, triadNotes[i], velocity, out);
+            emit (Track::Harmony, offset, 0x90, triadChan, triadNotes[i], harmonyVelocity(), out);
+}
+
+//==============================================================================
+// Ringing on (R8)
+
+int OutputStage::overlapHops() const noexcept
+{
+    return (int) std::lround (clampf (cfg.overlapMs, 0.0f, 1500.0f) * 0.001 * hopRate);
+}
+
+int OutputStage::releaseHops() const noexcept
+{
+    return (int) std::lround (clampf (cfg.releaseMs, 0.0f, 3000.0f) * 0.001 * hopRate);
+}
+
+int OutputStage::harmonyVelocity() const noexcept
+{
+    return std::max (1, forHarmony (velocity));
+}
+
+bool OutputStage::tailOn (int channel) const noexcept
+{
+    for (const Tail& t : tails)
+        if (t.active && t.channel == channel)
+            return true;
+    return false;
+}
+
+/** The expression value the channel should have when nothing is fading there. */
+int OutputStage::liveExpression (int channel) const noexcept
+{
+    constexpr int k = 2;   // index of controller 11 among the dynamics controllers
+
+    if (mirror() && channel == cfg.triadChannel - 1)
+        return triadDyn[k] >= 0 ? triadDyn[k] : kDynNeutral[k];
+
+    const bool solo = cur.note >= 0 ? cur.channel == channel : (! cfg.mpe && channel == cfg.midiChannel - 1);
+    return solo && sentDyn[k] >= 0 ? sentDyn[k] : kDynNeutral[k];
+}
+
+void OutputStage::startTail (int channel, const int* notes, int count, int hops, bool fade, int offset, MidiEventList& out)
+{
+    if (count <= 0)
+        return;
+
+    Tail* slot = nullptr;
+    for (Tail& t : tails)
+    {
+        if (! t.active)
+        {
+            slot = &t;
+            break;
+        }
+    }
+
+    if (slot == nullptr)
+    {
+        // All in use: the one that has least left gives way.
+        slot = &tails[0];
+        for (Tail& t : tails)
+            if (t.total - t.hops < slot->total - slot->hops)
+                slot = &t;
+        finishTail (*slot, offset, out);
+    }
+
+    // One fade per channel: the controller can only follow the newest. What rings there
+    // already is faded with it, so it ends with it too - it must not come back at full level
+    // when the controller is restored.
+    if (fade)
+        for (Tail& t : tails)
+            if (t.active && t.channel == channel)
+            {
+                t.fade = false;
+                t.total = std::min (t.total, t.hops + std::max (1, hops));
+            }
+
+    Tail& t = *slot;
+    t.active = true;
+    t.channel = channel;
+    t.count = std::min (count, scale::kMaxVoices);
+    for (int i = 0; i < t.count; ++i)
+        t.notes[i] = notes[i];
+    t.hops = 0;
+    t.total = std::max (1, hops);
+    t.fade = fade;
+    t.startValue = chanDyn[channel][2] >= 0 ? chanDyn[channel][2] : kDynNeutral[2];
+    t.lastValue = t.startValue;
+    // R8c: with mpe the loudness of a note may hang on its channel pressure, so that is faded too.
+    t.startPressure = fade && cfg.mpe ? chanPressure[channel] : -1;
+    t.lastPressure = t.startPressure;
+}
+
+void OutputStage::finishTail (Tail& t, int offset, MidiEventList& out)
+{
+    if (! t.active)
+        return;
+
+    for (int i = 0; i < t.count; ++i)
+        if (! frozenHas (t.channel, t.notes[i]))      // R7e
+            emitAlways (offset, 0x80, t.channel, t.notes[i], 0, out);
+
+    const bool faded = t.fade;
+    const int channel = t.channel;
+    t = Tail();
+
+    // The channel gets back what it would have had without the fade - once everything that
+    // was faded with it there has ended, so no note-off goes out at the restored level.
+    if (faded)
+    {
+        for (Tail& other : tails)
+            if (other.active && other.channel == channel)
+                finishTail (other, offset, out);
+
+        const int value = liveExpression (channel);
+        if (chanDyn[channel][2] != value)
+            emitAlways (offset, 0xB0, channel, kFadeController, value, out);
+    }
+
+    if (tailOn (channel))
+        return;
+
+    // ...and the bend and controller 11 that were held back (R8e), where no note of that track sounds now.
+    if (mirror() && channel == cfg.triadChannel - 1)
+    {
+        if (! harmActive && harmFreeze != Freeze::On && chanBend[channel] != triadBend14)
+            emitAlways (offset, 0xE0, channel, triadBend14 & 0x7F, (triadBend14 >> 7) & 0x7F, out);
+        if (! harmActive && harmFreeze != Freeze::On && triadDyn[2] >= 0 && chanDyn[channel][2] != triadDyn[2])
+            emitAlways (offset, 0xB0, channel, kFadeController, triadDyn[2], out);
+    }
+    else if (! cfg.mpe && channel == cfg.midiChannel - 1)
+    {
+        if (cur.note < 0 && soloFreeze != Freeze::On && chanBend[channel] != sentBend14)
+            emitAlways (offset, 0xE0, channel, sentBend14 & 0x7F, (sentBend14 >> 7) & 0x7F, out);
+        if (cur.note < 0 && soloFreeze != Freeze::On && sentDyn[2] >= 0 && chanDyn[channel][2] != sentDyn[2])
+            emitAlways (offset, 0xB0, channel, kFadeController, sentDyn[2], out);
+    }
+}
+
+void OutputStage::advanceTails (int offset, MidiEventList& out)
+{
+    for (Tail& t : tails)
+    {
+        if (! t.active)
+            continue;
+
+        ++t.hops;
+
+        if (t.fade)
+        {
+            const int value = t.startValue * std::max (0, t.total - t.hops) / t.total;
+            if (value != t.lastValue)
+            {
+                emitAlways (offset, 0xB0, t.channel, kFadeController, value, out);
+                t.lastValue = value;
+            }
+
+            if (t.startPressure > 0)
+            {
+                const int pressure = t.startPressure * std::max (0, t.total - t.hops) / t.total;
+                if (pressure != t.lastPressure)
+                {
+                    emitAlways (offset, 0xD0, t.channel, pressure, 0, out);
+                    t.lastPressure = pressure;
+                }
+            }
+        }
+
+        if (t.hops >= t.total)
+            finishTail (t, offset, out);
+    }
+}
+
+void OutputStage::stopFades (int channel, int offset, MidiEventList& out)
+{
+    // R8c: a new note on this channel. What rings on there stops fading - the
+    // controller is the new note's now - and has the overlap time left at most.
+    // Controller 11 may also have been held back behind a tail that did not fade (R8e).
+    const int limit = overlapHops();
+    bool upToDate = soloFreeze == Freeze::On && soloDrone.channel == channel;   // R7e: not onto a frozen solo note
+
+    for (Tail& t : tails)
+    {
+        if (! t.active || t.channel != channel)
+            continue;
+
+        if (t.fade || ! upToDate)
+        {
+            t.fade = false;
+            upToDate = true;
+            const int value = liveExpression (channel);
+            const int have = chanDyn[channel][2] >= 0 ? chanDyn[channel][2] : kDynNeutral[2];
+            if (have != value)
+                emitAlways (offset, 0xB0, channel, kFadeController, value, out);
+        }
+
+        t.total = std::min (t.total, t.hops + limit);
+        if (t.hops >= t.total)
+            finishTail (t, offset, out);
+    }
+}
+
+void OutputStage::takeFromTails (int channel, int note, int offset, MidiEventList& out)
+{
+    for (Tail& t : tails)
+    {
+        if (! t.active || t.channel != channel)
+            continue;
+
+        for (int i = 0; i < t.count; ++i)
+        {
+            if (t.notes[i] != note)
+                continue;
+
+            MidiEvent e;
+            e.sampleOffset = offset;
+            e.size = 3;
+            e.bytes[0] = (uint8_t) (0x80 | channel);
+            e.bytes[1] = (uint8_t) note;
+            e.bytes[2] = 0;
+            append (e, out);
+
+            t.notes[i] = t.notes[--t.count];
+            --i;
+        }
+
+        if (t.count == 0)
+            finishTail (t, offset, out);
+    }
+}
+
+void OutputStage::flushTails (int offset, MidiEventList& out)
+{
+    for (Tail& t : tails)
+        finishTail (t, offset, out);
+}
+
+void OutputStage::flushTailsOn (int channel, int offset, MidiEventList& out)
+{
+    for (Tail& t : tails)
+        if (t.active && t.channel == channel)
+            finishTail (t, offset, out);
 }
 
 //==============================================================================
@@ -1036,7 +1322,8 @@ bool OutputStage::channelBusy (int channel) const noexcept
         || (old.note >= 0 && old.channel == channel)
         || (soloFreeze == Freeze::On && soloDrone.channel == channel)
         || (cfg.triad && channel == cfg.triadChannel - 1)
-        || (harmFreeze == Freeze::On && harmDroneCount > 0 && harmDroneChan == channel);
+        || (harmFreeze == Freeze::On && harmDroneCount > 0 && harmDroneChan == channel)
+        || tailOn (channel);
 }
 
 int OutputStage::allocChannel() noexcept

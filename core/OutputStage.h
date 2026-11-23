@@ -53,10 +53,9 @@
 //        note + its bend), not the note number: a note bent a whole tone up
 //        is harmonised as the note it has become. This is what keeps a chord
 //        from being bent into a foreign one.
-//     b) Start. With every main note-on: at once, right after the main
-//        note-on, if the pitch is within 0.25 semitones of a semitone;
-//        otherwise as soon as it is, at the latest 30 ms later, on the
-//        nearest semitone.
+//     b) Start. With every main note-on, at once and right after it, on the
+//        semitone nearest to the pitch (the tracker's note, unless its bend
+//        is beyond half a semitone).
 //     c) While the main note sounds, the root is kept as long as the pitch
 //        stays within 0.65 semitones of it. A pitch nearer to another
 //        semitone for 30 ms exchanges the voices: old notes off, the bend
@@ -132,6 +131,35 @@
 //        made up when the freeze ends). With R4f the channel's bend and
 //        controllers are the solo track's and reach frozen harmony notes too.
 //
+// R8  Ringing on (overlapMs, releaseMs; both 0: nothing here applies).
+//     a) Overlap. At a change of note - the tracker's legato change, or an
+//        exchange of the harmony voices (R4c) - what sounded before is not
+//        ended but rings on for overlapMs, then gets its note-offs. With mpe
+//        the old main note has a channel of its own and is faded there (c);
+//        on a channel it shares with the new notes it rings at full level.
+//     b) Release. When the tracker ends the main note with nothing following
+//        (the level fell below the out threshold), the note and its harmony
+//        ring on for releaseMs and are faded out over that time.
+//     c) A fade lowers controller 11 on that channel step by step from the
+//        value it had to 0 (with mpe the channel pressure as well); after the note-offs the controller gets back the
+//        value it would have had. A new note starting on a channel where
+//        something is fading ends the fade (the controller is the new note's
+//        now) and what rings there has overlapMs left at most.
+//     d) A note-on for a note that is still ringing on that channel takes it
+//        over: note-off first, then the note-on (R1e holds for ringing notes
+//        too).
+//     e) While something rings on a channel and its track has no live note
+//        there, pitch bend and controller 11 for that channel are held back;
+//        the channel is brought up to date when the ringing ends or a new
+//        note starts.
+//     f) Nothing rings on from a frozen track (R7), from a held note (R1c), or
+//        across a change of key, harmony or channel settings (R5) and
+//        releaseAll(): there everything ringing ends at once.
+//
+// Settings::harmonyOffset (-0.5 .. 0) makes the harmony softer: the velocity
+// of the voices and the dynamics controllers repeated on the harmony channel
+// are multiplied by (1 + harmonyOffset). Neutral values are not scaled.
+//
 // The master switch (Settings::enabled) is handled by the Engine: it shuts the
 // tracker down and calls releaseAll().
 #pragma once
@@ -146,7 +174,7 @@ class OutputStage
 {
 public:
     /** Upper bound of events one process() call appends for `numIn` input events. */
-    static constexpr int maxEventsFor (int numIn) noexcept { return 40 * numIn + 120; }
+    static constexpr int maxEventsFor (int numIn) noexcept { return 40 * numIn + 260; }
 
     void prepare (double hopsPerSecond) noexcept;
 
@@ -171,6 +199,10 @@ public:
     int  triadNote (int i) const noexcept { return harmFreeze == Freeze::On ? harmDrone[i] : triadNotes[i]; }
     /** Semitones between the tracker's note and the note sounding (R3), else 0. */
     float pitchOffset() const noexcept { return cur.note >= 0 && ! cur.held ? (float) (cur.src - cur.note) : 0.0f; }
+    /** The semitone the harmony is built on right now, or -1 if no harmony is sounding live. */
+    int  harmonyRoot() const noexcept { return harmActive && harmFreeze != Freeze::On ? harmRoot : -1; }
+    /** The harmony track is frozen and has notes. */
+    bool harmonyFrozen() const noexcept { return harmFreeze == Freeze::On && harmDroneCount > 0; }
     /** The frozen solo note or -1. */
     int  frozenNote() const noexcept  { return soloFreeze == Freeze::On ? soloDrone.note : -1; }
 
@@ -192,13 +224,13 @@ private:
     void applyFreeze (const Settings& n, int offset, MidiEventList& out);
     void handle (const MidiEvent& e, bool noteOnAhead, float levelDb, int offset, MidiEventList& out);
     void startMain (int note, int velocity, int srcNote, int channel, int offset, MidiEventList& out);
-    void endVoice (Voice& v, int offset, MidiEventList& out);
+    void endVoice (Voice& v, int offset, MidiEventList& out, int tailHops = 0, bool fade = false);
     void beginHold (int offset, MidiEventList& out);
 
     void beginHarmony (int offset, MidiEventList& out);
     void updateHarmony (int offset, MidiEventList& out);
     void startTriad (int offset, MidiEventList& out);
-    void endTriad (int offset, MidiEventList& out);
+    void endTriad (int offset, MidiEventList& out, int tailHops = 0, bool fade = false);
     void neutraliseTriadChannel (int channel, int offset, MidiEventList& out);
     void handBackChannel (int channel, int offset, MidiEventList& out);
     void mirrorBend (int offset, MidiEventList& out);
@@ -212,8 +244,36 @@ private:
 
     void captureSolo (int offset, MidiEventList& out);
     void releaseSolo (int offset, MidiEventList& out);
-    void captureHarmony() noexcept;
+    void captureHarmony (int offset, MidiEventList& out);
     void releaseHarmony (int offset, MidiEventList& out);
+
+    // R8
+    struct Tail
+    {
+        bool active = false;
+        int  channel = 0;
+        int  notes[scale::kMaxVoices] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+        int  count = 0;
+        int  hops = 0, total = 1;     ///< how long it has rung and how long it will
+        bool fade = false;
+        int  startValue = 127, lastValue = 127;   ///< controller 11 at the start of the fade and as last sent
+        int  startPressure = -1, lastPressure = -1; ///< mpe: channel pressure likewise, -1 = not faded
+    };
+
+    void startTail (int channel, const int* notes, int count, int hops, bool fade, int offset, MidiEventList& out);
+    void finishTail (Tail&, int offset, MidiEventList& out);
+    void advanceTails (int offset, MidiEventList& out);
+    void stopFades (int channel, int offset, MidiEventList& out);
+    void takeFromTails (int channel, int note, int offset, MidiEventList& out);
+    void flushTails (int offset, MidiEventList& out);
+    void flushTailsOn (int channel, int offset, MidiEventList& out);
+    bool tailOn (int channel) const noexcept;
+    bool heldBack (Track, int status, int channel, int data1) const noexcept;
+    int  liveExpression (int channel) const noexcept;
+    int  overlapHops() const noexcept;
+    int  releaseHops() const noexcept;
+    int  forHarmony (int value) const noexcept;
+    int  harmonyVelocity() const noexcept;
 
     void sendMpeZone (int memberChannels, int offset, MidiEventList& out);
     int  allocChannel() noexcept;
@@ -271,9 +331,7 @@ private:
     bool  triadBendMoved = false;
     bool  triadDynMoved[kDynCount] = { false, false, false };
     bool  harmActive = false;      // the harmony of the sounding main note has started
-    bool  harmPending = false;     // ...or waits for a clear pitch (R4b)
     int   harmRoot = -1;
-    int   harmWait = 0;
     int   harmCand = -1;           // another root the pitch has moved to (R4c)
     int   harmCount = 0;
 
@@ -290,6 +348,10 @@ private:
     int   chanPressure[16];
 
     int   mpeNext = 1;             // the member channel the next note tries first, 1..15
+
+    static constexpr int kMaxTails = 8;
+    Tail  tails[kMaxTails];
+    double hopRate = 750.0;
 };
 
 } // namespace vm

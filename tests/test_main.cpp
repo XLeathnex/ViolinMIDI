@@ -6,6 +6,7 @@
 #include "Harness.h"
 #include "../core/OutputStage.h"
 #include "../core/Scale.h"
+#include "CameraLogic.h"
 
 #include <vector>
 #include <string>
@@ -86,7 +87,11 @@ double periodMs (double note) { return 1000.0 / noteToHz (note); }
 
 #include "test_stage.h"
 #include "test_stage2.h"
+#include "test_stage3.h"
+#include "test_camera.h"
 #include "test_tracker2.h"
+#include "test_tracker3.h"
+#include "test_harmonizer.h"
 
 //==============================================================================
 // Single bowed notes over the whole range of a 7-string violin.
@@ -1136,6 +1141,21 @@ const TestCase kTests[] = {
     { "articulation", trackerArticulation },
     { "dynamics target", trackerDynamicsTarget },
     { "dynamics smoothing", trackerDynamicsSmoothing },
+    { "bridging", trackerBridging },
+    { "jump guard", trackerJumpGuard },
+    { "playing aids audio", playingAidsAudio },
+    { "harmonizer pitch", harmonizerPitch },
+    { "harmonizer body", harmonizerBody },
+    { "harmonizer release and overlap", harmonizerReleaseOverlap },
+    { "harmonizer robustness", harmonizerRobustness },
+    { "harmonizer performance", harmonizerPerformance },
+    { "ring-on release", ringOnRelease },
+    { "ring-on overlap", ringOnOverlap },
+    { "ring-on interrupted", ringOnInterrupted },
+    { "harmony offset", harmonyOffsetTests },
+    { "stage random 3", stageRandom3 },
+    { "camera height", cameraHeight },
+    { "camera gestures", cameraGestures },
 };
 
 } // namespace

@@ -19,6 +19,8 @@ struct AppSettings
     juce::String midiMapJson;     ///< remote-control bindings, see MidiRemote::toJson
     int midiProgramChannel = 0;   ///< program changes load presets: -1 = off, 0 = every channel, 1..16
     int presetSlot = 0;           ///< the preset last loaded or saved, 0 = none
+    juce::String cameraJson;      ///< camera control, see CameraSettings::toJson
+    bool bufferChosen = false;    ///< the user picked the audio buffer size; otherwise the smallest is used
     bool hasWindowPosition = false;
     int windowX = 0, windowY = 0;
 };

@@ -198,7 +198,8 @@ public:
         options.showSettingsAtStart = arguments.contains ("--show-settings") || arguments.contains ("--show-mapping");
         options.settingsPage = arguments.contains ("--show-mapping") ? 1 : 0;
         options.showVoicingAtStart = arguments.contains ("--show-voicing");
-        options.showOctaveAtStart = arguments.contains ("--show-octave");
+        options.showPanelAtStart = arguments.contains ("--show-tracking") ? 1
+                                 : (arguments.contains ("--show-audio") ? 2 : (arguments.contains ("--show-camera") ? 3 : 0));
         options.showMenuAtStart = arguments.contains ("--show-scales") ? 1 : (arguments.contains ("--show-voicings") ? 2 : 0);
         options.notice = startup.notice;
         mainWindow = std::make_unique<MainWindow> (getApplicationName(), options);

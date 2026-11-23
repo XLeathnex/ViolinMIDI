@@ -81,6 +81,10 @@ private:
     int transitionMaxHops = 18, minRetriggerHops = 30, ccMinHops = 4;
     int doubtHops = 22, subharmonicGuardHops = 75, sameNoteHops = 150, deferMaxHops = 34;
     int attackWindowHops = 52, levelAgoHops = 11;
+    // playing aids: holdHops above follows Settings::bridgeMs; the jump guard
+    // ("wrong string filter") watches jumpWindowHops after a note began and
+    // makes a wide leap last jumpLockHops before it is believed
+    int jumpWindowHops = 60, jumpLockHops = 38;
     float onsetClarity = 0.80f, sustainClarity = 0.55f, holdPeriods = 1.15f, onsetPeriods = 1.0f;
     float peakDecayPerHop = 0.004f, recentDecayPerHop = 0.08f, onsetGateDecayPerHop = 0.027f;
     float exprAttack = 0.2f, exprRelease = 0.03f;
@@ -132,6 +136,7 @@ private:
     float transitionPrev = 0.0f;
     int   transitionHops = 0;
     int   stableCount = 0;
+    bool  jumpWatch = false;     // this transition began inside the jump guard's window
 
     // vibrato filter (moving average with a dead band)
     std::vector<float> smoothBuffer;   // sized for the longest window

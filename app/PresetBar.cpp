@@ -21,6 +21,7 @@ namespace
     }
 
     enum MoreItem { moreRename = 1, moreDelete, moreFolder };
+    constexpr int kFactoryItem = 1000;   // above the slot numbers, which are the ids of the presets
 }
 
 //==============================================================================
@@ -195,9 +196,13 @@ void PresetBar::showMenu()
 
     juce::PopupMenu menu;
 
+    // The factory preset is always there and cannot be changed or deleted.
+    menu.addItem (kFactoryItem, U ("Lowest Latenz (Werks-Preset)"));
+    menu.addSeparator();
+
     if (store.entries().empty())
     {
-        menu.addItem (1, U ("Noch keine Presets gespeichert"), false, false);
+        menu.addItem (kFactoryItem + 1, U ("Noch keine Presets gespeichert"), false, false);
     }
     else
     {
@@ -211,9 +216,31 @@ void PresetBar::showMenu()
                                                   .withMinimumWidth (nameButton.getWidth()),
                         [safe] (int result)
                         {
-                            if (result > 0 && safe.getComponent() != nullptr)
+                            if (safe.getComponent() == nullptr)
+                                return;
+
+                            if (result == kFactoryItem)
+                                safe->chooseFactory();
+                            else if (result > 0 && result <= PresetStore::kSlots)
                                 safe->loadSlot (result);
                         });
+}
+
+/** The factory preset takes the place of whatever preset was current. */
+void PresetBar::chooseFactory()
+{
+    if (current != 0)
+    {
+        current = 0;
+        modified = false;
+        updateTexts();
+
+        if (onSlotChanged)
+            onSlotChanged (0);
+    }
+
+    if (onFactory)
+        onFactory();
 }
 
 void PresetBar::showMoreMenu()

@@ -17,6 +17,8 @@ AudioHost::AudioHost()
 {
     events.reserve (kEventCapacity);
     silence.assign ((size_t) kChunk, 0.0f);
+    outLeft.assign ((size_t) kChunk, 0.0f);
+    outRight.assign ((size_t) kChunk, 0.0f);
     for (auto& note : mTriad)
         note.store (-1);
 }
@@ -92,10 +94,20 @@ void AudioHost::audioDeviceIOCallbackWithContext (const float* const* inputChann
 {
     const juce::ScopedNoDenormals noDenormals;
 
-    // This app only listens. Any output channels stay silent.
+    // Silence first. Sound only goes out while the audio harmonizer is on (below).
     for (int ch = 0; ch < numOutputChannels; ++ch)
         if (outputChannelData[ch] != nullptr)
             juce::FloatVectorOperations::clear (outputChannelData[ch], numSamples);
+
+    float* firstOut = nullptr;
+    float* secondOut = nullptr;
+    for (int ch = 0; ch < numOutputChannels; ++ch)
+    {
+        if (outputChannelData[ch] == nullptr)
+            continue;
+        if (firstOut == nullptr)        firstOut = outputChannelData[ch];
+        else if (secondOut == nullptr)  secondOut = outputChannelData[ch];
+    }
 
     // The first active input channel carries the violin.
     const float* input = nullptr;
@@ -119,6 +131,21 @@ void AudioHost::audioDeviceIOCallbackWithContext (const float* const* inputChann
         send (events);
     }
 
+    // A controller from a slow source (the camera).
+    if (const int packed = pendingController.exchange (-1); packed >= 0 && settings.enabled)
+    {
+        vm::MidiEvent e;
+        e.size = 3;
+        e.bytes[0] = (uint8_t) (0xB0 | (settings.mpe ? 0 : juce::jlimit (1, 16, settings.midiChannel) - 1));
+        e.bytes[1] = (uint8_t) ((packed >> 8) & 0x7F);
+        e.bytes[2] = (uint8_t) (packed & 0x7F);
+        events.clear();
+        events.push_back (e);
+        send (events);
+    }
+
+    const bool sound = settings.audioHarmony && firstOut != nullptr;
+
     float peak = 0.0f;
     for (int offset = 0; offset < numSamples; offset += kChunk)
     {
@@ -132,7 +159,26 @@ void AudioHost::audioDeviceIOCallbackWithContext (const float* const* inputChann
         }
 
         events.clear();
-        engine.process (block, n, settings, events);
+        if (sound)
+        {
+            engine.process (block, n, settings, events, outLeft.data(), outRight.data());
+
+            if (secondOut != nullptr)
+            {
+                juce::FloatVectorOperations::copy (firstOut + offset, outLeft.data(), n);
+                juce::FloatVectorOperations::copy (secondOut + offset, outRight.data(), n);
+            }
+            else
+            {
+                // one output channel: both sides, at the level a centred sound would have
+                juce::FloatVectorOperations::copyWithMultiply (firstOut + offset, outLeft.data(), 0.5f, n);
+                juce::FloatVectorOperations::addWithMultiply (firstOut + offset, outRight.data(), 0.5f, n);
+            }
+        }
+        else
+        {
+            engine.process (block, n, settings, events);
+        }
         send (events);
     }
 
@@ -158,8 +204,9 @@ void AudioHost::audioDeviceAboutToStart (juce::AudioIODevice* device)
 {
     const double sampleRate = device != nullptr ? device->getCurrentSampleRate() : 48000.0;
     engine.prepare (sampleRate);
+    // Room for the worst case of one chunk at this rate, so the list never grows on the audio thread.
     events.clear();
-    events.reserve (kEventCapacity);
+    events.reserve (std::max (kEventCapacity, (size_t) engine.maxEventsFor (kChunk) + 64));
 
     mSampleRate.store (sampleRate);
     mBlockSize.store (device != nullptr ? device->getCurrentBufferSizeSamples() : 0);

@@ -311,53 +311,42 @@ inline void harmonyFollowsPitch()
         check (s2WaitForOn (rig, 60) > 0, "%s: 60.30: expected the exchange back to 60", rig.where().c_str());
         rig.soundingNow ("60.30: root 60", "1:60 2:60 2:64 2:67");
     }
-    {   // delayed start: +0.4 at the note-on, then within 0.25
-        StageRig rig = s2HarmonyRig ("delayed start, pitch settles");
+    {   // R4b: the harmony starts with the note, also when the pitch is off the semitone
+        StageRig rig = s2HarmonyRig ("start at 60.4");
         rig.hop ({ bend (1, bendValue (0.4, 2.0)), noteOn (1, 60, 90) });
-        rig.notes ("note-on at 60.4: no harmony yet", "+1:60");
-        for (int i = 0; i < 5; ++i) rig.hop();
-        rig.notes ("waiting", "");
-        rig.hop ({ bend (1, bendValue (0.2, 2.0)) });
-        rig.noteSet ("60.2: harmony starts at once", "+2:60 +2:64 +2:67");
-        rig.bendIs ("60.2", 2, bendValue (0.2, 2.0), 1);
+        rig.noteSet ("note-on at 60.4: harmony at once", "+1:60 +2:60 +2:64 +2:67");
+        rig.bendIs ("60.4", 2, bendValue (0.4, 2.0), 1);
         s2Before (rig, "harmony bend before its notes", "b2", "+2:60");
+        for (int i = 0; i < 40; ++i) rig.hop();
+        rig.soundingNow ("stays on 60", "1:60 2:60 2:64 2:67");
         rig.hop ({ noteOff (1, 60) });
         rig.soundingNow ("after", "");
     }
     {
-        StageRig rig = s2HarmonyRig ("delayed start, pitch stays at +0.4");
-        rig.hop ({ bend (1, bendValue (0.4, 2.0)), noteOn (1, 60, 90) });
-        const int h = s2WaitForOn (rig, 60);
-        check (h > 0 && s2Ms (h + 1) >= 26.0 && s2Ms (h + 1) <= 34.0, "%s: expected the start at the latest after about 30 ms, found %d hops", rig.where().c_str(), h);
-        rig.noteSet ("started on the nearest semitone", "+2:60 +2:64 +2:67");
-        rig.bendIs ("residual", 2, bendValue (0.4, 2.0), 1);
-    }
-    {
-        StageRig rig = s2HarmonyRig ("delayed start, pitch stays at +0.6");
+        StageRig rig = s2HarmonyRig ("start at 60.6");
         rig.hop ({ bend (1, bendValue (0.6, 2.0)), noteOn (1, 60, 90) });
-        check (s2WaitForOn (rig, 60) > 0, "%s: expected a start", rig.where().c_str());
-        rig.noteSet ("started on 61", "+2:61 +2:65 +2:68");
+        rig.noteSet ("started on 61 at once", "+1:60 +2:61 +2:65 +2:68");
         rig.bendIs ("residual -0.4", 2, bendValue (-0.4, 2.0), 1);
         for (int i = 0; i < 60; ++i) rig.hop();
         rig.soundingNow ("stays", "1:60 2:61 2:65 2:68");
     }
     {
-        StageRig rig = s2HarmonyRig ("legato during a pending start");
+        StageRig rig = s2HarmonyRig ("legato right after a start off the semitone");
         rig.hop ({ bend (1, bendValue (0.4, 2.0)), noteOn (1, 60, 90) });
         rig.hop();
         rig.hop ({ bend (1, 8192), noteOn (1, 62, 80), noteOff (1, 60) });
-        rig.noteSet ("legato to 62", "+1:62 -1:60 +2:62 +2:65 +2:69");
+        rig.noteSet ("legato to 62", "+1:62 -1:60 -2:60 -2:64 -2:67 +2:62 +2:65 +2:69");
         for (int i = 0; i < 40; ++i) rig.hop();
         rig.soundingNow ("nothing left behind", "1:62 2:62 2:65 2:69");
         rig.hop ({ noteOff (1, 62) });
         rig.soundingNow ("after", "");
     }
     {
-        StageRig rig = s2HarmonyRig ("note-off during a pending start");
+        StageRig rig = s2HarmonyRig ("note-off right after a start off the semitone");
         rig.hop ({ bend (1, bendValue (0.4, 2.0)), noteOn (1, 60, 90) });
         rig.hop();
         rig.hop ({ noteOff (1, 60) });
-        rig.notes ("off", "-1:60");
+        rig.noteSet ("off", "-1:60 -2:60 -2:64 -2:67");
         check (s2WaitForOn (rig, 60) < 0, "%s: a harmony started after the main note ended: %s", rig.where().c_str(), stList (rig.last).c_str());
         rig.soundingNow ("after", "");
     }

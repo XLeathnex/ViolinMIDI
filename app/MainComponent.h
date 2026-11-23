@@ -12,6 +12,8 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include "AudioHost.h"
+#include "CameraSettings.h"
+#include "CameraTracker.h"
 #include "MidiRemote.h"
 #include "PresetBar.h"
 #include "PresetStore.h"
@@ -78,7 +80,7 @@ public:
         bool showSettingsAtStart = false;
         int  settingsPage = 0;          ///< page of the settings window opened at start
         bool showVoicingAtStart = false; ///< open the free-voicing panel (layout checks)
-        bool showOctaveAtStart = false;  ///< open the octave panel (layout checks)
+        int  showPanelAtStart = 0;       ///< 1: tracking filters, 2: audio harmonizer, 3: camera (layout checks)
         int  showMenuAtStart = 0;        ///< 1: open the list of scales, 2: the list of voicings (layout checks)
         juce::String notice;            ///< shown in the status line at start
     };
@@ -131,7 +133,18 @@ private:
     void allNotesOff();
     void showSettings();
     void showVoicingPanel();
-    void showOctavePanel();
+    void showTrackingPanel();
+    void showAudioPanel();
+    void showCamera();
+    juce::String audioOutputInfo (bool& isProblem) const;
+    void ensureAudioOutput();
+    void useSmallBuffer();
+    void applyLowestLatency();
+    vm::Settings hostSettings() const;   // what the engine gets: the settings plus what the camera adds
+    void applyCameraSettings (const CameraSettings&);
+    void updateCameraStatus();
+    void cameraFrame (const juce::Image& preview, const cam::Pose&);
+    void cameraAction (int action);
     void refreshUpdateButton();
     AudioHost::Meters demoMeters();
     void updateStatus (const AudioHost::Meters&);
@@ -151,6 +164,16 @@ private:
     std::unique_ptr<PresetStore> presets;
     std::unique_ptr<PresetBar> presetBar;
     juce::String presetImage;        // the settings as the current preset holds them
+    juce::TextButton audioButton, cameraButton;   // at the right of the presets
+
+    // camera control
+    CameraTracker camera;
+    CameraSettings cameraSettings;
+    cam::HeightTracker heightTracker;
+    cam::GestureDetector gestures;
+    juce::Component::SafePointer<juce::DialogWindow> cameraDialog;
+    float cameraMix = 1.0f;          // 0..1 from the height of the violin, for the target "Harmonie-Mix"
+    int   cameraValue = -1;          // the last controller value from the height, -1 = none yet
 
     LiveDisplay display;
     juce::TextButton masterButton;   // these three sit on the display, under the note
@@ -170,11 +193,11 @@ private:
     juce::TextButton octaveButton;
 
     // pitch
-    juce::Label modeName, bendRangeName, smoothingName, smoothingValue;
+    juce::Label modeName, bendRangeName, smoothingName, smoothingValue, overlapName, overlapValue, releaseName, releaseValue;
     juce::TextButton modeButtons[3];
     ButtonRow modeRow;
     juce::ComboBox bendRangeBox;
-    juce::Slider smoothingSlider;
+    juce::Slider smoothingSlider, overlapSlider, releaseSlider;
 
     // key
     juce::Label keyName, filterName, holdName;
@@ -184,7 +207,8 @@ private:
     ButtonRow filterRow, holdRow;
 
     // harmony
-    juce::Label triadName, voicingName, harmonyModeName, triadChannelName;
+    juce::Label triadName, voicingName, harmonyModeName, triadChannelName, offsetName, offsetValue;
+    juce::Slider offsetSlider;
     juce::TextButton triadButtons[2], harmonyModeButtons[2], voicingEditButton;
     ButtonRow triadRow, harmonyModeRow;
     juce::ComboBox voicingBox, triadChannelBox;
@@ -206,6 +230,7 @@ private:
     juce::String audioInitError;
     bool midiPortOk = false, loading = false;
     int silentTicks = 0, clipTicks = 0;
+    int lastBufferSize = 0;          // to notice a change made in the settings window
     float lastLevelDb = -120.0f;
     double demoTime = 0.0;
     unsigned int demoMessages = 0;

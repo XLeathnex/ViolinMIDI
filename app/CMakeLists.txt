@@ -31,6 +31,8 @@ juce_add_gui_app(ViolinMIDI
     ${VIOLINMIDI_ICON_ARGS}
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT "${VIOLINMIDI_DISPLAY_NAME} wandelt das Signal deiner Geige in MIDI-Noten um."
+    CAMERA_PERMISSION_ENABLED TRUE
+    CAMERA_PERMISSION_TEXT "${VIOLINMIDI_DISPLAY_NAME} kann die Haltung der Geige und Kopfbewegungen als Steuerung nutzen. Das Bild bleibt auf diesem Mac."
     # MainStage is in front while playing. macOS must not put this app to sleep behind it.
     # The minimum system version lets older Macs say clearly why the app will not open.
     PLIST_TO_MERGE "<plist version=\"1.0\"><dict><key>CFBundleName</key><string>${VIOLINMIDI_DISPLAY_NAME}</string><key>CFBundleDisplayName</key><string>${VIOLINMIDI_DISPLAY_NAME}</string><key>NSAppSleepDisabled</key><true/><key>LSMinimumSystemVersion</key><string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string></dict></plist>"
@@ -51,13 +53,26 @@ target_sources(ViolinMIDI PRIVATE
     PresetBar.cpp
     DescribedMenu.cpp
     VoicingPanel.cpp
-    OctavePanel.cpp
+    TrackingPanel.cpp
+    AudioPanel.cpp
+    CameraPanel.cpp
+    CameraLogic.cpp
     Theme.cpp
     Widgets.cpp
     SettingsPanel.cpp
     UpdateManager.cpp
     Updater.cpp
     SelfTest.cpp)
+
+# The camera: AVFoundation and Vision on the Mac, a stand-in elsewhere.
+if(APPLE)
+    target_sources(ViolinMIDI PRIVATE CameraTracker_mac.mm)
+    set_source_files_properties(CameraTracker_mac.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    target_link_libraries(ViolinMIDI PRIVATE
+        "-framework AVFoundation" "-framework Vision" "-framework CoreMedia" "-framework CoreVideo")
+else()
+    target_sources(ViolinMIDI PRIVATE CameraTracker_stub.cpp)
+endif()
 
 target_compile_definitions(ViolinMIDI PRIVATE
     JUCE_WEB_BROWSER=0

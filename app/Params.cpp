@@ -88,6 +88,11 @@ namespace
         list.push_back (choice ("voicing", "Voicing", &E::voicing, 0, vm::scale::kVoicingCount));
         list.push_back (enumChoice ("harmonyMode", "Harmonie-Modus", &E::harmonyMode, 2));
         list.push_back (choice ("triadChannel", "Harmonie-Kanal", &E::triadChannel, 1, 16));
+        list.push_back (range ("harmonyOffset", "Harmonie-Offset", &E::harmonyOffset, -0.5, 0.0, 0.01));
+        list.push_back (toggle ("audioHarmony", "Audio-Harmonizer", &E::audioHarmony));
+        list.push_back (range ("harmonyGain", "Harmonie-Pegel (Audio)", &E::harmonyGainDb, -60.0, 6.0, 0.5));
+        list.push_back (range ("bodyKeep", "Korpus-Erhalt", &E::bodyKeep, 0.0, 1.0, 0.01));
+        list.push_back (toggle ("dryKill", "Dry-Kill", &E::dryKill));
         list.push_back (toggle ("freezeSolo", "Freeze Solo", &E::freezeSolo));
         list.push_back (toggle ("freezeHarmony", "Freeze Harmonie", &E::freezeHarmony));
         list.push_back (action ("presetNext", "N\xc3\xa4" "chstes Preset"));
@@ -125,6 +130,10 @@ namespace
         list.push_back (toggle ("octaveAttackGuard", "Anstreich-Schutz", &E::octaveAttackGuard));
         list.push_back (toggle ("octaveSustainGuard", "Oktavsprung-Sperre", &E::octaveSustainGuard));
         list.push_back (enumChoice ("articulation", "Artikulation", &E::articulation, 3));
+        list.push_back (toggle ("jumpGuard", "Sprungschutz", &E::jumpGuard));
+        list.push_back (range ("bridge", "\xc3\x9c" "berbr\xc3\xbc" "ckung", &E::bridgeMs, 0.0, 200.0, 1.0));
+        list.push_back (range ("overlap", "Spiel-\xc3\x9c" "berlappung", &E::overlapMs, 0.0, 1500.0, 10.0));
+        list.push_back (range ("release", "Ausklingen", &E::releaseMs, 0.0, 3000.0, 10.0));
 
         {
             // The two thresholds keep their order: Out never above In.

@@ -109,8 +109,12 @@ Expression-Pedale, deshalb können sich Regler anderer Geräte mitbewegen.
 | **Harmonie-Modus** | Diatonisch: Die Stimmen werden in der Tonart abgezählt, so entstehen je nach Stufe Dur-, Moll- oder verminderte Akkorde. Chromatisch: immer dieselben Halbtonabstände. Ein Ton außerhalb der Tonart bekommt auch diatonisch die festen Abstände. |
 | **Solo halten / Harmonie halten** | Freeze: Was auf der Spur gerade klingt, bleibt stehen, bis der Taster wieder gelöst wird; auf der anderen Spur wird weitergespielt. Klingt nichts, wird der nächste Ton eingefroren. „Alle Noten aus“ und „Erkennung aus“ lösen beide. |
 | **In-Schwelle / Out-Schwelle** | Über der In-Schwelle kann ein Ton beginnen, erst unter der Out-Schwelle endet er. Die Out-Schwelle liegt nie über der In-Schwelle. |
-| **Oktavsprung-Schutz** | Anstreich-Schutz (wartet am Tonbeginn bis zu 60 ms, wenn auch die Oktave darunter möglich ist) und Oktavsprung-Sperre (ein Oktavsprung im Ton muss bis zu 100 ms anhalten, bevor er gilt). Beide einzeln schaltbar. |
+| **Tracking-Filter** | Vier Schutzfunktionen in einem Feld. Anstreich-Schutz (wartet am Tonbeginn bis zu 60 ms, wenn auch die Oktave darunter möglich ist) und Oktavsprung-Sperre (ein Oktavsprung im Ton muss bis zu 100 ms anhalten). Sprungschutz: Kurz nach einem Tonbeginn wird ein Sprung ab dem gewählten Intervall erst nach der Sperrzeit gespielt; ein kurz angerissener Nachbarton fällt so weg, ein gewollter Sprung kommt um die Sperrzeit später. Überbrückung: So lange hält der Ton, wenn die Tonhöhe kurz nicht zu erkennen ist (Bogenwechsel), solange der Pegel über der Out-Schwelle bleibt; auf den tiefen Saiten wirkt sie erst ab etwa 45 ms. |
+| **Spiel-Überlappung** | 0 bis 1500 ms. Beim Tonwechsel klingt der vorherige Ton so lange weiter. Im MPE-Modus und im Audio-Harmonizer wird er dabei ausgeblendet; auf einem gemeinsamen MIDI-Kanal klingt er in voller Stärke nach, das passt zu Klängen mit eigenem Ausklang. |
+| **Ausklingen (Spielende)** | 0 bis 3000 ms. Fällt der Pegel unter die Out-Schwelle, bleibt der Ton stehen und wird über diese Zeit mit Expression (CC11) ausgeblendet; erst dann kommt Note-Off. Ein neuer Ton beendet das Ausklingen. |
+| **Harmonie-Offset** | −50 % bis 0 %. Die Harmoniestimmen werden um diesen Anteil leiser gesendet (Anschlagstärke und Dynamik-Controller). |
 | **Artikulation** | Aus, Sanft oder Stark: Ein steiler Tonanfang (gezupft) bekommt eine hohe, ein weicher (gestrichen) eine niedrige Anschlagstärke. Verzögert nichts. Auf den tiefsten Saiten ist der Unterschied kleiner. |
+| **Werks-Preset „Lowest Latenz“** | Im Preset-Menü ganz oben. Stellt Ansprache auf „Schnell“, Bewegung auf „Stufenlos“, alle Glättungen auf null, den Sprungschutz und das Nachklingen aus und den Audio-Puffer auf die kleinste Größe ab 64 Samples. Tonart, Harmonie und MIDI-Einstellungen bleiben. |
 | **Presets** | Oben im Fenster: alle Einstellungen unter einem Namen speichern, laden, umbenennen, löschen. Jedes Preset hat einen Platz von 001 bis 128 und liegt als lesbare JSON-Datei im Preset-Ordner („…“ → „Preset-Ordner zeigen“). |
 | **Dynamik: Anschlag und Verlauf** | Anschlagstärke plus laufender Controller: An- und Abschwellen des Bogens steuert das Instrument. |
 | **Dynamik: Nur Anschlag** | Velocity aus dem Pegel beim Tonbeginn, danach keine Dynamikdaten. |
@@ -138,6 +142,47 @@ Presets: Ein Program Change lädt das Preset mit dieser Nummer (Program 0 lädt 
 welchem Kanal, steht auf derselben Seite. „Nächstes Preset“ und „Vorheriges Preset“ stehen in
 der Liste und lassen sich wie jeder Regler einem Fußschalter zuweisen, ebenso „Freeze Solo“
 und „Freeze Harmonie“.
+
+### Audio-Harmonizer
+
+Knopf „Audio-Harmonizer …“ oben rechts. Eingeschaltet spielt Archet die Harmoniestimmen zusätzlich
+mit dem eigenen Klang der Geige: Das Eingangssignal wird in der Tonhöhe verschoben und über den
+Audio-Ausgang ausgegeben, die Geige selbst unverändert in der Mitte. Es gelten Tonart, Voicing
+und Harmonie-Modus der Harmonie; die Harmonie muss eingeschaltet sein. Den Ausgang wählt man
+unter „Einstellungen“.
+
+| Regler | Wirkung |
+| --- | --- |
+| **Korpus-Erhalt** | 100 %: Die Resonanz des Geigenkorpus bleibt, wo sie ist, während die Tonhöhe wandert. Niedrige Werte lassen tiefe Oktaven wie ein Cello klingen. |
+| **Bogen-Variation** | Kleine Unterschiede in Tonhöhe und Zeit zwischen den Stimmen, gegen den Kammfilter-Klang. |
+| **Vibrato-Kopplung** | Wie stark die Stimmen dem eigenen Vibrato folgen. |
+| **Stereo-Panorama** | Verteilt die Stimmen links und rechts. |
+| **Piezo-Glättung** | Höhenfilter nur für die Stimmen, 4 bis 16 kHz. |
+| **Harmonie-Pegel, Dry-Kill** | Lautstärke der Stimmen; Dry-Kill lässt die Geige selbst aus dem Ausgang weg. |
+
+Die Stimmen kommen etwa eine halbe Schwingung des gespielten Tons später als die Geige: unter
+2 ms in hohen Lagen, 7 bis 12 ms auf der tiefsten Saite. Doppelgriffe kann der Harmonizer nicht,
+er folgt einem Ton. „Spiel-Überlappung“ und
+„Ausklingen“ gelten auch hier; „Harmonie halten“ friert den Akkord als stehenden Klang ein.
+
+### Kamera-Steuerung
+
+Knopf „Kamera …“ oben rechts öffnet ein eigenes Fenster. Die Kamera sucht im Bild die Schultern,
+Arme und den Kopf; das Bild wird nur auf dem Mac ausgewertet und nicht gespeichert. macOS fragt
+beim ersten Einschalten nach dem Zugriff auf die Kamera.
+
+- **Schnecken-Höhe:** Die Höhe der Hand am Geigenhals wird zu einem Controller (CC1, CC11 oder
+  CC74) oder regelt den Harmonie-Mix. Geige in die tiefste Haltung bringen, „Tief-Position
+  setzen“ drücken, dann die höchste und „Hoch-Position setzen“. Glättung und Totzone beruhigen
+  den Verlauf.
+- **Kopf-Gesten:** Nicken und Kopfschütteln können Harmonie, Halten, Presets oder die Erkennung
+  schalten. Empfindlichkeit und Sperrzeit einstellen, bis es beim Spielen nicht versehentlich
+  auslöst. Eine Kopfbewegung, die zur Musik gehört, sieht für die Kamera wie ein Nicken aus:
+  Was auf der Bühne nicht versehentlich passieren darf (etwa „Erkennung an/aus“), besser auf
+  einen Fußschalter legen.
+
+Die Bogenbewegung wird nicht ausgewertet: Bei 15 bis 30 Bildern pro Sekunde käme sie 50 bis
+100 ms zu spät, um die Artikulation zu steuern.
 
 ### Was die App aus dem Spiel macht
 
@@ -220,7 +265,7 @@ verlängert die Zeit, weil die Saite später eine klare Tonhöhe hat.
 | Leise Töne fehlen | In-Schwelle senken oder Verstärkung erhöhen. |
 | Töne brechen beim leisen Streichen ab | Out-Schwelle senken. |
 | Falsche Noten beim Bogenansatz tiefer Saiten | Ansprache auf „Sicher“. |
-| Zu träge | Ansprache auf „Schnell“, kleinere Puffer, „Tiefster Ton“ höher setzen. |
+| Zu träge | Werks-Preset „Lowest Latenz“ wählen. Unten im Fenster steht die Puffergröße: 64 oder 128 Samples sind gut, 512 kosten etwa 10 ms. |
 | Instrument klingt verstimmt oder springt | Pitch-Bend-Bereich in App und Instrument angleichen. |
 | Instrument bleibt leise | Auf „Nur Anschlagstärke“ wechseln oder „Alle Noten aus“ drücken, das setzt Expression zurück. |
 | MainStage sieht den MIDI-Ausgang nicht | Archet vor MainStage starten. |
@@ -276,6 +321,8 @@ Die App ist so aufgebaut, dass Neues an genau einer Stelle dazukommt:
 | Name, Farben, Logo ändern | `app/Brand.h`, `app/Brand.cpp` (Anzeigename für macOS zusätzlich `VIOLINMIDI_DISPLAY_NAME` in `app/CMakeLists.txt`) |
 | Aussehen aller Standard-Bedienelemente | `app/Theme.cpp` |
 | Neue Einstellung, die gespeichert wird | eine Zeile in der Tabelle in `app/SettingsFields.cpp`; sie landet damit in der Einstellungsdatei und in den Presets |
+| Kamera: was die Körperpunkte bedeuten | `app/CameraLogic.cpp` (ohne JUCE, getestet in `tests/test_camera.h`); das Bild und die Punkte kommen aus `app/CameraTracker_mac.mm` |
+| Klang der Audio-Harmonie | `core/Harmonizer.cpp`; ausprobieren ohne App mit `violinmidi_harmonize` |
 | Neues Bedienelement im Fenster | im Konstruktor von `app/MainComponent.cpp` anlegen und mit `addItem()` in eine Spalte setzen; das Layout ergibt sich |
 | Regler per MIDI steuerbar machen | ein Eintrag in `app/Params.cpp`; er erscheint von selbst in der Mapping-Tabelle |
 | Neue Live-Anzeige | `app/Widgets.cpp`, gefüttert aus `MainComponent::timerCallback()` |

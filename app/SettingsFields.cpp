@@ -102,7 +102,24 @@ namespace
             number ("dynamicsSmoothingMs", &E::dynamicsSmoothingMs, 0.0, 150.0),
             whole  ("voicing",       &E::voicing, 0, vm::scale::kVoicingCount - 1),
             choice ("harmonyMode",   &E::harmonyMode, 2),
-            flag   ("mpe",           &E::mpe)
+            flag   ("mpe",           &E::mpe),
+            // since 1.5
+            flag   ("jumpGuard",     &E::jumpGuard),
+            whole  ("jumpIntervalSemis", &E::jumpIntervalSemis, 5, 24),
+            number ("jumpWindowMs",  &E::jumpWindowMs, 10.0, 200.0),
+            number ("jumpLockMs",    &E::jumpLockMs, 20.0, 150.0),
+            number ("bridgeMs",      &E::bridgeMs, 0.0, 200.0),
+            number ("overlapMs",     &E::overlapMs, 0.0, 1500.0),
+            number ("releaseMs",     &E::releaseMs, 0.0, 3000.0),
+            number ("harmonyOffset", &E::harmonyOffset, -0.5, 0.0),
+            flag   ("audioHarmony",  &E::audioHarmony),
+            number ("bodyKeep",      &E::bodyKeep, 0.0, 1.0),
+            number ("humanize",      &E::humanize, 0.0, 1.0),
+            number ("vibratoCoupling", &E::vibratoCoupling, 0.0, 1.0),
+            number ("stereoSpread",  &E::stereoSpread, 0.0, 1.0),
+            number ("hiCutHz",       &E::hiCutHz, 4000.0, 16000.0),
+            number ("harmonyGainDb", &E::harmonyGainDb, -60.0, 6.0),
+            flag   ("dryKill",       &E::dryKill)
         };
         return list;
     }

@@ -53,6 +53,11 @@ void Engine::prepare (double sampleRate)
     detector.prepare (fs, absMinHz, absMaxHz);
     tracker.prepare (fs / (double) hop);
     stage.prepare (fs / (double) hop);
+    harmonizer.prepare (fsIn);
+    harmonizerOn = false;
+    frame = Harmonizer::Frame();
+    frameFrozen = false;
+    lastRoot = -1;
     hopEvents.clear();
     hopEvents.reserve (64);
     wasEnabled = true;
@@ -123,11 +128,31 @@ Settings Engine::effective (const Settings& s) noexcept
     return e;
 }
 
-void Engine::process (const float* input, int numSamples, const Settings& userSettings, MidiEventList& out)
+void Engine::process (const float* input, int numSamples, const Settings& userSettings, MidiEventList& out,
+                      float* left, float* right)
 {
     const Settings settings = effective (userSettings);
     configure (settings);
     lastSettings = settings;
+
+    // The sound output: between two analyses the harmonizer runs with what the
+    // last analysis found; the new state takes effect right after its hop.
+    const bool hasOutput = left != nullptr && right != nullptr;
+    const bool audio = hasOutput && settings.audioHarmony && settings.enabled;
+    if (audio != harmonizerOn)
+    {
+        harmonizer.reset();
+        frame = Harmonizer::Frame();
+        harmonizerOn = audio;
+    }
+
+    if (hasOutput && ! audio)
+    {
+        std::fill (left, left + numSamples, 0.0f);
+        std::fill (right, right + numSamples, 0.0f);
+    }
+
+    int spanStart = 0;
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -147,8 +172,63 @@ void Engine::process (const float* input, int numSamples, const Settings& userSe
         {
             hopFill = 0;
             analyseHop (settings, i, out);
+
+            if (audio)
+            {
+                harmonizer.process (input + spanStart, left + spanStart, right + spanStart, i + 1 - spanStart, settings);
+                spanStart = i + 1;
+                updateHarmonizerFrame (settings);
+                harmonizer.setFrame (frame);
+            }
         }
     }
+
+    if (audio && spanStart < numSamples)
+        harmonizer.process (input + spanStart, left + spanStart, right + spanStart, numSamples - spanStart, settings);
+}
+
+void Engine::updateHarmonizerFrame (const Settings& s) noexcept
+{
+    frame = Harmonizer::Frame();
+    if (! s.enabled)
+        return;
+
+    const auto period = [this] (float note) { return (float) (fsIn / noteToHz ((double) note, cfgA4)); };
+    const int root = stage.harmonyRoot();
+    if (root >= 0)
+        lastRoot = root;
+
+    if (stage.harmonyFrozen())
+    {
+        // The frozen voices are played from the tone as it was when the freeze began.
+        if (! frameFrozen)
+            frozenPitch = tracker.isActive() ? tracker.trackedPitch() : (float) std::max (lastRoot, 0);
+        frameFrozen = true;
+
+        frame.frozen = true;
+        frame.sounding = true;
+        frame.periodSamples = period (frozenPitch);
+        for (int i = 0; i < stage.triadCount() && frame.voiceCount < Harmonizer::kMaxVoices; ++i)
+            if (stage.triadNote (i) != lastRoot)      // the unison is the violin itself
+                frame.semitones[frame.voiceCount++] = (float) stage.triadNote (i) - frozenPitch;
+        return;
+    }
+
+    frameFrozen = false;
+    if (root < 0 || ! tracker.isActive())
+        return;
+
+    // Settings::vibratoCoupling: at 1 the voices move with the player's pitch
+    // (vibrato, intonation), at 0 they stay on the tempered note.
+    const float pitch = tracker.trackedPitch();
+    const float follow = std::min (std::max (s.vibratoCoupling, 0.0f), 1.0f);
+    const float drift = (1.0f - follow) * (pitch - (float) root);
+
+    frame.sounding = true;
+    frame.periodSamples = period (pitch);
+    for (int i = 0; i < stage.triadCount() && frame.voiceCount < Harmonizer::kMaxVoices; ++i)
+        if (stage.triadNote (i) != root)
+            frame.semitones[frame.voiceCount++] = (float) (stage.triadNote (i) - root) - drift;
 }
 
 void Engine::analyseHop (const Settings& s, int offset, MidiEventList& out)

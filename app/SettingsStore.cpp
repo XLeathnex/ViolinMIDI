@@ -22,6 +22,9 @@ namespace key
     // added in 1.4
     constexpr const char* midiProgramChannel = "midiProgramChannel";
     constexpr const char* presetSlot    = "presetSlot";
+    // added in 1.5
+    constexpr const char* camera        = "camera";
+    constexpr const char* bufferChosen  = "bufferChosen";
 }
 
 SettingsStore::SettingsStore (juce::PropertiesFile& file) : props (file)
@@ -61,6 +64,8 @@ AppSettings SettingsStore::load()
     s.midiMapJson   = props.getValue (key::midiMap);
     s.midiProgramChannel = juce::jlimit (-1, 16, props.getIntValue (key::midiProgramChannel, 0));
     s.presetSlot    = juce::jlimit (0, 128, props.getIntValue (key::presetSlot, 0));
+    s.cameraJson    = props.getValue (key::camera);
+    s.bufferChosen  = props.getBoolValue (key::bufferChosen, false);
 
     s.midiPortName = props.getValue (key::midiPortName, brand::kName).trim();
     if (s.midiPortName.isEmpty())
@@ -79,6 +84,8 @@ void SettingsStore::save (const AppSettings& s)
     props.setValue (key::midiMap, s.midiMapJson);
     props.setValue (key::midiProgramChannel, s.midiProgramChannel);
     props.setValue (key::presetSlot, s.presetSlot);
+    props.setValue (key::camera, s.cameraJson);
+    props.setValue (key::bufferChosen, s.bufferChosen);
     props.setValue (key::midiPortName, s.midiPortName);
     props.setValue (key::schema, kSchema);
     props.setValue (key::lastVersion, JUCE_APPLICATION_VERSION_STRING);

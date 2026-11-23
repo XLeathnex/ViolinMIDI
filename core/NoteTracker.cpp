@@ -25,6 +25,16 @@ namespace
     constexpr float kNewNoteInterval  = 0.60f;   // a settled step this large is a new note
     constexpr float kOctaveTolerance  = 0.40f;
 
+    // --- playing aids
+    // The slur hold: a slur down to the lowest string leaves the detector
+    // without a pitch for about this many periods of that string. The note is
+    // always held that long, whatever Settings::bridgeMs says.
+    constexpr float kSlurHoldPeriods  = 2.6f;
+    // Jump guard: a leap counts as wide from half a semitone below
+    // Settings::jumpIntervalSemis on, so a slightly flat fifth is still a fifth
+    // (the interval rounded to the nearest semitone is compared).
+    constexpr float kJumpIntervalSlack = 0.5f;
+
     // --- bend modes
     constexpr float kQuantizeHysteresis = 0.15f; // semitones past the half-way point
     constexpr float kVibratoDeadband    = 0.40f; // vibrato up to +-40 cents is removed
@@ -124,6 +134,15 @@ namespace
         return hopsFor ((double) ms / 1000.0, hopRate, 3);
     }
 
+    /** Hops a note is bridged through a gap in detection: none at 0 ms. The
+        default 30 ms gives exactly the former fixed hopsFor (0.030, hopRate, 2). */
+    inline int bridgeHopsFor (float ms, double hopRate) noexcept
+    {
+        if (! (ms > 0.0f))
+            return 0;
+        return hopsFor ((double) ms / 1000.0, hopRate, 2);
+    }
+
     Settings sanitised (Settings s) noexcept
     {
         s.bendRangeSemis = clampf (s.bendRangeSemis, 0.1f, 96.0f);
@@ -136,6 +155,10 @@ namespace
         s.gateOffDb      = std::min (clampf (s.gateOffDb, -96.0f, 0.0f), s.gateDb); // out never above in
         s.octaveAttackMs  = clampf (s.octaveAttackMs, 0.0f, 60.0f);
         s.octaveSustainMs = clampf (s.octaveSustainMs, 0.0f, 100.0f);
+        s.jumpIntervalSemis = clampi (s.jumpIntervalSemis, 5, 24);
+        s.jumpWindowMs    = clampf (s.jumpWindowMs, 10.0f, 200.0f);
+        s.jumpLockMs      = clampf (s.jumpLockMs, 20.0f, 150.0f);
+        s.bridgeMs        = clampf (s.bridgeMs, 0.0f, 200.0f);
         s.dynamicsSmoothingMs = clampf (s.dynamicsSmoothingMs, 0.0f, 150.0f);
         if ((int) s.articulation < 0 || (int) s.articulation > 2)
             s.articulation = Articulation::Off;
@@ -179,6 +202,7 @@ void NoteTracker::reset() noexcept
 {
     active = false;
     inTransition = false;
+    jumpWatch = false;
     candCount = 0;
     unvoicedHops = 0;
     quietHops = 0;
@@ -278,17 +302,27 @@ void NoteTracker::applySettings (const Settings& s, int offset, MidiEventList& o
                             || s.octaveSustainGuard != cfg.octaveSustainGuard
                             || s.octaveSustainMs != cfg.octaveSustainMs;
     const bool exprSmoothingChanged = first || s.dynamicsSmoothingMs != cfg.dynamicsSmoothingMs;
+    const bool bridgeChanged = rangeOrTuningChanged || s.bridgeMs != cfg.bridgeMs;
+    const bool jumpTimesChanged = first || s.jumpWindowMs != cfg.jumpWindowMs || s.jumpLockMs != cfg.jumpLockMs;
 
     cfg = s;
     haveCfg = true;
 
-    if (rangeOrTuningChanged)
+    if (bridgeChanged)
     {
-        // A slur down to the lowest string leaves the detector without a pitch
-        // for about two and a half periods of that string. The sounding note
-        // is held that long, so the slur stays a slur.
-        holdHops = std::max (hopsFor (0.030, hopRate, 2),
-                             (int) std::ceil (2.6f * periodInHops ((float) cfg.lowestNote)));
+        // Bridging: the note survives a gap in detection (a change of bow, a
+        // scratch) for bridgeMs while the level holds. A slur down to the lowest
+        // string leaves the detector without a pitch for about two and a half
+        // periods of that string; the note is held at least that long, so the
+        // slur stays a slur. The default 30 ms is the former fixed hold.
+        holdHops = std::max (bridgeHopsFor (cfg.bridgeMs, hopRate),
+                             (int) std::ceil (kSlurHoldPeriods * periodInHops ((float) cfg.lowestNote)));
+    }
+
+    if (jumpTimesChanged)
+    {
+        jumpWindowHops = hopsFor ((double) cfg.jumpWindowMs / 1000.0, hopRate, 1);
+        jumpLockHops   = hopsFor ((double) cfg.jumpLockMs / 1000.0, hopRate, 1);
     }
 
     if (responseChanged)
@@ -755,6 +789,9 @@ void NoteTracker::processActive (const Input& in, int offset, MidiEventList& out
         transitionPrev = in.pitch;
         transitionHops = 0;
         stableCount = 1;
+        // A leap that begins soon after the note began (fresh or by a change of
+        // note) may be a neighbouring string touched by accident (jump guard).
+        jumpWatch = cfg.jumpGuard && noteAgeHops <= jumpWindowHops;
         return;
     }
 
@@ -789,6 +826,14 @@ void NoteTracker::processActive (const Input& in, int offset, MidiEventList& out
     // it. At the default 11 ms this changes nothing (transitionMaxHops is larger).
     if (octaveGuard && isOctaveLike (interval))
         timeout = std::max (timeout, octaveStableHops);
+    // Jump guard: a wide leap away from the sounding note must last the lock
+    // time before it is believed; the transition limit must not cut it short.
+    // Until then nothing is sent and the note stays at its own pitch.
+    if (jumpWatch && std::abs (in.pitch - lastPitch) >= (float) cfg.jumpIntervalSemis - kJumpIntervalSlack)
+    {
+        needed  = std::max (needed, jumpLockHops);
+        timeout = std::max (timeout, jumpLockHops);
+    }
 
     // An estimate one or more octaves down while the note's own period is
     // still clearly there is the detector slipping to a multiple of the

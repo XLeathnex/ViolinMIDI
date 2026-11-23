@@ -1,12 +1,14 @@
 #include "MainComponent.h"
 
+#include "AudioPanel.h"
 #include "Brand.h"
+#include "CameraPanel.h"
 #include "DescribedMenu.h"
-#include "OctavePanel.h"
 #include "Params.h"
 #include "Scale.h"
 #include "SettingsFields.h"
 #include "SettingsPanel.h"
+#include "TrackingPanel.h"
 #include "VoicingPanel.h"
 
 #include <cmath>
@@ -115,7 +117,23 @@ MainComponent::MainComponent (const Options& o) : options (o)
         presetImage = image (settings.engine);
         store->save (settings);
     };
+    presetBar->onFactory = [this] { applyLowestLatency(); };
     addAndMakeVisible (*presetBar);
+
+    audioButton.setButtonText (U ("Audio-Harmonizer \xe2\x80\xa6"));
+    audioButton.setTooltip (U ("Spielt die Harmoniestimmen mit dem eigenen Klang der Geige \xc3\xbc" "ber den Audio-Ausgang. Ein Klick \xc3\xb6" "ffnet die Einstellungen."));
+    audioButton.setWantsKeyboardFocus (false);
+    audioButton.onClick = [this] { showAudioPanel(); };
+    addAndMakeVisible (audioButton);
+
+    cameraButton.setButtonText (U ("Kamera \xe2\x80\xa6"));
+    cameraButton.setTooltip (U ("Kamera-Steuerung: die H\xc3\xb6he des Geigenhalses als Controller, Nicken und Kopfsch\xc3\xbctteln als Schalter. Ein Klick \xc3\xb6" "ffnet das Kamera-Fenster."));
+    cameraButton.setWantsKeyboardFocus (false);
+    cameraButton.onClick = [this] { showCamera(); };
+    addAndMakeVisible (cameraButton);
+
+    cameraSettings = CameraSettings::fromJson (settings.cameraJson);
+    camera.onFrame = [this] (const juce::Image& preview, const cam::Pose& pose) { cameraFrame (preview, pose); };
 
     addAndMakeVisible (display);
 
@@ -184,11 +202,11 @@ MainComponent::MainComponent (const Options& o) : options (o)
     tuningSlider.setTooltip (U ("Doppelklick: 440 Hz."));
     addItem (tuningName, tuningSlider, &tuningValue);
 
-    setupName (octaveName, "Oktavsprung-Schutz");
-    octaveButton.setTooltip (U ("Zwei Schutzmechanismen gegen Oktavfehler auf den tiefen Saiten: der Anstreich-Schutz beim Tonbeginn und die "
-                                "Oktavsprung-Sperre im gehaltenen Ton. Ein Klick \xc3\xb6" "ffnet die Einstellungen."));
+    setupName (octaveName, "Tracking-Filter");
+    octaveButton.setTooltip (U ("Schutz gegen falsche T\xc3\xb6ne: Anstreich-Schutz und Oktavsprung-Sperre gegen Oktavfehler, der Sprungschutz gegen "
+                                "versehentlich angerissene Nachbarsaiten und die \xc3\x9c" "berbr\xc3\xbc" "ckung f\xc3\xbcr Bogenwechsel. Ein Klick \xc3\xb6" "ffnet die Einstellungen."));
     octaveButton.setWantsKeyboardFocus (false);
-    octaveButton.onClick = [this] { showOctavePanel(); };
+    octaveButton.onClick = [this] { showTrackingPanel(); };
     addAndMakeVisible (octaveButton);
     addItem (octaveName, octaveButton);
 
@@ -231,6 +249,23 @@ MainComponent::MainComponent (const Options& o) : options (o)
     smoothingSlider.setDoubleClickReturnValue (true, 0.5);
     smoothingSlider.setTooltip (U ("Wie stark Vibrato in der Bewegung \xe2\x80\x9eGegl\xc3\xa4ttet\xe2\x80\x9c herausgefiltert wird. Doppelklick: 50 %."));
     addItem (smoothingName, smoothingSlider, &smoothingValue);
+
+    setupName (overlapName, U ("Spiel-\xc3\x9c" "berlappung"));
+    setupValue (overlapValue);
+    setupSlider (overlapSlider, 0.0, 1500.0, 10.0);
+    overlapSlider.setDoubleClickReturnValue (true, 0.0);
+    overlapSlider.setTooltip (U ("L\xc3\xa4sst den vorherigen Ton bei einem Tonwechsel noch f\xc3\xbcr diese Zeit weich ausklingen, w\xc3\xa4hrend der neue Ton bereits "
+                                 "startet (f\xc3\xbcr polyphone Kl\xc3\xa4nge). Ausgeblendet wird im MPE-Modus und im Audio-Harmonizer; auf einem gemeinsamen "
+                                 "MIDI-Kanal klingt der alte Ton in voller St\xc3\xa4rke nach. Doppelklick: 0 ms."));
+    addItem (overlapName, overlapSlider, &overlapValue);
+
+    setupName (releaseName, "Ausklingen (Spielende)");
+    setupValue (releaseValue);
+    setupSlider (releaseSlider, 0.0, 3000.0, 10.0);
+    releaseSlider.setDoubleClickReturnValue (true, 0.0);
+    releaseSlider.setTooltip (U ("H\xc3\xa4lt den Ton nach Unterschreiten der Out-Schwelle fest und blendet ihn \xc3\xbc" "ber diese Zeit sanft aus, bevor Note-Off "
+                                 "gesendet wird. Doppelklick: 0 ms."));
+    addItem (releaseName, releaseSlider, &releaseValue);
 
     // --- key
     addColumn ("Tonart");
@@ -299,6 +334,14 @@ MainComponent::MainComponent (const Options& o) : options (o)
         triadChannelBox.addItem ("Kanal " + juce::String (channel), channel);
     setupBox (triadChannelBox, U ("Auf diesem Kanal erklingt die Harmonie, zum Beispiel mit einem Pad oder Streichern."));
     addItem (triadChannelName, triadChannelBox);
+
+    setupName (offsetName, "Harmonie-Offset");
+    setupValue (offsetValue);
+    setupSlider (offsetSlider, -50.0, 0.0, 1.0);
+    offsetSlider.setDoubleClickReturnValue (true, 0.0);
+    offsetSlider.setTooltip (U ("Senkt die Lautst\xc3\xa4rke und Ausdrucksst\xc3\xa4rke (Velocity & CC11) der Harmoniestimmen relativ zum gespielten Solo-Ton ab. "
+                                "Doppelklick: 0 %."));
+    addItem (offsetName, offsetSlider, &offsetValue);
 
     // --- MIDI
     addColumn ("MIDI");
@@ -401,7 +444,7 @@ MainComponent::MainComponent (const Options& o) : options (o)
     if (options.notice.isNotEmpty())
         updates.setNotice (options.notice);
 
-    if (options.showSettingsAtStart || options.showVoicingAtStart || options.showOctaveAtStart || options.showMenuAtStart > 0)
+    if (options.showSettingsAtStart || options.showVoicingAtStart || options.showPanelAtStart > 0 || options.showMenuAtStart > 0)
     {
         juce::Component::SafePointer<MainComponent> safeThis (this);
         juce::Timer::callAfterDelay (600, [safeThis]
@@ -410,7 +453,9 @@ MainComponent::MainComponent (const Options& o) : options (o)
                 return;
             if (safeThis->options.showSettingsAtStart) safeThis->showSettings();
             if (safeThis->options.showVoicingAtStart)  safeThis->showVoicingPanel();
-            if (safeThis->options.showOctaveAtStart)   safeThis->showOctavePanel();
+            if (safeThis->options.showPanelAtStart == 1) safeThis->showTrackingPanel();
+            if (safeThis->options.showPanelAtStart == 2) safeThis->showAudioPanel();
+            if (safeThis->options.showPanelAtStart == 3) safeThis->showCamera();
             if (safeThis->options.showMenuAtStart == 1) safeThis->scaleBox.showPopup();
             if (safeThis->options.showMenuAtStart == 2) safeThis->voicingBox.showPopup();
         });
@@ -425,28 +470,19 @@ MainComponent::MainComponent (const Options& o) : options (o)
     remote.setInput (settings.midiInputName);
 
     auto savedState = store->audioState();
-    const bool firstRun = savedState == nullptr;
     audioInitError = deviceManager.initialise (1, 0, savedState.get(), true);
 
-    if (firstRun)
-    {
-        // A small buffer keeps the delay short. Other programs keep their own.
-        if (auto* device = deviceManager.getCurrentAudioDevice())
-        {
-            int best = 0;
-            for (int size : device->getAvailableBufferSizes())
-                if (size >= 64 && (best == 0 || size < best))
-                    best = size;
+    // A small buffer keeps the delay short. Not only at the very first start:
+    // if the saved device could not be opened, the system's default device comes
+    // up with its default buffer (512 samples, 10.7 ms at 48 kHz), and that used
+    // to stay. Only a size the user chose in the settings is left alone.
+    if (! settings.bufferChosen)
+        useSmallBuffer();
 
-            auto setup = deviceManager.getAudioDeviceSetup();
-            if (best > 0 && best < setup.bufferSize)
-            {
-                setup.bufferSize = best;
-                deviceManager.setAudioDeviceSetup (setup, true);
-            }
-        }
-    }
+    if (settings.engine.audioHarmony)
+        ensureAudioOutput();
 
+    lastBufferSize = deviceManager.getAudioDeviceSetup().bufferSize;
     deviceManager.addAudioCallback (&host);
     deviceManager.addChangeListener (this);
 
@@ -457,6 +493,10 @@ MainComponent::MainComponent (const Options& o) : options (o)
 MainComponent::~MainComponent()
 {
     stopTimer();
+    camera.onFrame = nullptr;
+    camera.stop();
+    if (cameraDialog != nullptr)
+        delete cameraDialog.getComponent();
     if (settingsDialog != nullptr)
         delete settingsDialog.getComponent();
 
@@ -596,6 +636,9 @@ void MainComponent::applySettingsToControls()
     tuningSlider.setValue (e.a4Hz, quiet);
     smoothingSlider.setValue (e.vibratoSmoothing, quiet);
     dynSmoothingSlider.setValue (e.dynamicsSmoothingMs, quiet);
+    overlapSlider.setValue (e.overlapMs, quiet);
+    releaseSlider.setValue (e.releaseMs, quiet);
+    offsetSlider.setValue (e.harmonyOffset * 100.0f, quiet);
 
     loading = false;
     pushSettings();
@@ -644,6 +687,9 @@ void MainComponent::pushSettings()
     e.a4Hz = (float) tuningSlider.getValue();
     e.vibratoSmoothing = (float) smoothingSlider.getValue();
     e.dynamicsSmoothingMs = (float) dynSmoothingSlider.getValue();
+    e.overlapMs = (float) overlapSlider.getValue();
+    e.releaseMs = (float) releaseSlider.getValue();
+    e.harmonyOffset = (float) (offsetSlider.getValue() / 100.0);
 
     // Out never above In: whichever slider moves, Out gives way.
     e.gateDb = (float) gateSlider.getValue();
@@ -651,7 +697,9 @@ void MainComponent::pushSettings()
         gateOffSlider.setValue (gateSlider.getValue(), quiet);
     e.gateOffDb = (float) gateOffSlider.getValue();
 
-    host.setSettings (e);
+    if (e.audioHarmony)
+        ensureAudioOutput();
+    host.setSettings (hostSettings());
 
     // controls that do nothing right now are dimmed, not hidden
     auto dim = [] (bool on, juce::Component& control, juce::Label& name, juce::Label* value = nullptr)
@@ -674,13 +722,16 @@ void MainComponent::pushSettings()
     dim (e.triad, voicingRow, voicingName);
     dim (e.triad, harmonyModeRow, harmonyModeName);
     dim (e.triad, triadChannelBox, triadChannelName);
+    dim (e.triad, offsetSlider, offsetName, &offsetValue);
     voicingEditButton.setEnabled (e.triad && e.voicing == vm::scale::kFreeVoicing);
     freezeSoloButton.setEnabled (e.enabled);
     freezeHarmonyButton.setEnabled (e.enabled && e.triad);
 
     masterButton.setButtonText (e.enabled ? "Erkennung an" : "Erkennung aus");
-    octaveButton.setButtonText ((e.octaveAttackGuard ? milliseconds (e.octaveAttackMs) : juce::String ("Aus")) + "  /  "
-                                + (e.octaveSustainGuard ? milliseconds (e.octaveSustainMs) : juce::String ("Aus")) + U (" \xe2\x80\xa6"));
+    octaveButton.setButtonText (juce::String (e.jumpGuard ? "Sprungschutz an" : "Sprungschutz aus") + U ("  \xc2\xb7  ")
+                                + milliseconds (e.bridgeMs) + U (" \xe2\x80\xa6"));
+    audioButton.setToggleState (e.audioHarmony, quiet);
+    cameraButton.setToggleState (cameraSettings.enabled, quiet);
     updateValueLabels();
 
     if (presetBar->currentSlot() > 0)
@@ -700,6 +751,11 @@ void MainComponent::updateValueLabels()
     tuningValue.setText (decimalComma (e.a4Hz, 1) + " Hz", quiet);
     smoothingValue.setText (juce::String (juce::roundToInt (e.vibratoSmoothing * 100.0f)) + " %", quiet);
     dynSmoothingValue.setText (milliseconds (e.dynamicsSmoothingMs), quiet);
+    const auto duration = [] (float ms) { return ms >= 1000.0f ? decimalComma (ms / 1000.0, 2) + " s" : milliseconds (ms); };
+    overlapValue.setText (duration (e.overlapMs), quiet);
+    releaseValue.setText (duration (e.releaseMs), quiet);
+    const int percent = juce::roundToInt (e.harmonyOffset * 100.0f);
+    offsetValue.setText ((percent < 0 ? U ("\xe2\x88\x92") : juce::String()) + juce::String (std::abs (percent)) + " %", quiet);
 }
 
 void MainComponent::setMode (int index)
@@ -811,18 +867,23 @@ void MainComponent::showVoicingPanel()
     juce::CallOutBox::launchAsynchronously (std::move (panel), voicingRow.getScreenBounds(), nullptr);
 }
 
-void MainComponent::showOctavePanel()
+void MainComponent::showTrackingPanel()
 {
     const auto& e = settings.engine;
-    OctavePanel::Values values;
+    TrackingPanel::Values values;
     values.attackOn = e.octaveAttackGuard;
     values.attackMs = e.octaveAttackMs;
     values.sustainOn = e.octaveSustainGuard;
     values.sustainMs = e.octaveSustainMs;
+    values.jumpOn = e.jumpGuard;
+    values.jumpInterval = e.jumpIntervalSemis;
+    values.jumpWindowMs = e.jumpWindowMs;
+    values.jumpLockMs = e.jumpLockMs;
+    values.bridgeMs = e.bridgeMs;
 
-    auto panel = std::make_unique<OctavePanel> (values);
+    auto panel = std::make_unique<TrackingPanel> (values);
     juce::Component::SafePointer<MainComponent> safeThis (this);
-    panel->onChange = [safeThis] (const OctavePanel::Values& v)
+    panel->onChange = [safeThis] (const TrackingPanel::Values& v)
     {
         if (safeThis == nullptr)
             return;
@@ -831,9 +892,307 @@ void MainComponent::showOctavePanel()
         engine.octaveAttackMs = v.attackMs;
         engine.octaveSustainGuard = v.sustainOn;
         engine.octaveSustainMs = v.sustainMs;
+        engine.jumpGuard = v.jumpOn;
+        engine.jumpIntervalSemis = v.jumpInterval;
+        engine.jumpWindowMs = v.jumpWindowMs;
+        engine.jumpLockMs = v.jumpLockMs;
+        engine.bridgeMs = v.bridgeMs;
         safeThis->pushSettings();
     };
     juce::CallOutBox::launchAsynchronously (std::move (panel), octaveButton.getScreenBounds(), nullptr);
+}
+
+juce::String MainComponent::audioOutputInfo (bool& isProblem) const
+{
+    isProblem = false;
+    if (! options.openAudio)
+        return U ("Vorschau ohne Audio.");
+
+    if (auto* device = deviceManager.getCurrentAudioDevice(); device != nullptr && device->getActiveOutputChannels().countNumberOfSetBits() > 0)
+        return U ("Ausgang: ") + deviceManager.getAudioDeviceSetup().outputDeviceName;
+
+    isProblem = settings.engine.audioHarmony;
+    return U ("Kein Audio-Ausgang. Unter \xe2\x80\x9e" "Einstellungen\xe2\x80\x9c einen Ausgang w\xc3\xa4hlen.");
+}
+
+void MainComponent::showAudioPanel()
+{
+    const auto& e = settings.engine;
+    AudioPanel::Values values;
+    values.on = e.audioHarmony;
+    values.bodyKeep = e.bodyKeep;
+    values.humanize = e.humanize;
+    values.vibratoCoupling = e.vibratoCoupling;
+    values.stereoSpread = e.stereoSpread;
+    values.hiCutHz = e.hiCutHz;
+    values.harmonyGainDb = e.harmonyGainDb;
+    values.dryKill = e.dryKill;
+
+    bool problem = false;
+    const auto info = audioOutputInfo (problem);
+    auto panel = std::make_unique<AudioPanel> (values, info);
+    panel->setOutputInfo (info, problem);
+
+    juce::Component::SafePointer<MainComponent> safeThis (this);
+    juce::Component::SafePointer<AudioPanel> safePanel (panel.get());
+    panel->onChange = [safeThis, safePanel] (const AudioPanel::Values& v)
+    {
+        if (safeThis == nullptr)
+            return;
+        auto& engine = safeThis->settings.engine;
+        engine.audioHarmony = v.on;
+        engine.bodyKeep = v.bodyKeep;
+        engine.humanize = v.humanize;
+        engine.vibratoCoupling = v.vibratoCoupling;
+        engine.stereoSpread = v.stereoSpread;
+        engine.hiCutHz = v.hiCutHz;
+        engine.harmonyGainDb = v.harmonyGainDb;
+        engine.dryKill = v.dryKill;
+        safeThis->pushSettings();
+
+        if (safePanel != nullptr)
+        {
+            bool isProblem = false;
+            const auto text = safeThis->audioOutputInfo (isProblem);
+            safePanel->setOutputInfo (text, isProblem);
+        }
+    };
+    juce::CallOutBox::launchAsynchronously (std::move (panel), audioButton.getScreenBounds(), nullptr);
+}
+
+/** The harmonizer needs somewhere to play. Until now the app only listened. */
+void MainComponent::ensureAudioOutput()
+{
+    if (! options.openAudio)
+        return;
+
+    if (auto* device = deviceManager.getCurrentAudioDevice(); device != nullptr && device->getActiveOutputChannels().countNumberOfSetBits() > 0)
+        return;
+
+    auto setup = deviceManager.getAudioDeviceSetup();
+    if (setup.outputDeviceName.isEmpty())
+    {
+        if (auto* type = deviceManager.getCurrentDeviceTypeObject())
+        {
+            const auto names = type->getDeviceNames (false);
+            const int index = type->getDefaultDeviceIndex (false);
+            if (juce::isPositiveAndBelow (index, names.size()))
+                setup.outputDeviceName = names[index];
+        }
+    }
+
+    if (setup.outputDeviceName.isEmpty())
+        return;
+
+    setup.useDefaultOutputChannels = false;
+    setup.outputChannels.clear();
+    setup.outputChannels.setRange (0, 2, true);
+    deviceManager.setAudioDeviceSetup (setup, true);
+}
+
+/** The smallest buffer the interface offers from 64 samples up: every sample of it is delay. */
+void MainComponent::useSmallBuffer()
+{
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+    {
+        int best = 0;
+        for (int size : device->getAvailableBufferSizes())
+            if (size >= 64 && (best == 0 || size < best))
+                best = size;
+
+        auto setup = deviceManager.getAudioDeviceSetup();
+        if (best > 0 && best < setup.bufferSize)
+        {
+            setup.bufferSize = best;
+            deviceManager.setAudioDeviceSetup (setup, true);
+        }
+    }
+}
+
+/** The factory preset: everything that costs time is off or at its shortest.
+    Key, harmony and MIDI settings stay as they are. */
+void MainComponent::applyLowestLatency()
+{
+    auto& e = settings.engine;
+    e.response = vm::Response::Fast;
+    e.bendMode = vm::BendMode::Continuous;
+    e.vibratoSmoothing = 0.0f;
+    e.dynamicsSmoothingMs = 0.0f;
+    // The two octave guards stay on: measured, switching them off saves nothing
+    // on a clean start and lets wrong first notes through. The attack guard only
+    // waits when the octave is in doubt, and then for a shorter time here.
+    e.octaveAttackGuard = true;
+    e.octaveAttackMs = 20.0f;
+    e.octaveSustainGuard = true;
+    e.octaveSustainMs = 11.0f;
+    e.jumpGuard = false;
+    e.overlapMs = 0.0f;
+    e.releaseMs = 0.0f;
+
+    settings.bufferChosen = false;   // the preset decides the buffer again
+    useSmallBuffer();
+    applySettingsToControls();
+}
+
+//==============================================================================
+// Camera
+
+vm::Settings MainComponent::hostSettings() const
+{
+    auto e = settings.engine;
+
+    // "Harmonie-Mix" from the camera: the height of the violin fades the harmony
+    // between half as loud (low) and the level that is set (high).
+    if (cameraSettings.enabled && cameraSettings.heightTarget == CameraSettings::targetHarmonyLevel)
+    {
+        e.harmonyOffset = -0.5f + cameraMix * (e.harmonyOffset + 0.5f);
+        e.harmonyGainDb -= 24.0f * (1.0f - cameraMix);
+    }
+    return e;
+}
+
+void MainComponent::applyCameraSettings (const CameraSettings& next)
+{
+    const bool wasOn = cameraSettings.enabled;
+    const bool deviceChanged = next.deviceName != cameraSettings.deviceName;
+    cameraSettings = next;
+    settings.cameraJson = cameraSettings.toJson();
+    store->save (settings);
+
+    if (cameraSettings.enabled && (! wasOn || deviceChanged))
+    {
+        heightTracker.reset();
+        gestures.reset();
+        cameraMix = 1.0f;
+        cameraSettings.enabled = camera.start (cameraSettings.deviceName);   // false: see camera.error()
+    }
+    else if (! cameraSettings.enabled && wasOn)
+    {
+        camera.stop();
+        cameraMix = 1.0f;
+    }
+
+    cameraButton.setToggleState (cameraSettings.enabled, juce::dontSendNotification);
+    host.setSettings (hostSettings());
+    updateCameraStatus();
+}
+
+void MainComponent::updateCameraStatus()
+{
+    auto* panel = cameraDialog != nullptr ? dynamic_cast<CameraPanel*> (cameraDialog->getContentComponent()) : nullptr;
+    if (panel == nullptr)
+        return;
+
+    const auto error = camera.error();
+    if (error.isNotEmpty())
+        panel->setStatus (error, ! error.startsWith ("Warte"));
+    else if (! cameraSettings.enabled)
+        panel->setStatus (U ("Die Kamera ist aus."), false);
+    else
+        panel->setStatus (U ("Die Kamera l\xc3\xa4uft. Das Bild bleibt auf diesem Mac."), false);
+}
+
+void MainComponent::cameraFrame (const juce::Image& preview, const cam::Pose& pose)
+{
+    if (! cameraSettings.enabled)
+        return;
+
+    int value = -1;
+    if (heightTracker.update (pose, cameraSettings.height, value))
+    {
+        switch (cameraSettings.heightTarget)
+        {
+            case CameraSettings::targetModWheel:    host.sendController (1, value); break;
+            case CameraSettings::targetExpression:  host.sendController (11, value); break;
+            case CameraSettings::targetFilter:      host.sendController (74, value); break;
+            case CameraSettings::targetHarmonyLevel:
+                cameraMix = (float) value / 127.0f;
+                host.setSettings (hostSettings());
+                break;
+            default: break;
+        }
+        cameraValue = value;
+    }
+
+    const auto gesture = gestures.update (pose, cameraSettings.gestures);
+    if (gesture == cam::Gesture::Nod)         cameraAction (cameraSettings.nodAction);
+    else if (gesture == cam::Gesture::Shake)  cameraAction (cameraSettings.shakeAction);
+
+    if (cameraDialog != nullptr)
+        if (auto* panel = dynamic_cast<CameraPanel*> (cameraDialog->getContentComponent()))
+            panel->showFrame (preview, pose, cameraValue, gesture);
+}
+
+void MainComponent::cameraAction (int action)
+{
+    auto& e = settings.engine;
+
+    switch (action)
+    {
+        case CameraSettings::actionHarmony:        e.triad = ! e.triad; break;
+        case CameraSettings::actionFreezeSolo:     e.freezeSolo = ! e.freezeSolo; break;
+        case CameraSettings::actionFreezeHarmony:  e.freezeHarmony = ! e.freezeHarmony; break;
+        case CameraSettings::actionDetection:      e.enabled = ! e.enabled; break;
+        case CameraSettings::actionPresetNext:     presetBar->step (1); return;
+        case CameraSettings::actionPresetPrevious: presetBar->step (-1); return;
+        default: return;
+    }
+    applySettingsToControls();
+}
+
+void MainComponent::showCamera()
+{
+    if (cameraDialog != nullptr)
+    {
+        cameraDialog->toFront (true);
+        return;
+    }
+
+    auto* panel = new CameraPanel (cameraSettings, CameraTracker::availableCameras());
+    juce::Component::SafePointer<MainComponent> safeThis (this);
+    panel->onChange = [safeThis] (const CameraSettings& next)
+    {
+        if (safeThis != nullptr)
+            safeThis->applyCameraSettings (next);
+    };
+
+    juce::DialogWindow::LaunchOptions launch;
+    launch.content.setOwned (panel);
+    launch.dialogTitle = "Kamera";
+    launch.dialogBackgroundColour = colour::window;
+    launch.escapeKeyTriggersCloseButton = true;
+    launch.useNativeTitleBar = true;
+    launch.resizable = false;
+    cameraDialog = launch.launchAsync();
+    updateCameraStatus();
+
+    // Layout check without a camera: a made-up picture of a player.
+    if (options.demo)
+    {
+        juce::Image picture (juce::Image::RGB, 320, 240, true);
+        {
+            juce::Graphics g (picture);
+            g.fillAll (juce::Colour (0xff2a2a2a));
+        }
+
+        cam::Pose pose;
+        pose.valid = true;
+        const auto at = [] (float x, float y) { cam::Point point; point.x = x; point.y = y; point.confidence = 0.9f; return point; };
+        pose.nose = at (0.50f, 0.30f);
+        pose.leftEye = at (0.53f, 0.27f);
+        pose.rightEye = at (0.47f, 0.27f);
+        pose.leftEar = at (0.57f, 0.29f);
+        pose.rightEar = at (0.43f, 0.29f);
+        pose.neck = at (0.50f, 0.42f);
+        pose.leftShoulder = at (0.64f, 0.46f);
+        pose.rightShoulder = at (0.36f, 0.46f);
+        pose.leftElbow = at (0.76f, 0.56f);
+        pose.leftWrist = at (0.82f, 0.38f);
+        pose.rightElbow = at (0.30f, 0.66f);
+        pose.rightWrist = at (0.46f, 0.62f);
+        panel->showFrame (picture, pose, 84, cam::Gesture::Nod);
+        panel->setStatus (U ("Die Kamera l\xc3\xa4uft. Das Bild bleibt auf diesem Mac."), false);
+    }
 }
 
 void MainComponent::refreshUpdateButton()
@@ -856,6 +1215,15 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
     if (source == &deviceManager)
     {
+        // A change of the buffer size while the settings are open is the user's choice.
+        const int bufferSize = deviceManager.getAudioDeviceSetup().bufferSize;
+        if (settingsDialog != nullptr && lastBufferSize > 0 && bufferSize != lastBufferSize && ! settings.bufferChosen)
+        {
+            settings.bufferChosen = true;
+            store->save (settings);
+        }
+        lastBufferSize = bufferSize;
+
         if (auto state = deviceManager.createStateXml())
             store->saveAudioState (*state);
     }
@@ -1063,8 +1431,12 @@ void MainComponent::resized()
     auto area = getLocalBounds();
 
     auto header = area.removeFromTop (kHeaderHeight);
-    presetBar->setBounds (header.withSizeKeepingCentre (header.getWidth() - 2 * kMargin, PresetBar::kHeight)
-                                .withWidth (juce::jmin (640, header.getWidth() - 2 * kMargin)));
+    auto headerRow = header.withSizeKeepingCentre (header.getWidth() - 2 * kMargin, PresetBar::kHeight);
+    cameraButton.setBounds (headerRow.removeFromRight (96));
+    headerRow.removeFromRight (8);
+    audioButton.setBounds (headerRow.removeFromRight (164));
+    headerRow.removeFromRight (24);
+    presetBar->setBounds (headerRow.withWidth (juce::jmin (640, headerRow.getWidth())));
 
     const auto displayArea = area.removeFromTop (kDisplayHeight);
     display.setBounds (displayArea);

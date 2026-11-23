@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Runs on every Mac that can run a current MainStage, Intel and Apple Silicon.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
-project(ViolinMIDI VERSION 1.4.0 LANGUAGES C CXX)
+project(ViolinMIDI VERSION 1.5.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -17,6 +17,7 @@ add_library(violinmidi_core STATIC
     core/PitchDetector.cpp
     core/NoteTracker.cpp
     core/OutputStage.cpp
+    core/Harmonizer.cpp
     core/Engine.cpp)
 target_include_directories(violinmidi_core PUBLIC core)
 
@@ -30,13 +31,19 @@ endif()
 if(VIOLINMIDI_BUILD_TESTS)
     enable_testing()
 
-    add_executable(violinmidi_tests tests/test_main.cpp)
+    # The camera's logic has no dependencies either, so it is tested here too.
+    add_executable(violinmidi_tests tests/test_main.cpp app/CameraLogic.cpp)
+    target_include_directories(violinmidi_tests PRIVATE app)
     target_link_libraries(violinmidi_tests PRIVATE violinmidi_core)
     add_test(NAME core COMMAND violinmidi_tests)
 
     # Offline tool: runs a WAV recording through the engine and lists the notes.
     add_executable(violinmidi_wav tools/wav2midi.cpp)
     target_link_libraries(violinmidi_wav PRIVATE violinmidi_core)
+
+    # Offline tool: plays the harmony voices of a recording with its own sound (the audio harmonizer).
+    add_executable(violinmidi_harmonize tools/harmonize.cpp)
+    target_link_libraries(violinmidi_harmonize PRIVATE violinmidi_core)
 endif()
 
 # --- application --------------------------------------------------------------
