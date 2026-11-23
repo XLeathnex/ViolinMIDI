@@ -56,6 +56,10 @@ jobs:
           lipo -archs "$APP/Contents/MacOS/ViolinMIDI" | grep -q arm64
           lipo -archs "$APP/Contents/MacOS/ViolinMIDI" | grep -q x86_64
           /usr/libexec/PlistBuddy -c "Print :NSMicrophoneUsageDescription" "$APP/Contents/Info.plist"
+          # without this text macOS ends the app the moment it asks for the camera
+          /usr/libexec/PlistBuddy -c "Print :NSCameraUsageDescription" "$APP/Contents/Info.plist"
+          otool -L "$APP/Contents/MacOS/ViolinMIDI" | grep -E "Vision|AVFoundation"
+          otool -L "$APP/Contents/MacOS/ViolinMIDI" | grep -q Vision.framework
           /usr/libexec/PlistBuddy -c "Print :NSAppSleepDisabled" "$APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist"
