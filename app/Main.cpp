@@ -257,8 +257,10 @@ public:
 
     void shutdown() override
     {
-        // Quitting during the start animation is a good start too, not a failed one.
-        if (mainWindow != nullptr)
+        // Quitting during the start animation is a good start too, not a failed one -
+        // but only for this version's own start: when quitting to switch to another
+        // version, the pending start is that one's and must stay until it reports.
+        if (mainWindow != nullptr && updater::readState().pending == updater::runningVersion())
             updater::startedSuccessfully();
 
        #if JUCE_MAC

@@ -826,10 +826,16 @@ void MainComponent::pushSettings()
     if (presetBar->currentSlot() > 0)
         presetBar->setModified (image (e) != presetImage);
 
-    // The harmonizer's window shows what a preset or a foot switch changed, too.
+    // The harmonizer's window shows what a preset or a foot switch changed, too,
+    // including the output line (switching it on may have just opened an output).
     if (audioDialog != nullptr)
         if (auto* panel = dynamic_cast<AudioPanel*> (audioDialog->getContentComponent()))
+        {
             panel->setValues (audioPanelValues());
+            bool problem = false;
+            const auto info = audioOutputInfo (problem);
+            panel->setOutputInfo (info, problem);
+        }
 
     store->save (settings);
 }
