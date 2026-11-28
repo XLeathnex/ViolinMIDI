@@ -21,8 +21,8 @@ namespace
 
     constexpr float kLinkTextHeight = 12.5f;
 
-    const char* const kProjectUrl = "https://github.com/XLeathnex/ViolinMIDI";
-    const char* const kProjectText = "github.com/XLeathnex/ViolinMIDI";
+    const char* const kProjectUrl = "https://github.com/XLeathnex/VioLogic";
+    const char* const kProjectText = "github.com/XLeathnex/VioLogic";
 
     // The window that is open, if any; there is only ever one.
     juce::Component::SafePointer<juce::DialogWindow> openWindow;

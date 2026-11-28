@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/XLeathnex/ViolinMIDI/releases/latest"><b>Neueste Version laden</b></a> ·
+  <a href="https://github.com/XLeathnex/VioLogic/releases/latest"><b>Neueste Version laden</b></a> ·
   <a href="#installation-auf-dem-mac">Installation</a> ·
   <a href="CHANGELOG.md">Was ist neu</a>
 </p>
@@ -28,7 +28,7 @@ Das ist nur einmal nötig. Spätere Versionen holt die App selbst, siehe „Upda
 2. Diese Zeile einfügen und Enter drücken:
 
    ```
-   curl -fsSL https://raw.githubusercontent.com/XLeathnex/ViolinMIDI/main/install.sh | bash
+   curl -fsSL https://raw.githubusercontent.com/XLeathnex/VioLogic/main/install.sh | bash
    ```
 
 3. Die App wird geladen, in „Programme“ gelegt und gestartet. Beim ersten Start fragt macOS nach
@@ -41,7 +41,7 @@ alte App in den Papierkorb legen und die Zeile noch einmal ausführen.
 
 ### Von Hand
 
-1. `ViolinMIDI-macOS.zip` von der [Seite mit den Versionen](https://github.com/XLeathnex/ViolinMIDI/releases/latest)
+1. `ViolinMIDI-macOS.zip` von der [Seite mit den Versionen](https://github.com/XLeathnex/VioLogic/releases/latest)
    laden und doppelklicken. Es entsteht `ViolinMIDI.app` (der Dateiname ist aus Gründen der
    Update-Kompatibilität geblieben).
 2. Die App in den Ordner „Programme“ ziehen und dort in `VioLogic.app` umbenennen.
@@ -370,6 +370,9 @@ Regeln, damit es schnell und sicher bleibt:
 - Anzeigen zeichnen sich nur neu, wenn sich etwas geändert hat (30 Bilder pro Sekunde).
 - Bestehende Einstellungs-Schlüssel nie umbenennen: Alle Versionen lesen dieselbe Datei. Ändert
   sich die Bedeutung eines Werts, `kSchema` erhöhen und in `migrate()` umrechnen.
+- Das Repository hieß bis 2.0 `ViolinMIDI` und heißt jetzt `VioLogic`. Ältere Versionen fragen noch
+  unter dem alten Namen nach Updates, GitHub leitet sie weiter. Deshalb unter diesem Konto nie wieder
+  ein Repository `ViolinMIDI` anlegen, sonst finden sie keine Updates mehr.
 - Dateiname, Programmname und Bundle-ID (`ViolinMIDI`, `app.violinmidi.ViolinMIDI`) nicht ändern:
   Ältere Versionen erkennen Updates daran, und macOS hängt die Mikrofon-Freigabe daran.
 

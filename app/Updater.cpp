@@ -15,7 +15,7 @@ namespace updater
 
 namespace
 {
-    constexpr const char* kRepository = "XLeathnex/ViolinMIDI";
+    constexpr const char* kRepository = "XLeathnex/VioLogic";
     constexpr const char* kAssetName  = "ViolinMIDI-macOS.zip";
     constexpr const char* kManifestName = "versions.json";
     constexpr const char* kBundleId   = "app.violinmidi.ViolinMIDI";

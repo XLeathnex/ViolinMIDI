@@ -1,13 +1,13 @@
 #!/bin/bash
 # Installs the newest VioLogic into the Programs folder. Run it with:
 #
-#   curl -fsSL https://raw.githubusercontent.com/XLeathnex/ViolinMIDI/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/XLeathnex/VioLogic/main/install.sh | bash
 #
 # It only uses tools that are part of macOS. Files loaded in the Terminal are not
 # marked as "from the internet", so macOS does not block the app afterwards.
 set -euo pipefail
 
-URL="https://github.com/XLeathnex/ViolinMIDI/releases/latest/download/ViolinMIDI-macOS.zip"
+URL="https://github.com/XLeathnex/VioLogic/releases/latest/download/ViolinMIDI-macOS.zip"
 INNER="ViolinMIDI.app"      # name inside the download (kept for the updater of older versions)
 NAME="VioLogic.app"         # name in the Programs folder
 OLD_NAMES=("ViolinMIDI.app" "Archet.app")   # names used until 1.1 and from 1.2 to 1.5
