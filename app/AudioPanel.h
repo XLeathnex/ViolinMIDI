@@ -1,10 +1,18 @@
 // The audio harmonizer (the harmony voices made from the violin's own sound),
-// for a CallOutBox: the on/off switch, six sliders for the sound of the voices
-// and the dry-kill switch. A line under the heading names the audio output.
+// the content of its own window "Audio-Harmonizer".
+//
+// Left: the two curves over the played pitch - how much of the body resonance
+// the voices keep (formant correction) and where their low-pass sits (high-cut
+// on the wet signal only). Right: drop voicing, the ensemble controls, the
+// level of the voices and dry-kill. A line under the heading names the audio
+// output; the main switch sits at the top right. While the harmonizer is off
+// everything but the main switch is dimmed.
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "Curve.h"
+#include "CurveEditor.h"
 #include "Widgets.h"
 
 #include <array>
@@ -15,15 +23,18 @@ class AudioPanel final : public juce::Component
 public:
     struct Values
     {
-        bool  on = false;
-        float bodyKeep = 1.0f;         // 0 .. 1, shown as 0 .. 100 %
-        float humanize = 0.2f;         // 0 .. 1
-        float vibratoCoupling = 1.0f;  // 0 .. 1
-        float stereoSpread = 0.5f;     // 0 .. 1
-        float hiCutHz = 10000.0f;      // 4000 .. 16000
-        float harmonyGainDb = 0.0f;    // -60 .. +6; -60 is shown as minus infinity
-        bool  dryKill = false;
+        bool      on = false;
+        vm::Curve formant = vm::curve::defaultFormant();   // share of the body kept, 0 .. 1, over the played pitch
+        vm::Curve hiCut = vm::curve::defaultHiCut();       // cut-off of the voices' low-pass in Hz, over the played pitch
+        bool      dropVoicing = true;
+        float     ensemble = 1.0f;          // 0 .. 1, shown as 0 .. 100 %
+        float     vibratoCoupling = 1.0f;   // 0 .. 1
+        float     stereoSpread = 0.35f;     // 0 .. 1
+        float     harmonyGainDb = 0.0f;     // -60 .. +6; -60 is shown as minus infinity
+        bool      dryKill = false;
     };
+
+    static constexpr int kWidth = 760, kHeight = 540;
 
     AudioPanel (const Values&, const juce::String& outputInfo);
 
@@ -31,14 +42,18 @@ public:
 
     const Values& values() const noexcept   { return current; }
 
-    /** One line under the heading, e.g. "Ausgang: MacBook Pro-Lautsprecher", or a problem text. */
+    /** One line under the heading, e.g. "Ausgang: MacBook Pro-Lautsprecher", or a problem text (amber). */
     void setOutputInfo (const juce::String& text, bool isProblem);
+
+    /** The pitch being played (fractional MIDI note) for the live line in both
+        curves; negative while nothing is played. Repaints only when it moves. */
+    void setPlayhead (float midiNote);
 
     void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
-    /** Two-segment switch Aus | An. */
+    /** Two-segment switch Aus | An, drawn as a status switch. */
     struct Switch
     {
         Switch (int radioGroup, const juce::String& tip);
@@ -49,7 +64,7 @@ private:
         ButtonRow row;
     };
 
-    enum Kind { percent, kilohertz, decibel };
+    enum Kind { percent, decibel };
 
     /** Name line (value on the right), slider below. */
     struct Block
@@ -62,16 +77,18 @@ private:
     void setupBlock (Block&, const juce::String& label, Kind, double low, double high, double step,
                      double defaultValue, const juce::String& tip);
     juce::String valueText (const Block&) const;
+    void showEnabledState();
     void changed();
 
     Values current;
     juce::String outputInfo;
     bool outputIsProblem = false;
 
-    Switch onSwitch, dryKillSwitch;
-    std::array<Block, 6> blocks;   // body, humanize, vibrato, spread, hi-cut, level
+    Switch onSwitch, dropSwitch, dryKillSwitch;
+    CurveEditor formantEditor, hiCutEditor;
+    std::array<Block, 4> blocks;   // ensemble, vibrato coupling, stereo spread, level
 
-    // A CallOutBox is a window of its own, so it brings its own tooltips.
+    // The panel lives in a window of its own, so it brings its own tooltips.
     juce::TooltipWindow tooltips { this, 700 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioPanel)

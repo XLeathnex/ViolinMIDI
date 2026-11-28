@@ -4,6 +4,7 @@
 #include "Theme.h"
 
 #include <cmath>
+#include <iterator>
 
 using namespace brand;
 
@@ -12,6 +13,95 @@ namespace
     juce::String text (const char* utf8) { return juce::String::fromUTF8 (utf8); }
 
     constexpr float kPad = 24.0f;
+
+    // The graphs on the right, from the top down: pitch, a small gap, loudness, time marks.
+    constexpr float kGraphTop = 16.0f, kGraphBottom = 14.0f;
+    constexpr float kLabelWidth = 30.0f;
+    constexpr float kLevelHeight = 64.0f, kLevelGap = 10.0f, kTimeRowHeight = 16.0f;
+
+    // The loudness scale, the same as the input meter's.
+    constexpr float kLowDb = -72.0f, kHighDb = 0.0f;
+
+    // The emblem behind the grid: there, but never in the way of the lines.
+    constexpr float kWatermarkOpacity = 0.08f;
+
+    /** One zoom step: the time and pitch span shown, and how far apart the time marks are. */
+    struct ZoomStep { float seconds, semitones, tick; };
+
+    // Time and pitch zoom together: short and narrow for fast runs and vibrato,
+    // long and wide for whole phrases. The middle one is the standard view.
+    constexpr ZoomStep kZoomSteps[] = { { 1.5f, 5.0f, 0.5f }, { 3.0f, 8.0f, 1.0f }, { 6.0f, 14.0f, 1.0f },
+                                        { 12.0f, 24.0f, 2.0f }, { 24.0f, 36.0f, 4.0f } };
+    constexpr int kStandardZoom = 2;
+    constexpr int kZoomCount = (int) std::size (kZoomSteps);
+
+    static_assert ((float) LiveDisplay::kFrames > kZoomSteps[kZoomCount - 1].seconds * (float) LiveDisplay::kFramesPerSecond,
+                   "the history must hold the longest zoom step");
+
+    // The zoom strip in the top left corner of the pitch graph.
+    constexpr int kStripInset = 6, kStripHeight = 22, kSignWidth = 26, kResetWidth = 70;
+
+    const juce::String& minus()
+    {
+        static const juce::String m = text ("\xe2\x88\x92");
+        return m;
+    }
+
+    /** 1.5 -> "1,5", 6.0 -> "6". */
+    juce::String decimal (float value)
+    {
+        const float tenths = std::round (value * 10.0f);
+        if (std::abs (tenths - 10.0f * std::round (value)) < 0.5f)
+            return juce::String (juce::roundToInt (value));
+        return juce::String (tenths / 10.0f, 1).replaceCharacter ('.', ',');
+    }
+
+    /** A level as the controls show it: one decimal, decimal comma, the real minus sign. */
+    juce::String decibels (float db)
+    {
+        const auto digits = juce::String (std::abs (db), 1).replaceCharacter ('.', ',');
+        return (db < -0.05f ? minus() : juce::String()) + digits + " dB";
+    }
+
+    bool isNatural (int pitchClass)
+    {
+        return pitchClass != 1 && pitchClass != 3 && pitchClass != 6 && pitchClass != 8 && pitchClass != 10;
+    }
+
+    /** A line through the points with the corners rounded off: quadratic curves
+        from one midpoint to the next, so 30 points a second read as a played line.
+        With `join` it continues the current sub-path instead of starting one. */
+    void addSmooth (juce::Path& p, const std::vector<juce::Point<float>>& points, bool join = false)
+    {
+        if (join)
+            p.lineTo (points.front());
+        else
+            p.startNewSubPath (points.front());
+
+        for (size_t i = 1; i + 1 < points.size(); ++i)
+            p.quadraticTo (points[i], (points[i] + points[i + 1]) * 0.5f);
+        p.lineTo (points.back());
+    }
+
+    const char* const kDisplayTip =
+        "Live-Anzeige: links die gespielte Note, rechts Tonh\xc3\xb6he und Lautst\xc3\xa4rke der letzten Sekunden. "
+        "Ganz rechts ist jetzt.";
+
+    const char* const kNoteTip =
+        "Die gespielte Note: rot, solange sie als MIDI gesendet wird, grau, wenn sie nur geh\xc3\xb6rt wird. "
+        "Darunter die Stimmung von \xe2\x88\x92" "50 bis +50 Cent und die Frequenz, ganz unten, was gerade hinausgeht.";
+
+    const char* const kPitchTip =
+        "Tonh\xc3\xb6henverlauf, ganz rechts ist jetzt. Die silberwei\xc3\x9f" "e Linie mit rotem Schein ist die erkannte "
+        "Melodie, solange MIDI gesendet wird; grau ist nur geh\xc3\xb6rt, nicht gesendet. Die roten Balken sind die "
+        "gesendeten MIDI-Noten, ihre Kante links ist der Anschlag. Mit \xe2\x88\x92 und + oben links zoomen: kurz "
+        "f\xc3\xbcr schnelle L\xc3\xa4ufe und Vibrato, lang f\xc3\xbcr ganze Phrasen.";
+
+    const char* const kLevelTip =
+        "Lautst\xc3\xa4rkeverlauf im selben Zeitraster wie die Tonh\xc3\xb6he dar\xc3\xbc" "ber, von \xe2\x88\x92" "72 bis 0 dB: "
+        "Anstrich, Crescendo und Decrescendo direkt unter den gespielten T\xc3\xb6nen. Rot, solange eine Note gesendet wird. "
+        "Die obere Linie (In) ist die Einschalt-Schwelle: dar\xc3\xbc" "ber kann ein Ton beginnen. Die gestrichelte (Out) "
+        "ist die Ausschalt-Schwelle: darunter endet er. Beide folgen den Reglern.";
 }
 
 juce::String noteName (int midiNote)
@@ -108,44 +198,164 @@ void ButtonRow::paint (juce::Graphics& g)
 
 //==============================================================================
 LiveDisplay::LiveDisplay()
+    : frames ((size_t) kFrames)
 {
     setOpaque (true);
+    setTooltip (text (kDisplayTip));
+
+    // A small segmented strip: zoom out, zoom in, back to the standard view.
+    zoomOutButton.setButtonText (minus());
+    zoomInButton.setButtonText ("+");
+    zoomResetButton.setButtonText ("Standard");
+    zoomOutButton.setConnectedEdges (juce::Button::ConnectedOnRight);
+    zoomInButton.setConnectedEdges (juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight);
+    zoomResetButton.setConnectedEdges (juce::Button::ConnectedOnLeft);
+
+    for (auto* b : { &zoomOutButton, &zoomInButton, &zoomResetButton })
+    {
+        // The space bar belongs to the master switch, so these never take the keyboard.
+        b->setWantsKeyboardFocus (false);
+        b->setMouseClickGrabsKeyboardFocus (false);
+        addAndMakeVisible (*b);
+    }
+
+    zoomOutButton.onClick   = [this] { setZoom (zoom + 1); };
+    zoomInButton.onClick    = [this] { setZoom (zoom - 1); };
+    zoomResetButton.onClick = [this] { setZoom (kStandardZoom); };
+    setZoom (kStandardZoom);
 }
 
-void LiveDisplay::push (const LiveFrame& f, float a4Hz)
+void LiveDisplay::push (const LiveFrame& f, float a4Hz, float gateDb, float gateOffDb)
 {
+    const auto& before = frames[(size_t) head];
+    const bool changed = f.enabled != before.enabled || f.triadCount != before.triadCount || f.held != before.held
+                      || f.frozenNote != before.frozenNote || f.harmonyFrozen != before.harmonyFrozen;
+
     head = (head + 1) % kFrames;
     frames[(size_t) head] = f;
     a4 = a4Hz;
 
+    const bool thresholdsMoved = ! juce::exactlyEqual (gateDb, gateIn) || ! juce::exactlyEqual (gateOffDb, gateOut);
+    gateIn = gateDb;
+    gateOut = gateOffDb;
+
+    // Something to show: a pitch, a note, or a level the loudness curve lifts off its floor for.
     const bool live = f.active || f.heard;
-    const auto& before = frames[(size_t) ((head + kFrames - 1) % kFrames)];
-    const bool changed = f.enabled != before.enabled || f.triadCount != before.triadCount || f.held != before.held
-                      || f.frozenNote != before.frozenNote || f.harmonyFrozen != before.harmonyFrozen;
-    idleFrames = live || changed ? 0 : juce::jmin (kFrames, idleFrames + 1);
+    const bool audible = f.levelDb > kLowDb + 0.5f;
+    idleFrames = live || audible || changed ? 0 : juce::jmin (kFrames, idleFrames + 1);
 
     if (live)
     {
-        centre += ((f.active ? f.outputPitch : f.pitch) - centre) * 0.06f;
+        // Follow the playing calmly, but fast enough that a leap never leaves a narrow view for long.
+        const float target = f.heard ? f.pitch : f.outputPitch;
+        const float room = spanSemitones() * 0.5f - 1.0f;
+        centre += (target - centre) * (std::abs (target - centre) > room ? 0.35f : 0.06f);
         shownCents += ((f.pitch - std::round (f.pitch)) * 100.0f - shownCents) * 0.45f;
     }
 
-    // Once everything has scrolled out there is nothing left to move.
-    if (idleFrames < kFrames)
+    // Once everything has scrolled out of the view there is nothing left to move.
+    if (idleFrames <= spanFrames() || thresholdsMoved)
         repaint();
+}
+
+int LiveDisplay::spanFrames() const
+{
+    return juce::roundToInt (kZoomSteps[zoom].seconds * (float) kFramesPerSecond);
+}
+
+float LiveDisplay::spanSemitones() const
+{
+    return kZoomSteps[zoom].semitones;
+}
+
+void LiveDisplay::setZoom (int step)
+{
+    zoom = juce::jlimit (0, kZoomCount - 1, step);
+
+    const auto describe = [] (const ZoomStep& z)
+    {
+        return decimal (z.seconds) + " s und " + juce::String (juce::roundToInt (z.semitones)) + text (" Halbt\xc3\xb6ne");
+    };
+
+    zoomOutButton.setTooltip (zoom < kZoomCount - 1
+                                ? text ("Herauszoomen auf ") + describe (kZoomSteps[zoom + 1])
+                                    + text (": mehr \xc3\x9c" "berblick f\xc3\xbcr lange Phrasen.")
+                                : text ("Weiter geht es nicht heraus: ") + describe (kZoomSteps[zoom]) + ".");
+    zoomInButton.setTooltip (zoom > 0
+                               ? text ("Hineinzoomen auf ") + describe (kZoomSteps[zoom - 1])
+                                   + text (": f\xc3\xbcr schnelle L\xc3\xa4ufe und Vibrato-Details.")
+                               : text ("N\xc3\xa4her geht es nicht heran: ") + describe (kZoomSteps[zoom]) + ".");
+    zoomResetButton.setTooltip (text ("Zur\xc3\xbc" "ck zur Standardansicht: ") + describe (kZoomSteps[kStandardZoom]) + ".");
+
+    zoomOutButton.setEnabled (zoom < kZoomCount - 1);
+    zoomInButton.setEnabled (zoom > 0);
+    zoomResetButton.setEnabled (zoom != kStandardZoom);
+    repaint();
+}
+
+LiveDisplay::Layout LiveDisplay::layout() const
+{
+    Layout l;
+    auto area = getLocalBounds().toFloat();
+    l.note = area.removeFromLeft ((float) kNoteWidth).reduced (kPad);
+
+    auto r = area.reduced (kPad, 0.0f).withTrimmedLeft (8.0f).withTrimmedTop (kGraphTop).withTrimmedBottom (kGraphBottom);
+    l.labels = r.removeFromLeft (kLabelWidth);
+    l.timeRow = r.removeFromBottom (kTimeRowHeight);
+    l.level = r.removeFromBottom (kLevelHeight);
+    r.removeFromBottom (kLevelGap);
+    l.pitch = r;
+    return l;
+}
+
+juce::Rectangle<int> LiveDisplay::overlayArea() const
+{
+    // Top right of the pitch graph; the zoom strip sits in the opposite corner.
+    const auto plot = layout().pitch;
+    const float side = juce::jmax (0.0f, juce::jmin (140.0f, plot.getHeight() - 2.0f * (float) kStripInset));
+    return juce::Rectangle<float> (plot.getRight() - (float) kStripInset - side, plot.getY() + (float) kStripInset, side, side)
+             .toNearestInt();
+}
+
+void LiveDisplay::resized()
+{
+    const auto plot = layout().pitch.toNearestInt();
+    auto strip = juce::Rectangle<int> (plot.getX() + kStripInset, plot.getY() + kStripInset,
+                                       2 * kSignWidth + kResetWidth, kStripHeight);
+    zoomOutButton.setBounds (strip.removeFromLeft (kSignWidth));
+    zoomInButton.setBounds (strip.removeFromLeft (kSignWidth));
+    zoomResetButton.setBounds (strip);
+}
+
+juce::String LiveDisplay::getTooltip()
+{
+    // One explanation for each part, so the tip says what is under the mouse.
+    const auto l = layout();
+    const auto p = getMouseXYRelative().toFloat();
+    const float split = l.pitch.getBottom() + kLevelGap * 0.5f;
+
+    if (p.x < (float) kNoteWidth)
+        return text (kNoteTip);
+    if (p.x >= l.labels.getX() && p.y < split)
+        return text (kPitchTip);
+    if (p.x >= l.labels.getX() && p.y < l.level.getBottom())
+        return text (kLevelTip);
+    return SettableTooltipClient::getTooltip();
 }
 
 void LiveDisplay::paint (juce::Graphics& g)
 {
     g.fillAll (colour::display);
-    auto area = getLocalBounds().toFloat();
+    const auto l = layout();
 
-    auto left = area.removeFromLeft ((float) kNoteWidth);
     g.setColour (colour::separator);
-    g.fillRect (area.getX(), area.getY() + kPad, 1.0f, area.getHeight() - 2.0f * kPad);
+    g.fillRect ((float) kNoteWidth, kPad, 1.0f, (float) getHeight() - 2.0f * kPad);
 
-    paintNote (g, left.reduced (kPad));
-    paintHistory (g, area.reduced (kPad, 20.0f).withTrimmedLeft (8.0f));
+    paintNote (g, l.note);
+    paintWatermark (g, l.pitch);
+    paintTimeGrid (g, l);
+    paintPitch (g, l);
+    paintLevel (g, l);
 }
 
 void LiveDisplay::paintNote (juce::Graphics& g, juce::Rectangle<float> r)
@@ -154,7 +364,7 @@ void LiveDisplay::paintNote (juce::Graphics& g, juce::Rectangle<float> r)
     const bool live = f.active || f.heard;
     const int shown = f.active ? f.note : (f.heard ? juce::roundToInt (f.pitch) : -1);
 
-    // the note, large: what is sent in the accent colour, what is only heard in grey
+    // the note, large: what is sent in crimson, what is only heard in grey
     const float baseline = r.getY() + 74.0f;
     if (! f.enabled)
     {
@@ -171,22 +381,23 @@ void LiveDisplay::paintNote (juce::Graphics& g, juce::Rectangle<float> r)
         const auto small = font (24.0f);
         const float wBig = juce::GlyphArrangement::getStringWidth (big, letter);
 
-        g.setColour (f.active ? colour::accent : colour::secondary);
+        g.setColour (f.active ? colour::crimson : colour::secondary);
         g.setFont (big);
         g.drawSingleLineText (letter, juce::roundToInt (r.getX()) - 3, juce::roundToInt (baseline));
         g.setFont (small);
         g.drawSingleLineText (octave, juce::roundToInt (r.getX() + wBig + 1.0f), juce::roundToInt (baseline));
     }
 
-    // tuning: a plain scale from -50 to +50 cent
+    // tuning: a plain scale from -50 to +50 cent, the ticks in silver
     const float y = baseline + 34.0f;
     const auto scale = juce::Rectangle<float> (r.getX(), y, r.getWidth(), 1.0f);
-    g.setColour (colour::separator.brighter (0.25f));
+    g.setColour (colour::separator.brighter (0.35f));
     g.fillRect (scale);
     for (int t = -2; t <= 2; ++t)
     {
         const float x = scale.getX() + scale.getWidth() * (0.5f + (float) t * 0.25f);
         const float h = t == 0 ? 10.0f : 5.0f;
+        g.setColour (t == 0 ? colour::silver : colour::silver.withAlpha (0.6f));
         g.fillRect (x - 0.5f, y - h, 1.0f, h);
     }
 
@@ -194,11 +405,11 @@ void LiveDisplay::paintNote (juce::Graphics& g, juce::Rectangle<float> r)
     {
         const float cents = juce::jlimit (-50.0f, 50.0f, shownCents);
         const float x = scale.getX() + scale.getWidth() * (0.5f + cents / 100.0f);
-        g.setColour (f.active ? colour::accent : colour::secondary);
+        g.setColour (f.active ? colour::crimson : colour::secondary);
         g.fillRect (x - 1.0f, y - 12.0f, 2.0f, 16.0f);
     }
 
-    // numbers under the scale
+    // the measured values under the scale
     const auto row = juce::Rectangle<float> (r.getX(), y + 12.0f, r.getWidth(), 18.0f);
     g.setFont (font (13.0f));
     if (! f.enabled)
@@ -209,11 +420,10 @@ void LiveDisplay::paintNote (juce::Graphics& g, juce::Rectangle<float> r)
     else if (live)
     {
         const int c = juce::roundToInt (juce::jlimit (-50.0f, 50.0f, shownCents));
-        const auto centsText = (c > 0 ? "+" : (c < 0 ? text ("\xe2\x88\x92") : juce::String())) + juce::String (std::abs (c)) + " ct";
+        const auto centsText = (c > 0 ? juce::String ("+") : (c < 0 ? minus() : juce::String())) + juce::String (std::abs (c)) + " ct";
         const float hz = a4 * std::pow (2.0f, (f.pitch - 69.0f) / 12.0f);
-        g.setColour (colour::text);
+        g.setColour (colour::silver);
         g.drawText (centsText, row, juce::Justification::centredLeft);
-        g.setColour (colour::secondary);
         g.drawText (juce::String (hz, 1).replaceCharacter ('.', ',') + " Hz", row, juce::Justification::centredRight);
     }
     else
@@ -244,105 +454,382 @@ void LiveDisplay::paintNote (juce::Graphics& g, juce::Rectangle<float> r)
     }
 }
 
-void LiveDisplay::paintHistory (juce::Graphics& g, juce::Rectangle<float> r)
+void LiveDisplay::paintWatermark (juce::Graphics& g, juce::Rectangle<float> plot)
 {
-    constexpr float labelWidth = 30.0f;
-    const auto plot = r.withTrimmedLeft (labelWidth).withTrimmedBottom (16.0f);
-    constexpr float span = 14.0f; // semitones from bottom to top
-    const float top = centre + span * 0.5f;
-    auto yFor = [&] (float pitch) { return plot.getY() + (top - pitch) / span * plot.getHeight(); };
-    auto xFor = [&] (int age) { return plot.getRight() - (float) age / (float) (kFrames - 1) * plot.getWidth(); };
+    // The emblem in the middle of the pitch graph, faint and a touch redder than
+    // the logo. Drawn into an image once per size and screen scale, so each frame
+    // only copies it.
+    const float side = std::round (plot.getHeight() * 0.9f);
+    const auto centred = plot.withSizeKeepingCentre (side, side);
+    const auto area = centred.withPosition (std::round (centred.getX()), std::round (centred.getY()));   // whole pixels, no blur
+    const float scale = juce::jmax (1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
 
-    // semitone lines; natural notes labelled
-    g.saveState();
-    g.reduceClipRegion (r.toNearestInt());
-    for (int n = (int) std::floor (top - span) - 1; n <= (int) std::ceil (top) + 1; ++n)
+    if (area != watermarkArea || ! juce::approximatelyEqual (scale, watermarkScale))
     {
-        const float y = yFor ((float) n);
-        if (y < plot.getY() - 1.0f || y > plot.getBottom() + 1.0f)
-            continue;
+        watermarkArea = area;
+        watermarkScale = scale;
+        watermark = {};
 
-        const int pc = ((n % 12) + 12) % 12;
-        const bool natural = pc != 1 && pc != 3 && pc != 6 && pc != 8 && pc != 10;
-        g.setColour (pc == 0 ? colour::separator.brighter (0.15f) : colour::grid);
-        g.fillRect (plot.getX(), std::round (y), plot.getWidth(), 1.0f);
-        if (natural)
+        const auto logo = brand::emblem();
+        const int pixels = juce::roundToInt (side * scale);
+        if (logo.isValid() && pixels > 0)
         {
-            g.setColour (pc == 0 ? colour::secondary : colour::tertiary);
-            g.setFont (font (11.0f));
-            g.drawText (noteName (n), juce::Rectangle<float> (r.getX(), y - 7.0f, labelWidth - 8.0f, 14.0f),
-                        juce::Justification::centredRight);
+            juce::Image image (juce::Image::ARGB, pixels, pixels, true);
+            {
+                juce::Graphics ig (image);
+                const auto all = juce::Rectangle<float> ((float) pixels, (float) pixels);
+                brand::drawEmblem (ig, all, 1.0f);
+                ig.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+                ig.setColour (colour::crimson.withAlpha (0.3f));
+                ig.drawImage (logo, all, juce::RectanglePlacement::centred, true);
+            }
+            image.multiplyAllAlphas (kWatermarkOpacity);
+            watermark = image;
         }
     }
 
-    // time marks
-    g.setColour (colour::tertiary);
-    g.setFont (font (11.0f));
-    const auto timeRow = juce::Rectangle<float> (plot.getX(), plot.getBottom() + 3.0f, plot.getWidth(), 13.0f);
-    g.drawText (text ("\xe2\x88\x92" "6 s"), timeRow, juce::Justification::centredLeft);
-    g.drawText (text ("\xe2\x88\x92" "3 s"), timeRow, juce::Justification::centred);
-    g.drawText ("jetzt", timeRow, juce::Justification::centredRight);
-    g.restoreState();
+    if (watermark.isValid())
+        g.drawImage (watermark, area);
+}
 
+void LiveDisplay::paintTimeGrid (juce::Graphics& g, const Layout& l)
+{
+    // One time grid for both graphs, with the marks below; they follow the zoom.
+    const auto& z = kZoomSteps[zoom];
+    const int marks = juce::roundToInt (z.seconds / z.tick);
+    const auto& plot = l.pitch;
+
+    g.setFont (font (11.0f));
+    for (int k = 0; k <= marks; ++k)
+    {
+        const float seconds = (float) k * z.tick;
+        const float x = plot.getRight() - seconds / z.seconds * plot.getWidth();
+
+        if (k > 0 && k < marks)
+        {
+            g.setColour (colour::grid);
+            g.fillRect (std::round (x), plot.getY(), 1.0f, plot.getHeight());
+            g.fillRect (std::round (x), l.level.getY(), 1.0f, l.level.getHeight());
+        }
+
+        const auto row = l.timeRow.withTrimmedTop (3.0f);
+        g.setColour (colour::silver.withAlpha (k == 0 ? 0.9f : 0.6f));
+        if (k == 0)
+            g.drawText ("jetzt", row.withLeft (x - 60.0f).withRight (x), juce::Justification::centredRight);
+        else if (k == marks)
+            g.drawText (minus() + decimal (seconds) + " s", row.withLeft (x).withWidth (60.0f), juce::Justification::centredLeft);
+        else
+            g.drawText (minus() + decimal (seconds) + " s", row.withLeft (x - 30.0f).withWidth (60.0f), juce::Justification::centred);
+    }
+}
+
+void LiveDisplay::paintPitch (juce::Graphics& g, const Layout& l)
+{
+    const auto plot = l.pitch;
+    const float span = spanSemitones();
+    const float top = centre + span * 0.5f;
+    const int frameSpan = spanFrames();
+    const float rowH = plot.getHeight() / span;
+    const auto yFor = [plot, top, span] (float pitch) { return plot.getY() + (top - pitch) / span * plot.getHeight(); };
+    const auto xFor = [plot, frameSpan] (int age) { return plot.getRight() - (float) age / (float) frameSpan * plot.getWidth(); };
+
+    // Which rows get a name: all naturals as standard, also the sharps close up,
+    // and further out only C, E, G and then C, G, so the names never collide.
+    const auto named = [rowH] (int pc)
+    {
+        if (rowH >= 20.0f) return true;
+        if (rowH >= 11.0f) return isNatural (pc);
+        if (rowH >= 6.5f)  return pc == 0 || pc == 4 || pc == 7;
+        return pc == 0 || pc == 7;
+    };
+
+    // semitone lines, C a little brighter; the note names in silver
+    {
+        juce::Graphics::ScopedSaveState state (g);
+        // the names may reach a little left of their column (a sharp makes them wider); there is room before the hairline
+        const float labelsLeft = l.labels.getX() - 8.0f;
+        g.reduceClipRegion (juce::Rectangle<float> (labelsLeft, plot.getY() - 7.0f,
+                                                    plot.getRight() - labelsLeft, plot.getHeight() + 14.0f).toNearestInt());
+        g.setFont (font (11.0f));
+        for (int n = (int) std::floor (top - span) - 1; n <= (int) std::ceil (top) + 1; ++n)
+        {
+            const float y = yFor ((float) n);
+            if (y < plot.getY() - 1.0f || y > plot.getBottom() + 1.0f)
+                continue;
+
+            // far out, the sharps' lines would only add noise
+            const int pc = ((n % 12) + 12) % 12;
+            if (rowH < 6.5f && ! isNatural (pc))
+                continue;
+
+            g.setColour (pc == 0 ? colour::separator.brighter (0.15f) : colour::grid);
+            g.fillRect (plot.getX(), std::round (y), plot.getWidth(), 1.0f);
+
+            if (named (pc) && y < plot.getBottom() - 3.0f)
+            {
+                g.setColour (colour::silver.withAlpha (pc == 0 ? 1.0f : (isNatural (pc) ? 0.6f : 0.4f)));
+                g.drawText (noteName (n), juce::Rectangle<float> (labelsLeft, y - 7.0f, kLabelWidth, 14.0f),
+                            juce::Justification::centredRight, false);
+            }
+        }
+    }
+
+    // the curves may reach a few pixels past "now", so the live dot is whole
+    juce::Graphics::ScopedSaveState state (g);
+    g.reduceClipRegion (plot.withTrimmedRight (-7.0f).toNearestInt());
+
+    // the MIDI notes sent, as plain bars; the left edge of each is its note-on
+    const float barH = juce::jmin (rowH, 18.0f);
     g.saveState();
     g.reduceClipRegion (plot.toNearestInt());
-
-    // the MIDI notes sent, as plain bars
-    const float rowH = plot.getHeight() / span;
-    for (int age = 0; age < kFrames;)
+    for (int age = 0; age <= frameSpan;)
     {
-        const auto& f = frames[(size_t) ((head - age + kFrames) % kFrames)];
-        if (! f.active) { ++age; continue; }
+        const auto& f = frameAt (age);
+        if (! f.active || f.note < 0)
+        {
+            ++age;
+            continue;
+        }
 
         int end = age;
-        while (end + 1 < kFrames)
+        while (end + 1 <= frameSpan)
         {
-            const auto& next = frames[(size_t) ((head - end - 1 + kFrames) % kFrames)];
+            const auto& next = frameAt (end + 1);
             if (! next.active || next.note != f.note)
                 break;
             ++end;
         }
 
         const float x0 = xFor (end), x1 = xFor (age);
-        g.setColour (colour::accent.withAlpha (0.18f));
-        g.fillRect (juce::Rectangle<float> (x0, yFor ((float) f.note) - rowH * 0.5f, juce::jmax (2.0f, x1 - x0), rowH));
-        age = end + 1;
-    }
-
-    // the pitch itself: accent while sent, grey while only heard
-    for (const bool sent : { false, true })
-    {
-        juce::Path p;
-        bool drawing = false;
-        for (int a = kFrames - 1; a >= 0; --a)
+        const auto bar = juce::Rectangle<float> (x0, yFor ((float) f.note) - barH * 0.5f, juce::jmax (2.0f, x1 - x0), barH);
+        g.setColour (colour::crimson.withAlpha (0.16f));
+        g.fillRect (bar);
+        if (end < frameSpan)
         {
-            const auto& f = frames[(size_t) ((head - a + kFrames) % kFrames)];
-            const bool use = sent ? f.active : (f.heard && ! f.active);
-            if (! use) { drawing = false; continue; }
-
-            const juce::Point<float> pt (xFor (a), yFor (sent ? f.outputPitch : f.pitch));
-            if (drawing) p.lineTo (pt); else p.startNewSubPath (pt);
-            drawing = true;
+            g.setColour (colour::crimson.withAlpha (0.55f));
+            g.fillRect (bar.withWidth (1.5f));
         }
-        g.setColour (sent ? colour::accent : colour::tertiary);
-        g.strokePath (p, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        age = end + 1;
     }
     g.restoreState();
 
-    if (idleFrames >= kFrames)
+    // The detected melody: while it is sent, a crisp silver-white line with a
+    // soft crimson glow; while it is only heard, a plain grey one.
+    juce::Path sent, heard;
+    std::vector<juce::Point<float>> points;
+    points.reserve ((size_t) frameSpan + 2);
+    bool runSent = false;
+    const auto flush = [&]
+    {
+        if (points.size() > 1)
+            addSmooth (runSent ? sent : heard, points);
+        points.clear();
+    };
+
+    for (int age = frameSpan; age >= 0; --age)
+    {
+        const auto& f = frameAt (age);
+        if (! f.heard)
+        {
+            flush();
+            continue;
+        }
+
+        if (! points.empty() && runSent != f.active)
+        {
+            // the next colour starts where the last one ended, so the line has no gap
+            const auto last = points.back();
+            flush();
+            points.push_back (last);
+        }
+        runSent = f.active;
+        points.push_back ({ xFor (age), yFor (f.pitch) });
+    }
+    flush();
+
+    const juce::PathStrokeType::JointStyle joint = juce::PathStrokeType::curved;
+    const juce::PathStrokeType::EndCapStyle cap = juce::PathStrokeType::rounded;
+    g.setColour (colour::tertiary);
+    g.strokePath (heard, juce::PathStrokeType (1.5f, joint, cap));
+    g.setColour (colour::crimson.withAlpha (0.1f));
+    g.strokePath (sent, juce::PathStrokeType (8.0f, joint, cap));
+    g.setColour (colour::crimson.withAlpha (0.24f));
+    g.strokePath (sent, juce::PathStrokeType (3.5f, joint, cap));
+    g.setColour (colour::text);
+    g.strokePath (sent, juce::PathStrokeType (1.5f, joint, cap));
+
+    // the live end of the line
+    const auto& now = frameAt (0);
+    if (now.heard)
+    {
+        const juce::Point<float> pt (xFor (0), yFor (now.pitch));
+        if (now.active)
+        {
+            g.setColour (colour::crimson.withAlpha (0.3f));
+            g.fillEllipse (juce::Rectangle<float> (11.0f, 11.0f).withCentre (pt));
+        }
+        g.setColour (now.active ? colour::crimson : colour::tertiary);
+        g.fillEllipse (juce::Rectangle<float> (5.0f, 5.0f).withCentre (pt));
+    }
+
+    if (idleFrames >= frameSpan)
     {
         g.setColour (colour::tertiary);
         g.setFont (font (13.0f));
-        g.drawText (text ("Gespielte T\xc3\xb6ne und gesendete MIDI-Noten der letzten 6 Sekunden"),
+        g.drawText (text ("Gespielte T\xc3\xb6ne und gesendete MIDI-Noten der letzten ") + decimal (kZoomSteps[zoom].seconds)
+                      + " Sekunden",
                     plot, juce::Justification::centred);
     }
+}
+
+void LiveDisplay::paintLevel (juce::Graphics& g, const Layout& l)
+{
+    const auto lane = l.level;
+    const int frameSpan = spanFrames();
+    const float base = lane.getBottom();
+    const auto yFor = [lane] (float db)
+    {
+        return lane.getY() + (kHighDb - juce::jlimit (kLowDb, kHighDb, db)) / (kHighDb - kLowDb) * lane.getHeight();
+    };
+    const auto xFor = [lane, frameSpan] (int age) { return lane.getRight() - (float) age / (float) frameSpan * lane.getWidth(); };
+
+    // dB lines with their marks in the label column; the floor is a hairline
+    g.setFont (font (10.0f));
+    for (const float db : { 0.0f, -24.0f, -48.0f })
+    {
+        const float y = std::round (yFor (db));
+        g.setColour (colour::grid);
+        g.fillRect (lane.getX(), y, lane.getWidth(), 1.0f);
+        g.setColour (colour::silver.withAlpha (0.5f));
+        g.drawText (db < 0.0f ? minus() + juce::String (juce::roundToInt (-db)) : juce::String ("0"),
+                    juce::Rectangle<float> (l.labels.getX(), y - 6.0f, kLabelWidth - 8.0f, 12.0f),
+                    juce::Justification::centredRight);
+    }
+    g.setColour (colour::separator);
+    g.fillRect (lane.getX(), std::round (base) - 1.0f, lane.getWidth(), 1.0f);
+
+    // The level history in two colours: crimson while a note is sent, silver
+    // otherwise. Each run is a line and a faint area down to the floor; where
+    // the colour changes, the new run starts at the last point of the old one.
+    juce::Path line[2], area[2];
+    std::vector<std::pair<juce::Point<float>, bool>> edges;   // note-on (true) and note-off points
+    std::vector<juce::Point<float>> points;
+    points.reserve ((size_t) frameSpan + 2);
+    int run = -1;
+    const auto flush = [&]
+    {
+        if (run >= 0 && points.size() > 1)
+        {
+            addSmooth (line[run], points);
+            area[run].startNewSubPath (points.front().x, base);
+            addSmooth (area[run], points, true);
+            area[run].lineTo (points.back().x, base);
+            area[run].closeSubPath();
+        }
+        points.clear();
+    };
+
+    for (int age = frameSpan; age >= 0; --age)
+    {
+        const auto& f = frameAt (age);
+        const int c = f.active ? 1 : 0;
+        const juce::Point<float> pt (xFor (age), yFor (f.levelDb));
+
+        if (c != run && run >= 0)
+        {
+            const auto last = points.back();
+            edges.push_back ({ c == 1 ? pt : last, c == 1 });
+            flush();
+            points.push_back (last);
+        }
+        run = c;
+        points.push_back (pt);
+    }
+    flush();
+
+    juce::Graphics::ScopedSaveState state (g);
+    g.reduceClipRegion (lane.expanded (0.0f, 2.0f).withTrimmedRight (-7.0f).toNearestInt());
+
+    g.setColour (colour::silver.withAlpha (0.05f));
+    g.fillPath (area[0]);
+    g.setColour (colour::crimson.withAlpha (0.12f));
+    g.fillPath (area[1]);
+
+    // the thresholds: the In line solid, the Out line dashed, as the meter's tall and short marks
+    const float inDb = gateIn, outDb = juce::jmin (gateIn, gateOut);
+    const float yIn = std::round (yFor (inDb)), yOut = std::round (yFor (outDb));
+    g.setColour (colour::silver.withAlpha (0.75f));
+    g.fillRect (lane.getX(), yIn, lane.getWidth(), 1.0f);
+    const float dashes[] = { 4.0f, 3.0f };
+    g.setColour (colour::silver.withAlpha (0.55f));
+    g.drawDashedLine ({ lane.getX(), yOut + 0.5f, lane.getRight(), yOut + 0.5f }, dashes, (int) std::size (dashes), 1.0f);
+
+    const juce::PathStrokeType::JointStyle joint = juce::PathStrokeType::curved;
+    const juce::PathStrokeType::EndCapStyle cap = juce::PathStrokeType::rounded;
+    g.setColour (colour::silver.withAlpha (0.55f));
+    g.strokePath (line[0], juce::PathStrokeType (1.2f, joint, cap));
+    g.setColour (colour::crimson);
+    g.strokePath (line[1], juce::PathStrokeType (1.5f, joint, cap));
+
+    // where a note started (crimson) and ended (silver), right on the curve
+    for (const auto& [pt, on] : edges)
+    {
+        g.setColour (on ? colour::crimson : colour::silver);
+        g.fillEllipse (juce::Rectangle<float> (4.5f, 4.5f).withCentre (pt));
+    }
+
+    // the live end
+    const auto& now = frameAt (0);
+    if (now.levelDb > kLowDb + 0.5f)
+    {
+        const juce::Point<float> pt (xFor (0), yFor (now.levelDb));
+        if (now.active)
+        {
+            g.setColour (colour::crimson.withAlpha (0.3f));
+            g.fillEllipse (juce::Rectangle<float> (11.0f, 11.0f).withCentre (pt));
+        }
+        g.setColour (now.active ? colour::crimson : colour::silver);
+        g.fillEllipse (juce::Rectangle<float> (5.0f, 5.0f).withCentre (pt));
+    }
+
+    // Names and values of the two lines, at the left where the oldest data is.
+    // The In label sits above its line, the Out label below its own and to the
+    // right of the first, so the two never cover each other.
+    const auto labelFont = font (10.5f);
+    const auto label = [&g, &labelFont, lane] (const juce::String& name, float db, float x, float lineY, bool above)
+    {
+        const auto value = decibels (db);
+        const float wName = juce::GlyphArrangement::getStringWidth (labelFont, name);
+        const float wValue = juce::GlyphArrangement::getStringWidth (labelFont, value);
+        constexpr float h = 12.0f;
+
+        float y = above ? lineY - h - 1.0f : lineY + 2.0f;
+        if (y < lane.getY())
+            y = lineY + 2.0f;
+        if (y + h > lane.getBottom())
+            y = lineY - h - 1.0f;
+
+        const auto box = juce::Rectangle<float> (x, y, wName + 4.0f + wValue + 1.0f, h);
+        g.setColour (colour::display.withAlpha (0.85f));
+        g.fillRect (box.expanded (3.0f, 0.0f));
+        g.setFont (labelFont);
+        g.setColour (colour::secondary);
+        g.drawText (name, box.withWidth (wName + 1.0f), juce::Justification::centredLeft, false);
+        g.setColour (colour::silver);
+        g.drawText (value, box.withTrimmedLeft (wName + 4.0f), juce::Justification::centredLeft, false);
+        return box.getRight();
+    };
+
+    const float afterIn = label ("In", inDb, lane.getX() + 6.0f, yIn, true);
+    label ("Out", outDb, afterIn + 12.0f, yOut, false);
 }
 
 //==============================================================================
 void LevelMeter::update (float levelDb, float gateDb, float gateOffDb, bool clipped)
 {
     const float next = juce::jmax (levelDb, shown - 1.5f); // quick up, slower down
-    if (std::abs (next - shown) < 0.05f && gateDb == gate && gateOffDb == gateOff && clipped == clip)
+    if (std::abs (next - shown) < 0.05f && juce::exactlyEqual (gateDb, gate) && juce::exactlyEqual (gateOffDb, gateOff)
+        && clipped == clip)
         return;
     shown = next;
     gate = gateDb;
@@ -353,7 +840,7 @@ void LevelMeter::update (float levelDb, float gateDb, float gateOffDb, bool clip
 
 void LevelMeter::paint (juce::Graphics& g)
 {
-    constexpr float low = -72.0f, high = 0.0f;
+    constexpr float low = kLowDb, high = kHighDb;
     const auto r = getLocalBounds().toFloat().withSizeKeepingCentre ((float) getWidth(), 4.0f);
     auto toX = [&] (float db) { return r.getX() + juce::jlimit (0.0f, 1.0f, (db - low) / (high - low)) * r.getWidth(); };
 
@@ -363,8 +850,8 @@ void LevelMeter::paint (juce::Graphics& g)
     const float x = toX (shown);
     if (x > r.getX() + 0.5f)
     {
-        // grey below the threshold, accent where a note can start, red when clipping
-        g.setColour (clip ? colour::problem : (shown >= gate ? colour::accent : colour::secondary));
+        // silver below the In threshold, crimson where a note can start, amber when clipping
+        g.setColour (clip ? colour::problem : (shown >= gate ? colour::crimson : colour::silver));
         g.fillRoundedRectangle (r.withRight (x), 2.0f);
     }
 
@@ -372,7 +859,7 @@ void LevelMeter::paint (juce::Graphics& g)
     const float gx = std::round (toX (gate)), ox = std::round (toX (juce::jmin (gate, gateOff)));
     if (ox < gx)
     {
-        g.setColour (colour::secondary);
+        g.setColour (colour::silver);
         g.fillRect (ox - 0.5f, (float) getHeight() * 0.5f - 4.0f, 1.0f, 8.0f);
     }
     g.setColour (colour::text);

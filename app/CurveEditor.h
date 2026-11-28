@@ -31,7 +31,7 @@ public:
 
     /** Shows a small "Standard" button in the header that restores this curve;
         the context menu offers the same. It is also what an invalid curve
-        falls back to. */
+        falls back to, and what the editor shows until setCurve is called. */
     void setDefaultCurve (const vm::Curve&, const juce::String& buttonTooltip);
 
     /** The pitch being played now (fractional MIDI note), negative for none.
@@ -99,12 +99,14 @@ private:
 
     vm::Curve curve, fallback, standard;
     bool hasStandard = false;
+    bool curveGiven = false;   // setCurve was called
     juce::TextButton standardButton { "Standard" };
 
     float playhead = -1.0f;
 
     int hoverNode = -1, dragNode = -1;
     bool hoverInside = false;
+    bool pressedOnNode = false;   // the first click of a (double) click hit a point
     juce::Point<float> hoverPos, dragOffset;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CurveEditor)
