@@ -1,4 +1,12 @@
-# VioLogic
+<p align="center">
+  <img src="assets/github/banner.png" alt="VioLogic – Deine Geige als MIDI-Controller" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/XLeathnex/ViolinMIDI/releases/latest"><b>Neueste Version laden</b></a> ·
+  <a href="#installation-auf-dem-mac">Installation</a> ·
+  <a href="CHANGELOG.md">Was ist neu</a>
+</p>
 
 VioLogic hört über das Audio-Interface auf deine Geige und gibt ihre Tonhöhe als MIDI aus.
 Die App legt dafür einen virtuellen MIDI-Ausgang an, den MainStage, Logic und andere Programme
