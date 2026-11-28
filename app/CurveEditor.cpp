@@ -61,6 +61,8 @@ CurveEditor::CurveEditor (const juce::String& title, float yLow, float yHigh, bo
       format (std::move (formatValue))
 {
     jassert (high > low);
+    if (! (high > low))
+        high = low + 1.0f;   // every mapping divides by the range
 
     if (! format)
         format = [] (float v) { return juce::String (v, 2); };
@@ -80,14 +82,44 @@ CurveEditor::CurveEditor (const juce::String& title, float yLow, float yHigh, bo
 
 juce::String CurveEditor::mouseHelp()
 {
-    return U ("Klick: Punkt setzen. Ziehen: verschieben (rastet auf Halbt\xc3\xb6nen ein). Doppelklick oder "
-              "Rechtsklick: l\xc3\xb6schen; mindestens zwei, h\xc3\xb6" "chstens zw\xc3\xb6lf Punkte. Rote Linie: "
-              "der gerade gespielte Ton.");
+    return U ("Klick: Punkt setzen. Ziehen: verschieben (rastet auf Halbt\xc3\xb6nen ein). Doppelklick auf einen "
+              "Punkt: l\xc3\xb6schen. Rechtsklick oder ctrl-Klick: Men\xc3\xbc mit L\xc3\xb6schen und Standard. "
+              "Mindestens zwei, h\xc3\xb6" "chstens zw\xc3\xb6lf Punkte. Rote Linie: der gerade gespielte Ton.");
+}
+
+juce::String CurveEditor::getTooltip()
+{
+    return editing ? juce::String() : SettableTooltipClient::getTooltip();
+}
+
+vm::Curve CurveEditor::sanitise (const vm::Curve& c) const
+{
+    auto out = vm::curve::sanitised (c, low, high, fallback);
+
+    // A single point (from an old or hand-edited preset) means that value
+    // everywhere. A second one with the same value at the far end changes
+    // nothing that is heard and gives the editor its two points.
+    if (out.count == 1)
+    {
+        if (out.x[0] < 0.5f * (kLow + kHigh))
+        {
+            out.x[1] = kHigh;
+            out.y[1] = out.y[0];
+        }
+        else
+        {
+            out.x[1] = out.x[0];
+            out.y[1] = out.y[0];
+            out.x[0] = kLow;
+        }
+        out.count = 2;
+    }
+    return out;
 }
 
 void CurveEditor::setCurve (const vm::Curve& c)
 {
-    curve = vm::curve::sanitised (c, low, high, fallback);
+    curve = sanitise (c);
     curveGiven = true;
     if (hoverNode >= curve.count) hoverNode = -1;
     if (dragNode >= curve.count)  dragNode = -1;
@@ -96,7 +128,7 @@ void CurveEditor::setCurve (const vm::Curve& c)
 
 void CurveEditor::setDefaultCurve (const vm::Curve& c, const juce::String& buttonTooltip)
 {
-    standard = vm::curve::sanitised (c, low, high, fallback);
+    standard = sanitise (c);
     fallback = standard;
     hasStandard = true;
     if (! curveGiven)
@@ -266,7 +298,7 @@ void CurveEditor::restoreDefault()
 
 void CurveEditor::changed()
 {
-    curve = vm::curve::sanitised (curve, low, high, fallback);
+    curve = sanitise (curve);
     if (hoverNode >= curve.count) hoverNode = -1;
     if (dragNode >= curve.count)  dragNode = -1;
     repaint();
@@ -318,11 +350,18 @@ void CurveEditor::mouseExit (const juce::MouseEvent&)
 {
     hoverInside = false;
     hoverNode = -1;
+    editing = false;
     repaint();
 }
 
+// JUCE sends mouse events to a disabled component too (Slider and Button check
+// for themselves), so every handler that edits checks isEnabled().
 void CurveEditor::mouseDown (const juce::MouseEvent& e)
 {
+    if (! isEnabled())
+        return;
+
+    editing = true;
     const auto pos = e.position;
     const int hit = nodeAt (pos);
 
@@ -333,9 +372,13 @@ void CurveEditor::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    // Only a double-click whose first click was already on a point deletes:
-    // a double-click on free space just sets a point, like a single click.
-    if (e.getNumberOfClicks() == 1)
+    // Clicks come in pairs: the odd ones are single clicks, the even ones end a
+    // double-click. Only a double-click whose first click was already on a point
+    // deletes; a double-click on free space just sets a point, like a single
+    // click. (Counting in pairs keeps a quick third click from acting on what
+    // the first one hit.)
+    const bool firstOfPair = e.getNumberOfClicks() % 2 == 1;
+    if (firstOfPair)
         pressedOnNode = hit >= 0;
 
     if (hit >= 0)
@@ -346,7 +389,7 @@ void CurveEditor::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    if (e.getNumberOfClicks() > 1 || ! plotArea().expanded (kHitRadius).contains (pos))
+    if (! firstOfPair || ! plotArea().expanded (kHitRadius).contains (pos))
         return;
 
     dragOffset = {};
@@ -360,7 +403,7 @@ void CurveEditor::mouseDown (const juce::MouseEvent& e)
 void CurveEditor::mouseDrag (const juce::MouseEvent& e)
 {
     hoverPos = e.position;
-    if (dragNode >= 0)
+    if (dragNode >= 0 && isEnabled())
         movePoint (dragNode, e.position + dragOffset);
 }
 
@@ -372,7 +415,7 @@ void CurveEditor::mouseUp (const juce::MouseEvent& e)
 
 void CurveEditor::mouseDoubleClick (const juce::MouseEvent& e)
 {
-    if (e.mods.isPopupMenu() || ! pressedOnNode)
+    if (! isEnabled() || e.mods.isPopupMenu() || ! pressedOnNode || e.getNumberOfClicks() % 2 != 0)
         return;
 
     const int hit = nodeAt (e.position);
@@ -385,6 +428,7 @@ void CurveEditor::enablementChanged()
 {
     hoverNode = dragNode = -1;
     hoverInside = false;
+    setMouseCursor (juce::MouseCursor::NormalCursor);
     repaint();
 }
 

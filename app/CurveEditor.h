@@ -45,6 +45,10 @@ public:
     /** How the mouse works, in German, for a tooltip that says what the curve does first. */
     static juce::String mouseHelp();
 
+    /** The tooltip, except while the curve is being edited: from the first press
+        until the mouse leaves, the long text would only cover the graph. */
+    juce::String getTooltip() override;
+
     /** The header line (title, live value, "Standard") above the graph. */
     static constexpr int kHeaderHeight = 26;
     static constexpr int kMinHeight = 150;
@@ -70,6 +74,9 @@ private:
     float noteAtX (float x) const;
     float valueAtY (float y) const;
     juce::Point<float> nodePosition (int index) const;
+
+    /** curve::sanitised, and never fewer than two points (see the .cpp). */
+    vm::Curve sanitise (const vm::Curve&) const;
 
     /** The node under `pos` (nearest within the hit radius), or -1. */
     int nodeAt (juce::Point<float> pos) const;
@@ -107,6 +114,7 @@ private:
     int hoverNode = -1, dragNode = -1;
     bool hoverInside = false;
     bool pressedOnNode = false;   // the first click of a (double) click hit a point
+    bool editing = false;         // pressed since the mouse came in: no tooltip
     juce::Point<float> hoverPos, dragOffset;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CurveEditor)

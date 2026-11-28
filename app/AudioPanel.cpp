@@ -27,8 +27,8 @@ namespace
     constexpr int kNameH = 18;
     constexpr int kRowOffset = 22;                       // a switch row below its name line
     constexpr int kSliderOffset = 20, kSliderH = 24;     // a slider below its name line
-    constexpr int kDropY = kColumnsY;                    // switch row 98 .. 124
-    constexpr int kSep1Y = 146;
+    constexpr int kDropY = kColumnsY + 2;                // centred on the curves' titles; switch row 100 .. 126
+    constexpr int kSep1Y = 147;
     constexpr int kBlockY[] = { 168, 240, 312, 400 };    // ensemble, coupling, spread | level (slider to 444)
     constexpr int kSep2Y = 378;
     constexpr int kDryY = 472;                           // switch row 494 .. 520
@@ -102,11 +102,11 @@ namespace
         "Geige liegen sollen.";
 
     const char* const kEnsembleTip =
-        "Ensemble-Entkopplung (Humanize): Jede Harmoniestimme kommt etwas sp\xc3\xa4ter (Stimme 1: 8 bis 12 ms, "
-        "Stimme 2: 16 bis 22 ms) und schwebt langsam um 4 bis 6 Cent (0,2 bis 0,5 Hz), f\xc3\xbc" "r jeden Akkord neu "
-        "gew\xc3\xa4hlt. So klingen die Stimmen wie Mitspieler statt wie ein Effekt, ohne Kammfilter und Phasing gegen "
-        "die Geige. Standard 100 %. Weniger f\xc3\xbc" "r einen engeren, pr\xc3\xa4zisen Satz, etwa bei schnellen "
-        "Passagen. Doppelklick: Standard.";
+        "Ensemble-Entkopplung (Humanize): Bei 100 % kommt jede Harmoniestimme etwas sp\xc3\xa4ter (Stimme 1: 8 bis "
+        "12 ms, Stimme 2: 16 bis 22 ms usw.) und schwebt langsam um 4 bis 6 Cent (0,2 bis 0,5 Hz), f\xc3\xbc" "r jeden "
+        "Akkord neu gew\xc3\xa4hlt. So klingen die Stimmen wie Mitspieler statt wie ein Effekt, ohne Kammfilter und "
+        "Phasing gegen die Geige. 0 %: Die Stimmen kommen so fr\xc3\xbc" "h wie m\xc3\xb6glich. Standard 100 %. Weniger "
+        "f\xc3\xbc" "r einen engeren, pr\xc3\xa4zisen Satz, etwa bei schnellen Passagen. Doppelklick: Standard.";
 
     const char* const kCouplingTip =
         "Vibrato-Kopplung: wie stark die Harmoniestimmen deinem Vibrato und deiner Intonation folgen. 100 %: Sie "
@@ -120,11 +120,12 @@ namespace
 
     const char* const kLevelTip =
         "Harmonie-Pegel: die Lautst\xc3\xa4rke der Harmoniestimmen gegen\xc3\xbc" "ber der Geige, von aus (ganz links) "
-        "bis +6 dB. Standard 0 dB: so laut wie die Geige. Doppelklick: Standard.";
+        "bis +6 dB. Standard 0 dB: so laut wie die Geige. Leiser, wenn die Stimmen die Melodie zudecken. "
+        "Doppelklick: Standard.";
 
     const char* const kDryKillTip =
         "Dry-Kill: L\xc3\xa4sst den Originalklang der Geige aus dem Ausgang weg, es kommen nur die Harmoniestimmen. "
-        "F\xc3\xbc" "r parallele Effektwege, oder wenn die Geige schon \xc3\xbc" "ber einen eigenen Kanal am Pult liegt. "
+        "F\xc3\xbc" "r parallele Effektwege oder wenn die Geige schon \xc3\xbc" "ber einen eigenen Kanal am Pult liegt. "
         "Standard: Aus.";
 }
 

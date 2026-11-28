@@ -57,6 +57,102 @@ namespace
     {
         return 0.82f * (1.0f - (float) std::exp (-t / 0.9));
     }
+
+    //==============================================================================
+    constexpr float kLift = 0.025f;              // the vignette: the middle this much lighter...
+    constexpr float kDarken = 0.30f;             // ...the corners this much darker...
+    constexpr float kVignetteInner = 0.45f;      // ...and in between, from here on, neither
+    constexpr float kGlowPeak = 0.24f;           // the glow's strongest alpha, at the top of a breath
+
+    /** A different value in -0.5 .. 0.5 for every pixel. Rounding with it turns the
+        steps of a dark 8-bit gradient into a fine grain instead of visible rings. */
+    float dither (int x, int y)
+    {
+        auto h = (juce::uint32) x * 374761393u + (juce::uint32) y * 668265263u;
+        h = (h ^ (h >> 13)) * 1274126177u;
+        h ^= h >> 16;
+        return (float) (h & 0xffffu) / 65535.0f - 0.5f;
+    }
+
+    juce::uint8 toByte (float value)
+    {
+        return (juce::uint8) juce::jlimit (0, 255, juce::roundToInt (value));
+    }
+
+    void setPixel (const juce::Image::BitmapData& pixels, int x, int y, juce::uint8 a, juce::uint8 r, juce::uint8 g, juce::uint8 b)
+    {
+        juce::unalignedPointerCast<juce::PixelARGB*> (pixels.getPixelPointer (x, y))->setARGB (a, r, g, b);
+    }
+
+    /** The display colour with a very soft vignette. Symmetric, so one quarter is
+        worked out and mirrored; each pixel still gets its own grain. */
+    juce::Image makeBackground (int width, int height)
+    {
+        juce::Image image (juce::Image::ARGB, width, height, false);
+        const juce::Image::BitmapData pixels (image, juce::Image::BitmapData::writeOnly);
+
+        const float cx = (float) width * 0.5f, cy = (float) height * 0.5f;
+        const float reach = juce::jmax (1.0f, std::sqrt (cx * cx + cy * cy));
+        const float base[] = { (float) colour::display.getRed(), (float) colour::display.getGreen(), (float) colour::display.getBlue() };
+
+        for (int y = 0; y < (height + 1) / 2; ++y)
+        {
+            for (int x = 0; x < (width + 1) / 2; ++x)
+            {
+                const float dx = cx - ((float) x + 0.5f), dy = cy - ((float) y + 0.5f);
+                const float d = std::sqrt (dx * dx + dy * dy) / reach;
+                const float lift = kLift * (1.0f - easeInOut (d / kVignetteInner));
+                const float keep = 1.0f - kDarken * easeInOut ((d - kVignetteInner) / (1.0f - kVignetteInner));
+
+                float shade[3];
+                for (int c = 0; c < 3; ++c)
+                    shade[c] = (base[c] + (255.0f - base[c]) * lift) * keep;
+
+                for (const auto& p : { juce::Point<int> (x, y), juce::Point<int> (width - 1 - x, y),
+                                       juce::Point<int> (x, height - 1 - y), juce::Point<int> (width - 1 - x, height - 1 - y) })
+                {
+                    const float n = dither (p.x, p.y);
+                    setPixel (pixels, p.x, p.y, 255, toByte (shade[0] + n), toByte (shade[1] + n), toByte (shade[2] + n));
+                }
+            }
+        }
+
+        return image;
+    }
+
+    /** The glow at the top of a breath: crimson, strongest in the middle, fading
+        softly to nothing at the edge of the square. */
+    juce::Image makeGlow (int side)
+    {
+        juce::Image image (juce::Image::ARGB, side, side, true);
+        const juce::Image::BitmapData pixels (image, juce::Image::BitmapData::readWrite);
+
+        const float centre = (float) side * 0.5f;
+        const float red = (float) colour::crimson.getRed(), green = (float) colour::crimson.getGreen(), blue = (float) colour::crimson.getBlue();
+
+        for (int y = 0; y < side; ++y)
+        {
+            for (int x = 0; x < side; ++x)
+            {
+                const float dx = ((float) x + 0.5f - centre) / centre, dy = ((float) y + 0.5f - centre) / centre;
+                const float d2 = dx * dx + dy * dy;
+                if (d2 >= 1.0f)
+                    continue;
+
+                // Bell-shaped, reaching exactly zero at the edge; stored premultiplied.
+                const float alpha = juce::jlimit (0.0f, 1.0f, kGlowPeak * std::exp (-3.2f * d2) * (1.0f - d2) + dither (x, y) * (1.5f / 255.0f));
+                setPixel (pixels, x, y, toByte (255.0f * alpha), toByte (red * alpha), toByte (green * alpha), toByte (blue * alpha));
+            }
+        }
+
+        return image;
+    }
+
+    /** The scale the screen draws at (2 on a Retina display); the images are made for it. */
+    float screenScale (juce::Graphics& g)
+    {
+        return juce::jlimit (1.0f, 2.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
+    }
 }
 
 //==============================================================================
@@ -273,40 +369,37 @@ void SplashOverlay::paint (juce::Graphics& g)
         introPainted = true;
 }
 
-void SplashOverlay::paintBackground (juce::Graphics& g) const
+void SplashOverlay::paintBackground (juce::Graphics& g)
 {
-    g.fillAll (colour::display);
+    const float scale = screenScale (g);
+    const int w = juce::roundToInt ((float) getWidth() * scale), h = juce::roundToInt ((float) getHeight() * scale);
+    if (w <= 0 || h <= 0)
+        return;
 
-    // A very soft vignette: the middle a breath lighter, the corners a little darker.
-    const auto r = getLocalBounds().toFloat();
-    const auto c = r.getCentre();
-    const float reach = juce::jmax (1.0f, c.getDistanceFrom (r.getTopLeft()));
+    if (background.getWidth() != w || background.getHeight() != h)
+        background = makeBackground (w, h);
 
-    juce::ColourGradient vignette (juce::Colours::white.withAlpha (0.025f), c.x, c.y,
-                                   juce::Colours::black.withAlpha (0.30f), c.x + reach, c.y, true);
-    vignette.addColour (0.45, juce::Colours::transparentBlack);
-    g.setGradientFill (vignette);
-    g.fillRect (r);
+    g.drawImage (background, getLocalBounds().toFloat());
 }
 
-void SplashOverlay::paintGlow (juce::Graphics& g, const Layout& l, double t) const
+void SplashOverlay::paintGlow (juce::Graphics& g, const Layout& l, double t)
 {
     // Breathes in and out slowly; it begins with the emblem, at its quietest.
     const float appear = easeOut (phase (t, 0.0, kIntroSeconds));
     const float breath = 0.5f - 0.5f * (float) std::cos (juce::MathConstants<double>::twoPi * t / kBreathSeconds);
-    const float alpha = appear * (0.15f + 0.09f * breath);
+    const float alpha = appear * (0.15f + 0.09f * breath);   // at most kGlowPeak
     if (alpha <= 0.0f)
         return;
 
-    const float radius = kEmblemSide * (kGlowReach - 0.12f + 0.12f * breath);
-    const auto c = l.logo.getCentre();
+    const int side = juce::roundToInt (2.0f * kEmblemSide * kGlowReach * screenScale (g));
+    if (glowSprite.getWidth() != side)
+        glowSprite = makeGlow (side);
 
-    juce::ColourGradient glow (colour::crimson.withAlpha (alpha), c.x, c.y,
-                               colour::crimson.withAlpha (0.0f), c.x + radius, c.y, true);
-    glow.addColour (0.35, colour::crimson.withAlpha (alpha * 0.7f));
-    glow.addColour (0.65, colour::crimson.withAlpha (alpha * 0.25f));
-    g.setGradientFill (glow);
-    g.fillEllipse (juce::Rectangle<float> (2.0f * radius, 2.0f * radius).withCentre (c));
+    const float radius = kEmblemSide * (kGlowReach - 0.12f + 0.12f * breath);
+
+    juce::Graphics::ScopedSaveState state (g);
+    g.setOpacity (alpha / kGlowPeak);
+    g.drawImage (glowSprite, juce::Rectangle<float> (2.0f * radius, 2.0f * radius).withCentre (l.logo.getCentre()));
 }
 
 void SplashOverlay::paintLogo (juce::Graphics& g, const Layout& l, double t) const

@@ -73,8 +73,8 @@ private:
     double secondsShown() const;
     void timerCallback() override;
 
-    void paintBackground (juce::Graphics&) const;
-    void paintGlow (juce::Graphics&, const Layout&, double t) const;
+    void paintBackground (juce::Graphics&);
+    void paintGlow (juce::Graphics&, const Layout&, double t);
     void paintLogo (juce::Graphics&, const Layout&, double t) const;
     void paintWordMark (juce::Graphics&, const Layout&, double t) const;
     void paintFooter (juce::Graphics&, const Layout&, double t) const;
@@ -82,6 +82,10 @@ private:
 
     std::vector<juce::Image> frameImages;
     double frameRate = 25.0;
+
+    // The vignette and the glow, drawn once per size and screen scale with a fine
+    // dither: smooth gradients this dark would otherwise show rings.
+    juce::Image background, glowSprite;
 
     juce::String statusText, versionText;
 

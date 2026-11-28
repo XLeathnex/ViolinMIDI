@@ -27,9 +27,10 @@ namespace
     // The window that is open, if any; there is only ever one.
     juce::Component::SafePointer<juce::DialogWindow> openWindow;
 
-    juce::Rectangle<int> row (int y, int height)
+    /** A line across the whole panel, for centred text. */
+    juce::Rectangle<int> row (const juce::Component& panel, int y, int height)
     {
-        return { 0, y, AboutPanel::kWidth, height };
+        return { 0, y, panel.getWidth(), height };
     }
 }
 
@@ -165,28 +166,28 @@ void AboutPanel::paint (juce::Graphics& g)
 
         juce::TextLayout text;
         text.createLayout (s, (float) getWidth());
-        text.draw (g, row (kWordMarkY, kWordMarkH).toFloat());
+        text.draw (g, row (*this, kWordMarkY, kWordMarkH).toFloat());
     }
 
     g.setFont (brand::font (12.5f));
     g.setColour (colour::silver);
-    g.drawText ("Version " + versionText, row (kVersionY, kVersionH), juce::Justification::centred, false);
+    g.drawText ("Version " + versionText, row (*this, kVersionY, kVersionH), juce::Justification::centred, false);
 
     g.setFont (brand::font (13.0f));
     g.setColour (colour::text);
     g.drawText (U ("Spielt virtuelle Instrumente mit der Tonh\xc3\xb6he deiner Geige."),
-                row (kTaglineY, kLineH), juce::Justification::centred, false);
+                row (*this, kTaglineY, kLineH), juce::Justification::centred, false);
 
     g.setFont (brand::font (12.5f));
     g.setColour (colour::secondary);
-    g.drawText (U ("Fr\xc3\xbcher Archet und ViolinMIDI."), row (kLegacyY, kLineH), juce::Justification::centred, false);
+    g.drawText (U ("Fr\xc3\xbcher Archet und ViolinMIDI."), row (*this, kLegacyY, kLineH), juce::Justification::centred, false);
 
     g.setColour (colour::separator);
     g.fillRect ((getWidth() - kRuleW) / 2, kRuleY, kRuleW, 1);
 
     g.setFont (brand::font (11.5f));
     g.setColour (colour::secondary);
-    g.drawText ("Verwendet JUCE. Lizenz: AGPLv3.", row (kLicenseY, kLicenseH), juce::Justification::centred, false);
+    g.drawText ("Verwendet JUCE. Lizenz: AGPLv3.", row (*this, kLicenseY, kLicenseH), juce::Justification::centred, false);
 }
 
 juce::String AboutPanel::getTooltip()
