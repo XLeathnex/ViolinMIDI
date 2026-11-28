@@ -245,7 +245,8 @@ bool applyMidi (const Param& p, AppSettings& settings, bool isNote, int value)
             break;
     }
 
-    return p.get (settings) != before;
+    const double after = p.get (settings);
+    return after < before || after > before;   // "changed", without comparing floats for equality
 }
 
 } // namespace params

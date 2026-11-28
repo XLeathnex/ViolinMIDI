@@ -75,15 +75,16 @@ namespace
 
     //==========================================================================
     const char* const kPowerTip =
-        "Schaltet die Kamera-Steuerung ein. Beim Einschalten wird die Haltung, in der die Geige gerade ist, "
-        "zum Nullpunkt des Schnecken-Pads. Das Bild wird nur auf diesem Mac ausgewertet und nicht gespeichert.";
+        "Schaltet die Kamera-Steuerung ein und aus: gr\xc3\xbcn an, rot aus. Beim Einschalten wird die Haltung, in der "
+        "die Geige gerade ist, zum Nullpunkt des Schnecken-Pads. Das Bild wird nur auf diesem Mac ausgewertet und "
+        "nicht gespeichert.";
 
     const char* const kCameraTip =
         "Welche Kamera das Bild liefert. \xe2\x80\x9e" "Erste Kamera\xe2\x80\x9c nimmt die erste, die macOS meldet. "
         "Am besten so aufstellen, dass Kopf, Schultern und beide H\xc3\xa4nde im Bild sind.";
 
     const char* const kPreviewTip =
-        "Das Kamerabild, gespiegelt wie ein Spiegel. Silbern: der Nullpunkt (die Ruhehaltung der Geige) mit dem "
+        "Das Kamerabild, seitenverkehrt wie in einem Spiegel. Silbern: der Nullpunkt (die Ruhehaltung der Geige) mit dem "
         "Totzonen-Oval; solange die Geigenhand darin bleibt, stehen die Werte still. Rot: die Geigenhand, sie steht "
         "f\xc3\xbcr die Schnecke. Verl\xc3\xa4sst sie das Oval, wandern die Werte, je weiter drau\xc3\x9f" "en, desto "
         "schneller, und das Fadenkreuz in der Ecke zeigt sie an. Das Bild bleibt auf diesem Mac.";
@@ -108,12 +109,14 @@ namespace
     const char* const kTargetXTip =
         "Wohin die seitliche Bewegung der Schnecke geht: ein beliebiger MIDI-Controller (CC 0 bis 127) oder der "
         "Harmonie-Mix, der die Harmoniestimmen zwischen leise (0 %) und der eingestellten Lautst\xc3\xa4rke (100 %) "
-        "blendet. Nach rechts wird der Wert gr\xc3\xb6\xc3\x9f" "er. Die Zahl dar\xc3\xbc" "ber ist der Wert gerade.";
+        "blendet. Rechts au\xc3\x9f" "erhalb des Ovals w\xc3\xa4" "chst der Wert, links davon sinkt er. Die Prozentzahl "
+        "dar\xc3\xbc" "ber zeigt, wo er gerade steht.";
 
     const char* const kTargetYTip =
         "Wohin das Heben und Senken der Schnecke geht: ein beliebiger MIDI-Controller (CC 0 bis 127) oder der "
         "Harmonie-Mix, der die Harmoniestimmen zwischen leise (0 %) und der eingestellten Lautst\xc3\xa4rke (100 %) "
-        "blendet. Nach oben wird der Wert gr\xc3\xb6\xc3\x9f" "er. Die Zahl dar\xc3\xbc" "ber ist der Wert gerade.";
+        "blendet. Oberhalb des Ovals w\xc3\xa4" "chst der Wert, unterhalb sinkt er. Die Prozentzahl dar\xc3\xbc" "ber "
+        "zeigt, wo er gerade steht.";
 
     const char* const kLinearTip =
         "Linear: Je weiter die Schnecke aus dem Oval kommt, desto schneller wandert der Wert, gleichm\xc3\xa4\xc3\x9fig "
@@ -623,7 +626,8 @@ void CameraPanel::repaintLiveParts()
     repaint (kMargin, kAxisNameY, kContentW, kNameH);
 }
 
-// The HUD goes into the top corner away from the zero point, so it never covers the violin.
+// The HUD goes into the top corner away from the zero point, so it never covers the violin. It sits on the
+// picture itself: a 16:9 camera is letterboxed in the 4:3 preview, and the HUD should not straddle the band.
 void CameraPanel::placeHud()
 {
     if (padView.hasZero)
@@ -634,9 +638,10 @@ void CameraPanel::placeHud()
             hudOnLeft = false;
     }
 
-    const auto area = previewArea();
+    const auto area = pictureArea().getSmallestIntegerContainer().getIntersection (previewArea());
     const int x = hudOnLeft ? area.getX() + kHudInset : area.getRight() - kHudInset - kHudW;
-    const juce::Rectangle<int> bounds (x, area.getY() + kHudInset, kHudW, kHudH);
+    const int h = juce::jlimit (0, kHudH, area.getHeight() - 2 * kHudInset);   // a very flat picture: the HUD shrinks
+    const juce::Rectangle<int> bounds (x, area.getY() + kHudInset, kHudW, h);
     if (hud.getBounds() != bounds)
         hud.setBounds (bounds);
 }
@@ -916,7 +921,12 @@ void CameraPanel::paint (juce::Graphics& g)
 
     g.fillAll (colour::window);
 
-    paintPreview (g);
+    // The preview repaints about 15 times a second on its own; the text below only when it is part of the area.
+    if (g.clipRegionIntersects (previewArea()))
+        paintPreview (g);
+
+    if (! g.clipRegionIntersects ({ 0, kStatusY, getWidth(), getHeight() - kStatusY }))
+        return;
 
     // Status line, or the notice that replaces it for a moment; the gesture line below.
     g.setFont (font (11.5f));

@@ -53,15 +53,18 @@ void AboutPanel::Link::paintButton (juce::Graphics& g, bool highlighted, bool do
     // The accent colour, a touch lighter while the mouse is over it; underlined then, as a link is.
     const auto ink = down ? colour::crimson : (highlighted ? colour::crimson.brighter (0.35f) : colour::crimson.brighter (0.15f));
     const auto r = getLocalBounds();
+    const auto f = brand::font (kLinkTextHeight);
 
     g.setColour (ink);
-    g.setFont (brand::font (kLinkTextHeight));
+    g.setFont (f);
     g.drawText (getButtonText(), r, juce::Justification::centred, false);
 
     if (highlighted || down)
     {
-        const int w = textWidth();
-        g.fillRect ((r.getWidth() - w) / 2, r.getCentreY() + 7, w, 1);
+        // Just under the baseline of the centred line, whatever the typeface's proportions.
+        const float baseline = ((float) r.getHeight() - f.getAscent() - f.getDescent()) * 0.5f + f.getAscent();
+        const auto w = (float) textWidth();
+        g.fillRect (juce::Rectangle<float> (((float) r.getWidth() - w) * 0.5f, (float) juce::roundToInt (baseline) + 1.0f, w, 1.0f));
     }
 }
 
@@ -69,6 +72,7 @@ void AboutPanel::Link::paintButton (juce::Graphics& g, bool highlighted, bool do
 AboutPanel::AboutPanel (const juce::String& version)
     : versionText (version)
 {
+    setOpaque (true);
     addAndMakeVisible (link);
     setSize (kWidth, kHeight);
 }
@@ -102,6 +106,11 @@ void AboutPanel::show (const juce::String& version, juce::Component* centreAroun
     openWindow = window;
     window->setVisible (true);
     window->toFront (true);
+
+    // Over a window that is open modally (the settings, say) it has to be modal too, or
+    // it could not be used until that one is closed. Hiding it ends its modal state.
+    if (juce::Component::getNumCurrentlyModalComponents() > 0)
+        window->enterModalState (true);
 }
 
 void AboutPanel::close()
@@ -169,9 +178,12 @@ void AboutPanel::paint (juce::Graphics& g)
         text.draw (g, row (*this, kWordMarkY, kWordMarkH).toFloat());
     }
 
-    g.setFont (brand::font (12.5f));
-    g.setColour (colour::silver);
-    g.drawText ("Version " + versionText, row (*this, kVersionY, kVersionH), juce::Justification::centred, false);
+    if (versionText.isNotEmpty())
+    {
+        g.setFont (brand::font (12.5f));
+        g.setColour (colour::silver);
+        g.drawText ("Version " + versionText, row (*this, kVersionY, kVersionH), juce::Justification::centred, false);
+    }
 
     g.setFont (brand::font (13.0f));
     g.setColour (colour::text);

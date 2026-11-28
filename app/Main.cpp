@@ -3,6 +3,7 @@
 // The app listens to an audio input, follows the pitch of the violin and
 // sends it as MIDI through a virtual MIDI port.
 
+#include "AboutPanel.h"
 #include "Brand.h"
 #include "MainComponent.h"
 #include "SelfTest.h"
@@ -117,7 +118,35 @@ namespace
         return -1;
     }
 
-    /** German texts for the standard audio settings. */
+   #if JUCE_MAC
+    /** The menu macOS shows under the app's name. JUCE builds it itself (Services, Hide,
+        Quit) and takes extra items for its top only together with a menu bar model, so
+        this model has no menus of its own: it only brings "Ueber VioLogic". JUCE runs the
+        item's action asynchronously and keeps its own copy of the menu. */
+    class AppMenu final : public juce::MenuBarModel
+    {
+    public:
+        explicit AppMenu (std::function<void()> showAbout)
+        {
+            juce::PopupMenu extra;
+            extra.addItem (juce::String::fromUTF8 ("\xc3\x9c" "ber VioLogic"), std::move (showAbout));
+            juce::MenuBarModel::setMacMainMenu (this, &extra);
+        }
+
+        ~AppMenu() override
+        {
+            juce::MenuBarModel::setMacMainMenu (nullptr);
+        }
+
+        juce::StringArray getMenuBarNames() override                        { return {}; }
+        juce::PopupMenu getMenuForIndex (int, const juce::String&) override { return {}; }
+        void menuItemSelected (int, int) override                           {}
+    };
+   #endif
+
+    /** German texts for the standard audio settings and the app menu. JUCE builds the
+        menu titles as TRANS ("Hide") + " " + name and translates the whole title again,
+        so the full titles are listed. */
     void installTranslations()
     {
         const char* text =
@@ -142,7 +171,12 @@ namespace
             "\"Error when trying to open audio device!\" = \"Das Audio-Ger\xc3\xa4t lie\xc3\x9f sich nicht \xc3\xb6" "ffnen.\"\n"
             "\"none\" = \"keiner\"\n"
             "\"Test\" = \"Test\"\n"
-            "\"Plays a test tone\" = \"Spielt einen Testton\"\n";
+            "\"Plays a test tone\" = \"Spielt einen Testton\"\n"
+            "\"Services\" = \"Dienste\"\n"
+            "\"Hide VioLogic\" = \"VioLogic ausblenden\"\n"
+            "\"Hide Others\" = \"Andere ausblenden\"\n"
+            "\"Show All\" = \"Alle einblenden\"\n"
+            "\"Quit VioLogic\" = \"VioLogic beenden\"\n";
 
         juce::LocalisedStrings::setCurrentMappings (new juce::LocalisedStrings (juce::String::fromUTF8 (text), false));
     }
@@ -207,11 +241,23 @@ public:
         options.showMenuAtStart = arguments.contains ("--show-scales") ? 1 : (arguments.contains ("--show-voicings") ? 2 : 0);
         options.notice = startup.notice;
         mainWindow = std::make_unique<MainWindow> (getApplicationName(), options);
+       #if JUCE_MAC
+        appMenu = std::make_unique<AppMenu> ([this] { AboutPanel::show (getApplicationVersion(), mainWindow.get()); });
+       #endif
+
+        // "--show-about" opens "Ueber VioLogic" at start (for looking at the layout, also off the Mac).
+        if (arguments.contains ("--show-about"))
+            juce::Timer::callAfterDelay (700, [this] { AboutPanel::show (getApplicationVersion(), mainWindow.get()); });
+
         updater::startedSuccessfully();
     }
 
     void shutdown() override
     {
+       #if JUCE_MAC
+        appMenu = nullptr;
+       #endif
+        AboutPanel::close();   // before the windows and the look go
         mainWindow = nullptr;
         selfTest = nullptr;
         juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
@@ -271,6 +317,9 @@ private:
 
     Theme theme;   // declared first, so it outlives the windows that use it
     std::unique_ptr<MainWindow> mainWindow;
+   #if JUCE_MAC
+    std::unique_ptr<AppMenu> appMenu;   // "Ueber VioLogic" in the app menu
+   #endif
     std::unique_ptr<SelfTest> selfTest;
 };
 

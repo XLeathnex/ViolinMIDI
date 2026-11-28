@@ -68,7 +68,11 @@ target_sources(ViolinMIDI PRIVATE
     VoicingPanel.cpp
     TrackingPanel.cpp
     AudioPanel.cpp
+    CurveEditor.cpp
     CameraPanel.cpp
+    PadHud.cpp
+    SplashOverlay.cpp
+    AboutPanel.cpp
     CameraLogic.cpp
     Theme.cpp
     Widgets.cpp

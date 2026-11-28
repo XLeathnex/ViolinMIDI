@@ -337,12 +337,14 @@ LiveDisplay::Layout LiveDisplay::layout() const
 
 juce::Rectangle<int> LiveDisplay::overlayArea() const
 {
-    // Top right of the pitch graph; the zoom strip sits in the opposite corner.
+    // Top left of the pitch graph, under the zoom strip: over the older part of the
+    // history. The right edge is "now", where the player looks; nothing may cover it.
+    constexpr float kWidth = 120.0f, kHeight = 140.0f, kGap = 6.0f;
     const auto plot = layout().pitch;
-    const float besideStrip = plot.getWidth() - (float) (3 * kStripInset + 2 * kSignWidth + kResetWidth);
-    const float side = juce::jmax (0.0f, juce::jmin (140.0f, plot.getHeight() - 2.0f * (float) kStripInset, besideStrip));
-    return juce::Rectangle<float> (plot.getRight() - (float) kStripInset - side, plot.getY() + (float) kStripInset, side, side)
-             .toNearestInt();
+    const float top = plot.getY() + (float) (kStripInset + kStripHeight) + kGap;
+    const float height = juce::jmax (0.0f, juce::jmin (kHeight, plot.getBottom() - (float) kStripInset - top));
+    const float width = juce::jmax (0.0f, juce::jmin (kWidth, plot.getWidth() * 0.4f));
+    return juce::Rectangle<float> (plot.getX() + (float) kStripInset, top, width, height).toNearestInt();
 }
 
 void LiveDisplay::resized()

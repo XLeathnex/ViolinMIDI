@@ -65,9 +65,9 @@ public:
         engine's In and Out levels in dB; they move the lines in the loudness curve. */
     void push (const LiveFrame&, float a4Hz, float gateDb, float gateOffDb);
 
-    /** A free area at the top right of the pitch graph, in this component's
-        coordinates, for a translucent overlay (the camera HUD). It never covers
-        the zoom strip. */
+    /** A free area at the top left of the pitch graph, under the zoom strip, in
+        this component's coordinates, for a translucent overlay (the camera HUD).
+        It lies over the older history and never covers "now" or the zoom strip. */
     juce::Rectangle<int> overlayArea() const;
 
     void paint (juce::Graphics&) override;

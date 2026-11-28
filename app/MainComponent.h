@@ -21,6 +21,7 @@
 #include "SettingsStore.h"
 #include "SplashOverlay.h"
 #include "UpdateManager.h"
+#include "VoicingPanel.h"
 #include "Widgets.h"
 
 #include <memory>
@@ -183,6 +184,8 @@ private:
     bool  cameraHasPicture = false;  // a frame arrived since the camera was switched on
 
     juce::Component::SafePointer<juce::DialogWindow> audioDialog;   // the audio harmonizer's window
+    juce::Component::SafePointer<VoicingPanel> voicingPanel;        // the open voicing matrix, if any
+    int voicingPanelType = -1;                                      // ...and the voicing it was opened for
 
     LiveDisplay display;
     PadHud padHud;                   // over the display while the pad moves values

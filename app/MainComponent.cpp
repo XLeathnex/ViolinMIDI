@@ -89,7 +89,7 @@ namespace
     };
 
     /** The voicing's name as the menu shows it. */
-    juce::String voicingName (int index)
+    juce::String voicingTitle (int index)
     {
         for (const auto& entry : kVoicingMenu)
             if (entry.index == index)
@@ -258,7 +258,7 @@ MainComponent::MainComponent (const Options& o) : options (o)
     {
         const float range = SettingsStore::kBendRanges[i];
         bendRangeBox.addItem (U ("\xc2\xb1") + (range < 1.0f ? decimalComma (range, 1) : juce::String (juce::roundToInt (range)))
-                                  + (range == 1.0f ? U (" Halbton") : U (" Halbt\xc3\xb6ne")),
+                                  + (std::abs (range - 1.0f) < 1.0e-6f ? U (" Halbton") : U (" Halbt\xc3\xb6ne")),
                               i + 1);
     }
     setupBox (bendRangeBox, U ("Muss mit dem Pitch-Bend-Bereich des Instruments \xc3\xbc" "bereinstimmen. Ein gr\xc3\xb6\xc3\x9f" "erer Bereich erlaubt "
@@ -496,24 +496,19 @@ MainComponent::MainComponent (const Options& o) : options (o)
 
     // The start animation covers the window while audio and MIDI come up. They start a moment
     // after the window has been drawn, so the animation is on screen while that takes its time.
+    // Opening the device holds up the message thread, so it waits until the logo stands
+    // complete (onShown): the picture that stays still meanwhile is the finished one.
     splash = std::make_unique<SplashOverlay>();
+    splash->setFrames (brand::splashFrames(), brand::kSplashFramesPerSecond);
     splash->setStatusText (options.openAudio ? U ("Audio und MIDI werden gestartet \xe2\x80\xa6") : U ("Vorschau ohne Audio"));
     splash->onFinished = [this] { splash = nullptr; };
+    if (options.openAudio)
+        splash->onShown = [this] { initialiseAudio(); };
     addAndMakeVisible (*splash);
     splash->setBounds (getLocalBounds());
 
     if (! options.openAudio)
-    {
         splash->finish();
-        return;
-    }
-
-    juce::Component::SafePointer<MainComponent> safeThis (this);
-    juce::Timer::callAfterDelay (150, [safeThis]
-    {
-        if (safeThis != nullptr)
-            safeThis->initialiseAudio();
-    });
 }
 
 void MainComponent::initialiseAudio()
@@ -750,6 +745,21 @@ void MainComponent::pushSettings()
         e.voicingVoices = vm::scale::presetMask (voicing);
     }
     e.voicing = voicing;
+
+    // An open voicing matrix belongs to one type: it closes when the type changes from
+    // elsewhere (foot switch, preset) and follows a change of the harmony mode.
+    if (auto* openPanel = voicingPanel.getComponent())
+    {
+        if (e.voicing != voicingPanelType || ! e.triad)
+        {
+            if (auto* box = openPanel->findParentComponentOfClass<juce::CallOutBox>())
+                box->dismiss();
+        }
+        else
+        {
+            openPanel->setDiatonic (e.harmonyMode == vm::HarmonyMode::Diatonic);
+        }
+    }
     e.inputGainDb = (float) gainSlider.getValue();
     e.fixedVelocity = juce::roundToInt (velocitySlider.getValue());
     e.a4Hz = (float) tuningSlider.getValue();
@@ -942,7 +952,7 @@ void MainComponent::showVoicingPanel()
     const int voicing = vm::scale::clampVoicing (e.voicing);
     const bool isFree = voicing == vm::scale::kFreeVoicing;
 
-    auto panel = std::make_unique<VoicingPanel> (voicingName (voicing), isFree, vm::voicingMask (e), vm::scale::presetMask (voicing),
+    auto panel = std::make_unique<VoicingPanel> (voicingTitle (voicing), isFree, vm::voicingMask (e), vm::scale::presetMask (voicing),
                                                  e.harmonyMode == vm::HarmonyMode::Diatonic);
     juce::Component::SafePointer<MainComponent> safeThis (this);
 
@@ -973,6 +983,8 @@ void MainComponent::showVoicingPanel()
         engine.voicingVoices = vm::scale::presetMask (voicing);
         safeThis->pushSettings();
     };
+    voicingPanel = panel.get();
+    voicingPanelType = voicing;
     juce::CallOutBox::launchAsynchronously (std::move (panel), voicingRow.getScreenBounds(), nullptr);
 }
 
@@ -1209,6 +1221,11 @@ void MainComponent::applyCameraSettings (const CameraSettings& next)
         gestures.reset();
         cameraHasPicture = false;
         cameraSettings.enabled = camera.start (cameraSettings.deviceName);   // false: see camera.error()
+
+        // It did not start: the window's switch goes back to "Aus" next to the reason.
+        if (! cameraSettings.enabled && cameraDialog != nullptr)
+            if (auto* panel = dynamic_cast<CameraPanel*> (cameraDialog->getContentComponent()))
+                panel->setPowerState (false);
     }
     else if (! cameraSettings.enabled && wasOn)
     {
