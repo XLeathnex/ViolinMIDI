@@ -331,9 +331,11 @@ Jeder Push auf `main` baut die App bei GitHub (`.github/workflows/build.yml`) un
 Tests laufen. Eine neue Version entsteht so:
 
 1. Versionsnummer in `CMakeLists.txt` erhöhen und in `CHANGELOG.md` einen Abschnitt dafür anlegen.
-2. Ein Tag mit derselben Nummer pushen, zum Beispiel `v1.2.0`.
+2. Auf GitHub unter **Actions → Build VioLogic for macOS → Run workflow** den Zweig `main` wählen,
+   **Release** ankreuzen und starten. Alternativ ein Tag mit derselben Nummer pushen, zum Beispiel `v1.2.0`.
 
-Besteht der Build, erscheint die Version auf der Projektseite und der Update-Knopf findet sie.
+Besteht der Build mit allen Tests, legt er das Tag an, die Version erscheint auf der Projektseite
+und der Update-Knopf findet sie. Eine schon veröffentlichte Nummer wird nie überschrieben.
 
 | Ordner | Inhalt |
 | --- | --- |

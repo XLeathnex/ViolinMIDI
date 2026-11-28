@@ -3,11 +3,19 @@ name: Build VioLogic for macOS
 # Every push to main is built and tested.
 # A tag like v1.2.0 is built, tested and then published as a release,
 # which is where the app's update button looks for new versions.
+# The same can be started by hand: Actions > this workflow > "Run workflow" on
+# main with "Release" ticked. Then the tag (v + the version in CMakeLists.txt)
+# is made here, after everything has passed.
 on:
   push:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'Release: publish this version (main only; the tag is created after all tests pass)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write # the release step attaches the app to the tag
@@ -125,21 +133,36 @@ jobs:
           if-no-files-found: error
 
       - name: Publish the release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            # started by hand: only from main, and never over a version that is already out
+            if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+              echo "::error::A release can only be started on main (this run is on $GITHUB_REF_NAME)."
+              exit 1
+            fi
+            TAG="v$VERSION"
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              echo "::error::$TAG is already published. Raise the version in CMakeLists.txt first."
+              exit 1
+            fi
+          else
+            TAG="$GITHUB_REF_NAME"
+          fi
           # the tag and the version built into the app have to agree
-          test "v$VERSION" = "$GITHUB_REF_NAME"
+          test "v$VERSION" = "$TAG"
           # the notes shown in the app: this version's section of CHANGELOG.md
           awk -v heading="## $VERSION" '$0 == heading { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md > notes.md
           test -s notes.md
-          gh release create "$GITHUB_REF_NAME" ViolinMIDI-macOS.zip --title "VioLogic $VERSION" --notes-file notes.md
+          # --target: where a tag that does not exist yet is created (an existing tag stays as it is)
+          gh release create "$TAG" ViolinMIDI-macOS.zip --target "$GITHUB_SHA" --title "VioLogic $VERSION" --notes-file notes.md
           # The list of all versions as a plain file. The app reads this instead of
           # the query interface, which limits requests per network address.
           gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             | jq '[.[] | {tag_name, draft, prerelease, published_at, body, assets: [.assets[] | {name, size, digest, browser_download_url}]}]' \
             > versions.json
-          jq -e --arg tag "$GITHUB_REF_NAME" 'map(select(.tag_name == $tag and .draft == false)) | length == 1' versions.json
-          gh release upload "$GITHUB_REF_NAME" versions.json --clobber
+          jq -e --arg tag "$TAG" 'map(select(.tag_name == $tag and .draft == false)) | length == 1' versions.json
+          gh release upload "$TAG" versions.json --clobber
