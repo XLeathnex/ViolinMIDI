@@ -16,7 +16,7 @@ jobs:
   macos:
     name: macOS app (Apple Silicon + Intel)
     runs-on: macos-15
-    timeout-minutes: 90   # the shared macOS runners are sometimes several times slower than usual
+    timeout-minutes: 150  # the shared macOS runners are sometimes several times slower than usual
     env:
       APP: build/app/ViolinMIDI_artefacts/Release/ViolinMIDI.app
 
@@ -35,8 +35,10 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
 
+      # As many compile jobs as cores: without a number, make starts all of them at
+      # once, the runner (3 cores, 7 GB) runs out of memory and the build takes over an hour.
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel "$(sysctl -n hw.ncpu)"
 
       - name: Core tests (Apple Silicon)
         run: ./build/violinmidi_tests
