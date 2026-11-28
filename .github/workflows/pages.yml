@@ -1,5 +1,7 @@
 # Publishes the website in site/ with GitHub Pages.
 # One-time setup in the repository: Settings > Pages > Source: "GitHub Actions".
+# Turn this on only once the release the site describes (with ViolinMIDI-macOS.zip) is published,
+# then start this workflow by hand. Until Pages is on, a run stops at configure-pages and publishes nothing.
 name: Website
 
 on:
