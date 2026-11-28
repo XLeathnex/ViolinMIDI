@@ -72,6 +72,13 @@ juce::Image emblem();
 /** Draws the emblem centred in `area`, as large as fits, at the given opacity. */
 void drawEmblem (juce::Graphics&, juce::Rectangle<float> area, float opacity = 1.0f);
 
+/** The frames of the animated logo for the start screen (assets/splash), in
+    order; empty if the build has none. Decoded on each call: ask once. */
+std::vector<juce::Image> splashFrames();
+
+/** How fast the start animation plays: its 30 frames in a little under two seconds. */
+inline constexpr double kSplashFramesPerSecond = 16.0;
+
 /** The full app icon: rounded square in the macOS proportions with the emblem. */
 void drawIcon (juce::Graphics&, juce::Rectangle<float> area);
 

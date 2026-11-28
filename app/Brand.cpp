@@ -139,6 +139,33 @@ juce::Image emblem()
     return juce::ImageCache::getFromMemory (VioLogicAssets::Emblem_png, VioLogicAssets::Emblem_pngSize);
 }
 
+std::vector<juce::Image> splashFrames()
+{
+    // The build embeds assets/splash/splash_NN.jpg; their original names give the order.
+    std::vector<std::pair<juce::String, juce::Image>> found;
+    for (int i = 0; i < VioLogicAssets::namedResourceListSize; ++i)
+    {
+        const juce::String file (VioLogicAssets::originalFilenames[i]);
+        if (! file.startsWith ("splash_"))
+            continue;
+
+        int size = 0;
+        if (const char* data = VioLogicAssets::getNamedResource (VioLogicAssets::namedResourceList[i], size); data != nullptr && size > 0)
+        {
+            const auto image = juce::ImageCache::getFromMemory (data, size);
+            if (image.isValid())
+                found.emplace_back (file, image);
+        }
+    }
+
+    std::sort (found.begin(), found.end(), [] (const auto& a, const auto& b) { return a.first < b.first; });
+
+    std::vector<juce::Image> frames;
+    for (auto& f : found)
+        frames.push_back (f.second);
+    return frames;
+}
+
 void drawEmblem (juce::Graphics& g, juce::Rectangle<float> area, float opacity)
 {
     const auto image = emblem();

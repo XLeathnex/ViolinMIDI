@@ -41,12 +41,16 @@ juce_add_gui_app(ViolinMIDI
     NEEDS_WEB_BROWSER FALSE)
 
 # Pictures the app draws: the emblem (icon, header, watermark, "About", camera)
-# and the start animation. Reached as VioLogicAssets::<file name> in the code.
+# and the frames of the start animation (assets/splash/splash_NN.jpg, played in
+# the order of their numbers). Reached as VioLogicAssets::<file name> in the code.
+file(GLOB VIOLOGIC_SPLASH_FRAMES CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/assets/splash/splash_*.jpg")
+list(SORT VIOLOGIC_SPLASH_FRAMES)
 juce_add_binary_data(VioLogicAssets
     HEADER_NAME VioLogicAssets.h
     NAMESPACE VioLogicAssets
     SOURCES
-        "${PROJECT_SOURCE_DIR}/assets/Emblem.png")
+        "${PROJECT_SOURCE_DIR}/assets/Emblem.png"
+        ${VIOLOGIC_SPLASH_FRAMES})
 
 target_sources(ViolinMIDI PRIVATE
     Main.cpp
