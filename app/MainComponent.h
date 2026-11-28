@@ -29,6 +29,8 @@
 #include <memory>
 #include <vector>
 
+class CameraPanel;
+
 /** UTF-8 text literal to juce::String (the sources contain German text). */
 inline juce::String U (const char* utf8) { return juce::String::fromUTF8 (utf8); }
 
@@ -130,8 +132,25 @@ private:
     void setupLatch (juce::TextButton&, const juce::String& text, const juce::String& tooltip);
     static int selectedSegment (const juce::TextButton* buttons, int count);
 
+    // the window's parts, top to bottom (resized() and paint() run through them)
+    void layoutHeader (juce::Rectangle<int>);
+    void layoutStatus (juce::Rectangle<int>);
+    void layoutDock();
+    void layoutDisplay (juce::Rectangle<int>);
+    void layoutColumns (juce::Rectangle<int>);
+    void paintHeader (juce::Graphics&);
+    void paintColumns (juce::Graphics&);
+    void paintStatus (juce::Graphics&);
+
+    /** A callout pointing at a control: on the desktop while the window is a window (2.0, it may
+        reach beyond it); every callout of the main window opens through here. */
+    void launchCallout (std::unique_ptr<juce::Component> content, juce::Component& anchor);
+
     void applySettingsToControls();
     void pushSettings();        // controls -> engine and settings file
+    void saveSettings();        // the only way to disk: every save of the settings file goes through here
+    AppSettings forDisk() const;      // what is written: the settings (a calibration draft never, 2.1)
+    float diskDeadZone() const;       // the camera dead zone as it is written
     void updateValueLabels();
     void refreshVoicingLabel(); // "Enger Dreiklang FV" while the voices differ from the preset's
     void initialiseAudio();     // audio in, MIDI ports, update check: after the window (and the start animation) is up
@@ -182,7 +201,9 @@ private:
     CameraSettings cameraSettings;
     cam::PadTracker pad;
     cam::GestureDetector gestures;
+    std::unique_ptr<CameraPanel> cameraPanel;   // alive while the camera control is shown; the window only shows it
     juce::Component::SafePointer<juce::DialogWindow> cameraDialog;
+    bool  movingPanel = false;       // the panel changes place (window <-> main window): closing its window does not end it
     float cameraMix = 1.0f;          // 0..1 from an axis of the pad, for the target "Harmonie-Mix"
     int   padSent[AudioHost::kControllerSlots] = { -1, -1 };   // the last value each axis sent, -1 = none yet
     bool  cameraHasPicture = false;  // a frame arrived since the camera was switched on
@@ -243,6 +264,8 @@ private:
     bool statusIsProblem = false;
 
     std::vector<Column> columns;
+    juce::Rectangle<int> dockArea;   // where a docked camera panel goes (fullscreen, 2.1); empty in the window
+    int displayBottom = 0;           // the hairline under the live display
 
     std::unique_ptr<SplashOverlay> splash;   // the start animation, until audio and MIDI are up
 

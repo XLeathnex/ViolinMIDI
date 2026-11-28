@@ -25,6 +25,9 @@ namespace
     constexpr int kStatusHeight = 40;
     constexpr int kMargin = 24, kColumnGap = 28;
     constexpr int kTitleHeight = 18, kTitleGap = 12, kNameHeight = 16, kNameGap = 6, kControlHeight = 24, kItemGap = 12;
+    constexpr int kItemsPerColumn = 5;
+    constexpr int kColumnsBand = 20 + kTitleHeight + kTitleGap + kItemsPerColumn * (kNameHeight + kNameGap + kControlHeight + kItemGap);
+    static_assert (kHeaderHeight + kDisplayHeight + kColumnsBand + kStatusHeight == kHeight, "the window is header, display, columns and status line");
     constexpr int kTimerHz = 30;
     constexpr int kMpeItem = 17;   // the entry after the sixteen channels
     constexpr int kEmblemSize = 30, kBrandGap = 8, kBrandWidth = 132;   // the emblem and word mark at the left of the header
@@ -154,7 +157,7 @@ MainComponent::MainComponent (const Options& o) : options (o)
     {
         settings.presetSlot = slot;
         presetImage = image (settings.engine);
-        store->save (settings);
+        saveSettings();
     };
     presetBar->onFactory = [this] { applyLowestLatency(); };
     addAndMakeVisible (*presetBar);
@@ -587,6 +590,7 @@ MainComponent::~MainComponent()
     splash = nullptr;
     if (cameraDialog != nullptr)
         delete cameraDialog.getComponent();
+    cameraPanel = nullptr;
     if (audioDialog != nullptr)
         delete audioDialog.getComponent();
     if (settingsDialog != nullptr)
@@ -600,7 +604,7 @@ MainComponent::~MainComponent()
     deviceManager.removeAudioCallback (&host); // ends the sounding note, see AudioHost::audioDeviceStopped
     deviceManager.closeAudioDevice();
 
-    store->save (settings);
+    saveSettings();
     store->flush();
 }
 
@@ -874,7 +878,7 @@ void MainComponent::pushSettings()
             panel->setOutputInfo (info, problem);
         }
 
-    store->save (settings);
+    saveSettings();
 }
 
 void MainComponent::updateValueLabels()
@@ -982,7 +986,7 @@ void MainComponent::rememberWindowPosition (juce::Point<int> topLeft)
     settings.hasWindowPosition = true;
     settings.windowX = topLeft.x;
     settings.windowY = topLeft.y;
-    store->save (settings);
+    saveSettings();
 }
 
 //==============================================================================
@@ -1046,7 +1050,7 @@ void MainComponent::showVoicingPanel()
     };
     voicingPanel = panel.get();
     voicingPanelType = voicing;
-    juce::CallOutBox::launchAsynchronously (std::move (panel), voicingRow.getScreenBounds(), nullptr);
+    launchCallout (std::move (panel), voicingRow);
 }
 
 void MainComponent::showTrackingPanel()
@@ -1070,7 +1074,7 @@ void MainComponent::showTrackingPanel()
         safeThis->pushSettings();
     };
     trackingPanel = panel.get();
-    juce::CallOutBox::launchAsynchronously (std::move (panel), octaveButton.getScreenBounds(), nullptr);
+    launchCallout (std::move (panel), octaveButton);
 }
 
 juce::String MainComponent::audioOutputInfo (bool& isProblem) const
@@ -1261,7 +1265,7 @@ void MainComponent::applyCameraSettings (const CameraSettings& next)
     const bool targetsChanged = next.xTarget != cameraSettings.xTarget || next.yTarget != cameraSettings.yTarget;
     cameraSettings = next;
     settings.cameraJson = cameraSettings.toJson();
-    store->save (settings);
+    saveSettings();
 
     if (targetsChanged)
         for (auto& sent : padSent)
@@ -1290,9 +1294,8 @@ void MainComponent::applyCameraSettings (const CameraSettings& next)
         cameraSettings.enabled = camera.start (cameraSettings.deviceName);   // false: see camera.error()
 
         // It did not start: the window's switch goes back to "Aus" next to the reason.
-        if (! cameraSettings.enabled && cameraDialog != nullptr)
-            if (auto* panel = dynamic_cast<CameraPanel*> (cameraDialog->getContentComponent()))
-                panel->setPowerState (false);
+        if (! cameraSettings.enabled && cameraPanel != nullptr)
+            cameraPanel->setPowerState (false);
     }
     else if (! cameraSettings.enabled && wasOn)
     {
@@ -1315,9 +1318,8 @@ void MainComponent::cameraStateChanged()
     {
         cameraSettings.enabled = false;
         cameraHasPicture = false;
-        if (cameraDialog != nullptr)
-            if (auto* panel = dynamic_cast<CameraPanel*> (cameraDialog->getContentComponent()))
-                panel->setPowerState (false);
+        if (cameraPanel != nullptr)
+            cameraPanel->setPowerState (false);
         padHud.setState (pad.x(), pad.y(), false);
         setStatusDot (cameraButton, false);
         host.setSettings (hostSettings());
@@ -1327,7 +1329,7 @@ void MainComponent::cameraStateChanged()
 
 void MainComponent::updateCameraStatus()
 {
-    auto* panel = cameraDialog != nullptr ? dynamic_cast<CameraPanel*> (cameraDialog->getContentComponent()) : nullptr;
+    auto* panel = cameraPanel.get();
     if (panel == nullptr)
         return;
 
@@ -1381,9 +1383,8 @@ void MainComponent::cameraFrame (const juce::Image& preview, const cam::Pose& po
     if (gesture == cam::Gesture::Nod)         cameraAction (cameraSettings.nodAction);
     else if (gesture == cam::Gesture::Shake)  cameraAction (cameraSettings.shakeAction);
 
-    if (cameraDialog != nullptr)
-        if (auto* panel = dynamic_cast<CameraPanel*> (cameraDialog->getContentComponent()))
-            panel->showFrame (preview, pose, pad, gesture);
+    if (cameraPanel != nullptr)
+        cameraPanel->showFrame (preview, pose, pad, gesture);
 }
 
 void MainComponent::cameraAction (int action)
@@ -1411,27 +1412,40 @@ void MainComponent::showCamera()
         return;
     }
 
-    auto* panel = new CameraPanel (cameraSettings, CameraTracker::availableCameras());
+    // The panel is ours; the window only shows it, so the same panel can move (fullscreen, 2.1).
     juce::Component::SafePointer<MainComponent> safeThis (this);
-    panel->onChange = [safeThis] (const CameraSettings& next)
+    if (cameraPanel == nullptr)
     {
-        if (safeThis != nullptr)
-            safeThis->applyCameraSettings (next);
-    };
-    panel->onRecalibrate = [safeThis]
-    {
-        if (safeThis != nullptr)
-            safeThis->pad.recalibrate();
-    };
+        cameraPanel = std::make_unique<CameraPanel> (cameraSettings, CameraTracker::availableCameras());
+        cameraPanel->onChange = [safeThis] (const CameraSettings& next)
+        {
+            if (safeThis != nullptr)
+                safeThis->applyCameraSettings (next);
+        };
+        cameraPanel->onRecalibrate = [safeThis]
+        {
+            if (safeThis != nullptr)
+                safeThis->pad.recalibrate();
+        };
+    }
+    auto* panel = cameraPanel.get();
 
     juce::DialogWindow::LaunchOptions launch;
-    launch.content.setOwned (panel);
+    launch.content.setNonOwned (panel);
     launch.dialogTitle = "Kamera";
     launch.dialogBackgroundColour = colour::window;
     launch.escapeKeyTriggersCloseButton = true;
     launch.useNativeTitleBar = true;
     launch.resizable = false;
     cameraDialog = launch.launchAsync();
+
+    // Closing the window ends the panel, as before - unless it is just moving.
+    const juce::Component::SafePointer<juce::DialogWindow> closing (cameraDialog.getComponent());
+    juce::ModalComponentManager::getInstance()->attachCallback (cameraDialog.getComponent(), juce::ModalCallbackFunction::create ([safeThis, closing] (int)
+    {
+        if (safeThis != nullptr && ! safeThis->movingPanel && safeThis->cameraDialog.getComponent() == closing.getComponent())
+            safeThis->cameraPanel = nullptr;
+    }));
     updateCameraStatus();
 
     // Layout check without a camera: a made-up picture of a player, the hand moved up and to the right.
@@ -1499,7 +1513,7 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
         if (settingsDialog != nullptr && lastBufferSize > 0 && bufferSize != lastBufferSize && ! settings.bufferChosen)
         {
             settings.bufferChosen = true;
-            store->save (settings);
+            saveSettings();
         }
         lastBufferSize = bufferSize;
 
@@ -1511,7 +1525,7 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
         settings.midiInputName = remote.inputName();
         settings.midiMapJson = remote.toJson();
         settings.midiProgramChannel = remote.programChannel();
-        store->save (settings);
+        saveSettings();
     }
     else
     {
@@ -1695,7 +1709,18 @@ void MainComponent::updateStatus (const AudioHost::Meters& m)
 void MainComponent::paint (juce::Graphics& g)
 {
     g.fillAll (colour::window);
+    paintHeader (g);
 
+    // the hairline under the display (beside a docked camera panel it ends at the panel)
+    g.setColour (colour::hairline);
+    g.fillRect (0, displayBottom, dockArea.isEmpty() ? getWidth() : dockArea.getX(), 1);
+
+    paintColumns (g);
+    paintStatus (g);
+}
+
+void MainComponent::paintHeader (juce::Graphics& g)
+{
     // the emblem and the word mark "VioLogic" ("Vio" in crimson, "Logic" in silver, as the logo writes it)
     const auto header = juce::Rectangle<int> (kMargin, 0, kBrandWidth, kHeaderHeight);
     brand::drawEmblem (g, header.withWidth (kEmblemSize).withSizeKeepingCentre (kEmblemSize, kEmblemSize).toFloat());
@@ -1710,18 +1735,21 @@ void MainComponent::paint (juce::Graphics& g)
         g.drawSingleLineText ("Logic", juce::roundToInt (x + juce::GlyphArrangement::getStringWidth (wordFont, "Vio")), juce::roundToInt (baseline));
     }
 
-    // hairlines under the presets and under the display
+    // the hairline under the presets
     g.setColour (colour::hairline);
     g.fillRect (0, kHeaderHeight - 1, getWidth(), 1);
-    g.fillRect (0, kHeaderHeight + kDisplayHeight, getWidth(), 1);
+}
 
-    // column titles
+void MainComponent::paintColumns (juce::Graphics& g)
+{
     g.setFont (font (13.0f, true));
     g.setColour (colour::text);
     for (const auto& column : columns)
         g.drawText (column.title, column.bounds.withHeight (kTitleHeight), juce::Justification::centredLeft);
+}
 
-    // status line
+void MainComponent::paintStatus (juce::Graphics& g)
+{
     const int sy = getHeight() - kStatusHeight;
     g.setColour (colour::hairline);
     g.fillRect (0, sy, getWidth(), 1);
@@ -1734,8 +1762,21 @@ void MainComponent::paint (juce::Graphics& g)
 void MainComponent::resized()
 {
     auto area = getLocalBounds();
+    layoutHeader (area.removeFromTop (kHeaderHeight));
+    layoutStatus (area.removeFromBottom (kStatusHeight));
+    layoutDock();   // dockArea stays empty in the window
 
-    auto header = area.removeFromTop (kHeaderHeight);
+    auto band = area.removeFromBottom (kColumnsBand);
+    displayBottom = area.getBottom();
+    layoutDisplay (area);
+    layoutColumns (band);
+
+    if (splash != nullptr)
+        splash->setBounds (getLocalBounds());
+}
+
+void MainComponent::layoutHeader (juce::Rectangle<int> header)
+{
     auto headerRow = header.withSizeKeepingCentre (header.getWidth() - 2 * kMargin, PresetBar::kHeight);
     headerRow.removeFromLeft (kBrandWidth + 16);   // the emblem and the word mark, painted
     cameraButton.setBounds (headerRow.removeFromRight (108));
@@ -1743,28 +1784,46 @@ void MainComponent::resized()
     audioButton.setBounds (headerRow.removeFromRight (176));
     headerRow.removeFromRight (24);
     presetBar->setBounds (headerRow.withWidth (juce::jmin (640, headerRow.getWidth())));
+}
 
-    const auto displayArea = area.removeFromTop (kDisplayHeight);
-    display.setBounds (displayArea);
-    padHud.setBounds (display.overlayArea().translated (displayArea.getX(), displayArea.getY()));
-
-    // under the note: the master switch, below it the two freeze buttons side by side
-    const int buttonsWidth = LiveDisplay::kNoteWidth - 2 * kMargin;
-    auto freezeRow = juce::Rectangle<int> (kMargin, displayArea.getBottom() - kMargin - 26, buttonsWidth, 26);
-    masterButton.setBounds (freezeRow.translated (0, -32).withHeight (26));
-    freezeSoloButton.setBounds (freezeRow.removeFromLeft ((buttonsWidth - 6) / 2));
-    freezeRow.removeFromLeft (6);
-    freezeHarmonyButton.setBounds (freezeRow);
-
-    auto status = area.removeFromBottom (kStatusHeight).reduced (kMargin, 8);
+void MainComponent::layoutStatus (juce::Rectangle<int> line)
+{
+    auto status = line.reduced (kMargin, 8);
     panicButton.setBounds (status.removeFromRight (116));
     status.removeFromRight (8);
     settingsButton.setBounds (status.removeFromRight (116));
     status.removeFromRight (8);
     if (updateButton.isVisible())
         updateButton.setBounds (status.removeFromRight (124));
+}
 
-    auto body = area.reduced (kMargin, 0).withTrimmedTop (20);
+void MainComponent::layoutDock()
+{
+    // Only a docked panel (fullscreen, 2.1) is a child of this component; a panel in its own window is left alone.
+    if (cameraPanel == nullptr || cameraPanel->getParentComponent() != this)
+        return;
+
+    cameraPanel->setVisible (! dockArea.isEmpty());
+    cameraPanel->setBounds (dockArea.withSize (CameraPanel::kWidth, CameraPanel::kHeight));
+}
+
+void MainComponent::layoutDisplay (juce::Rectangle<int> displayArea)
+{
+    display.setBounds (displayArea);
+    padHud.setBounds (display.overlayArea().translated (displayArea.getX(), displayArea.getY()));
+
+    // under the note: the master switch, below it the two freeze buttons side by side
+    const int buttonsWidth = LiveDisplay::kNoteWidth - 2 * kMargin;
+    auto freezeRow = juce::Rectangle<int> (displayArea.getX() + kMargin, displayArea.getBottom() - kMargin - 26, buttonsWidth, 26);
+    masterButton.setBounds (freezeRow.translated (0, -32).withHeight (26));
+    freezeSoloButton.setBounds (freezeRow.removeFromLeft ((buttonsWidth - 6) / 2));
+    freezeRow.removeFromLeft (6);
+    freezeHarmonyButton.setBounds (freezeRow);
+}
+
+void MainComponent::layoutColumns (juce::Rectangle<int> band)
+{
+    auto body = band.reduced (kMargin, 0).withTrimmedTop (20);
     const int n = (int) columns.size();
     const int width = (body.getWidth() - (n - 1) * kColumnGap) / juce::jmax (1, n);
 
@@ -1786,7 +1845,26 @@ void MainComponent::resized()
             inner.removeFromTop (kItemGap);
         }
     }
+}
 
-    if (splash != nullptr)
-        splash->setBounds (getLocalBounds());
+//==============================================================================
+void MainComponent::launchCallout (std::unique_ptr<juce::Component> content, juce::Component& anchor)
+{
+    // In fullscreen (2.1) a callout opens inside this component instead, so it is scaled with it.
+    juce::CallOutBox::launchAsynchronously (std::move (content), anchor.getScreenBounds(), nullptr);
+}
+
+void MainComponent::saveSettings()
+{
+    store->save (forDisk());
+}
+
+AppSettings MainComponent::forDisk() const
+{
+    return settings;
+}
+
+float MainComponent::diskDeadZone() const
+{
+    return cameraSettings.pad.deadZone;
 }
