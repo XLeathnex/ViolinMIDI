@@ -1,12 +1,11 @@
-# Archet
+# VioLogic
 
-Archet hört über das Audio-Interface auf deine Geige und gibt ihre Tonhöhe als MIDI aus.
+VioLogic hört über das Audio-Interface auf deine Geige und gibt ihre Tonhöhe als MIDI aus.
 Die App legt dafür einen virtuellen MIDI-Ausgang an, den MainStage, Logic und andere Programme
-wie ein angeschlossenes Keyboard sehen. Er heißt **Archet**, bei Installationen von vor
-Version 1.2 weiter **ViolinMIDI**, damit eine bestehende Einrichtung in MainStage bleibt. Der
+wie ein angeschlossenes Keyboard sehen. Er heißt **VioLogic**, bei Installationen von vor
+Version 1.2 weiter **VioLogic**, damit eine bestehende Einrichtung in MainStage bleibt. Der
 aktuelle Name steht oben im Fenster.
 
-Bis Version 1.1 hieß die App ViolinMIDI.
 
 Sie ist einstimmig, auf gestrichene Saiten abgestimmt und für eine 7-saitige Geige mit
 Tonabnehmer ausgelegt (B♭1 bis A7).
@@ -21,28 +20,28 @@ Das ist nur einmal nötig. Spätere Versionen holt die App selbst, siehe „Upda
 2. Diese Zeile einfügen und Enter drücken:
 
    ```
-   curl -fsSL https://raw.githubusercontent.com/XLeathnex/ViolinMIDI/main/install.sh | bash
+   curl -fsSL https://raw.githubusercontent.com/XLeathnex/VioLogic/main/install.sh | bash
    ```
 
 3. Die App wird geladen, in „Programme“ gelegt und gestartet. Beim ersten Start fragt macOS nach
    dem Mikrofon-Zugriff. Mit „Erlauben“ bestätigen, sonst kommt kein Signal an.
 
-Dafür muss nichts weiter installiert sein. Eine App unter dem früheren Namen ViolinMIDI wird dabei
-entfernt, die Einstellungen bleiben. Liegt schon eine ältere Archet-App in „Programme“
+Dafür muss nichts weiter installiert sein. Eine App unter dem früheren Namen VioLogic wird dabei
+entfernt, die Einstellungen bleiben. Liegt schon eine ältere VioLogic-App in „Programme“
 und macOS lässt das Ersetzen nicht zu, sagt die Zeile das. Dann die alte App in den Papierkorb
 legen und die Zeile noch einmal ausführen.
 
 ### Von Hand
 
-1. `ViolinMIDI-macOS.zip` von der [Seite mit den Versionen](https://github.com/XLeathnex/ViolinMIDI/releases/latest)
-   laden und doppelklicken. Es entsteht `ViolinMIDI.app` (der Dateiname ist aus Gründen der
-   Update-Kompatibilität geblieben; nach Belieben in `Archet.app` umbenennen).
+1. `VioLogic-macOS.zip` von der [Seite mit den Versionen](https://github.com/XLeathnex/VioLogic/releases/latest)
+   laden und doppelklicken. Es entsteht `VioLogic.app` (der Dateiname ist aus Gründen der
+   Update-Kompatibilität geblieben; nach Belieben in `VioLogic.app` umbenennen).
 2. Die App in den Ordner „Programme“ ziehen.
 3. Die App ist nicht bei Apple registriert. macOS blockiert deshalb den ersten Start, wenn die
    Datei über den Browser kam. Einmalig im Terminal ausführen:
 
    ```
-   xattr -dr com.apple.quarantine /Applications/Archet.app
+   xattr -dr com.apple.quarantine /Applications/VioLogic.app
    ```
 
    Alternativ: App starten, die Meldung schließen, dann unter Systemeinstellungen →
@@ -53,7 +52,7 @@ Voraussetzung: macOS 11 oder neuer, Intel oder Apple Silicon.
 
 ## Einrichtung
 
-### In Archet
+### In VioLogic
 
 1. **Einstellungen…** öffnen, das Interface und den Eingang wählen, an dem die Geige hängt.
    Puffergröße so klein wie möglich (64 oder 128 Samples). Die Abtastrate nicht verändern,
@@ -65,11 +64,11 @@ Voraussetzung: macOS 11 oder neuer, Intel oder Apple Silicon.
 
 ### In MainStage
 
-1. Archet zuerst starten, dann MainStage. Der MIDI-Ausgang (Name oben im Fenster) erscheint dort
+1. VioLogic zuerst starten, dann MainStage. Der MIDI-Ausgang (Name oben im Fenster) erscheint dort
    als MIDI-Gerät.
 2. Ein Software-Instrument anlegen. Steht dessen Keyboard-Eingang auf „Alle“, spielt die Geige
    es sofort.
-3. Den **Pitch-Bend-Bereich des Instruments** auf denselben Wert stellen wie in Archet.
+3. Den **Pitch-Bend-Bereich des Instruments** auf denselben Wert stellen wie in VioLogic.
    Ab Werk stehen die meisten Instrumente auf ±2 Halbtöne, das ist auch hier die Voreinstellung.
    Für lange Glissandi beide Seiten auf ±12 oder ±24 stellen.
 4. Im Channel-Strip-Informationsfenster unter „MIDI-Eingang“ dürfen Pitch Bend und
@@ -80,13 +79,13 @@ leicht abweichen.
 
 ### Wenn andere MIDI-Geräte mit angeschlossen sind
 
-MainStage wirft alle MIDI-Geräte zusammen. Archet sendet neben den Noten laufend Pitch Bend
+MainStage wirft alle MIDI-Geräte zusammen. VioLogic sendet neben den Noten laufend Pitch Bend
 und, bei „Lautstärke: Kontinuierlich“, Expression (Regler Nr. 11). Dieselbe Nummer benutzen
 Expression-Pedale, deshalb können sich Regler anderer Geräte mitbewegen.
 
 - Oben im Fenster einen eigenen **MIDI-Kanal** wählen, den kein anderes Gerät benutzt.
 - In MainStage im Layout-Modus ein eigenes Keyboard-Bedienelement für die Geige anlegen und ihm
-  den MIDI-Ausgang von Archet zuweisen. Den übrigen Bedienelementen ihr jeweiliges Gerät zuweisen
+  den MIDI-Ausgang von VioLogic zuweisen. Den übrigen Bedienelementen ihr jeweiliges Gerät zuweisen
   statt „Alle“.
 - Schnelle Abhilfe ohne Umbau: „Lautstärke“ auf „Nur Anschlagstärke“ stellen. Dann sendet die
   App keine Expression mehr.
@@ -128,7 +127,7 @@ Expression-Pedale, deshalb können sich Regler anderer Geräte mitbewegen.
 | **Alle Noten aus** | Beendet alle Noten, auch eingefrorene, und stellt Pitch Bend und Controller zurück. |
 
 Die Einstellungen werden gespeichert, aber nicht pro MainStage-Patch. Der Modus lässt sich
-mit den Tasten 1, 2 und 3 umschalten, solange das Archet-Fenster vorne ist.
+mit den Tasten 1, 2 und 3 umschalten, solange das VioLogic-Fenster vorne ist.
 
 ### Steuerung per MIDI
 
@@ -145,7 +144,7 @@ und „Freeze Harmonie“.
 
 ### Audio-Harmonizer
 
-Knopf „Audio-Harmonizer …“ oben rechts. Eingeschaltet spielt Archet die Harmoniestimmen zusätzlich
+Knopf „Audio-Harmonizer …“ oben rechts. Eingeschaltet spielt VioLogic die Harmoniestimmen zusätzlich
 mit dem eigenen Klang der Geige: Das Eingangssignal wird in der Tonhöhe verschoben und über den
 Audio-Ausgang ausgegeben, die Geige selbst unverändert in der Mitte. Es gelten Tonart, Voicing
 und Harmonie-Modus der Harmonie; die Harmonie muss eingeschaltet sein. Den Ausgang wählt man
@@ -208,7 +207,7 @@ Klick.
   Richtungen und beliebig oft.
 
 So funktioniert es: Die App im Ordner „Programme“ bleibt unverändert. Jede geladene Version
-liegt als eigene Kopie unter `~/Library/Application Support/ViolinMIDI/Versions`. Beim Start
+liegt als eigene Kopie unter `~/Library/Application Support/VioLogic/Versions`. Beim Start
 übergibt die App aus „Programme“ an die gewählte Version. Startet eine gewählte Version nicht,
 läuft beim nächsten Start wieder die App aus „Programme“.
 
@@ -240,7 +239,7 @@ Tonbeginn bis zur MIDI-Note, ohne Audiopuffer:
 | E5 (659 Hz) | 9 ms | 10 ms | 14 ms |
 | E6 (1319 Hz) | 6 ms | 7 ms | 11 ms |
 
-Dazu kommen der Audiopuffer von Archet und der von MainStage. Ein weicher Bogenansatz
+Dazu kommen der Audiopuffer von VioLogic und der von MainStage. Ein weicher Bogenansatz
 verlängert die Zeit, weil die Saite später eine klare Tonhöhe hat.
 
 ## Grenzen
@@ -268,16 +267,16 @@ verlängert die Zeit, weil die Saite später eine klare Tonhöhe hat.
 | Zu träge | Werks-Preset „Lowest Latenz“ wählen. Unten im Fenster steht die Puffergröße: 64 oder 128 Samples sind gut, 512 kosten etwa 10 ms. |
 | Instrument klingt verstimmt oder springt | Pitch-Bend-Bereich in App und Instrument angleichen. |
 | Instrument bleibt leise | Auf „Nur Anschlagstärke“ wechseln oder „Alle Noten aus“ drücken, das setzt Expression zurück. |
-| MainStage sieht den MIDI-Ausgang nicht | Archet vor MainStage starten. |
+| MainStage sieht den MIDI-Ausgang nicht | VioLogic vor MainStage starten. |
 | Eine neue Version macht Ärger | Unter „Einstellungen…“ die vorige Version wählen. |
 
 ## Aufnahmen prüfen
 
-Das Werkzeug `violinmidi_wav` schickt eine WAV- oder AIFF-Aufnahme durch dieselbe Erkennung
+Das Werkzeug `VioLogic_wav` schickt eine WAV- oder AIFF-Aufnahme durch dieselbe Erkennung
 wie die App und listet die Noten:
 
 ```
-violinmidi_wav aufnahme.wav --mode continuous --range 2 --trace verlauf.csv
+VioLogic_wav aufnahme.wav --mode continuous --range 2 --trace verlauf.csv
 ```
 
 Damit lässt sich die Erkennung an einer Aufnahme der eigenen Geige nachstellen und abstimmen.
@@ -290,11 +289,11 @@ wird beim Konfigurieren automatisch geladen.
 ```
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
 cmake --build build --parallel
-./build/violinmidi_tests
+./build/VioLogic_tests
 ```
 
-Die App liegt danach unter `build/app/ViolinMIDI_artefacts/Release/ViolinMIDI.app`.
-`ViolinMIDI --selftest` prüft Erkennung und virtuellen MIDI-Port ohne Fenster.
+Die App liegt danach unter `build/app/VioLogic_artefacts/Release/VioLogic.app`.
+`VioLogic --selftest` prüft Erkennung und virtuellen MIDI-Port ohne Fenster.
 
 Jeder Push auf `main` baut die App bei GitHub (`.github/workflows/build.yml`) und lässt alle
 Tests laufen. Eine neue Version entsteht so:
@@ -309,8 +308,8 @@ Besteht der Build, erscheint die Version auf der Projektseite und der Update-Kno
 | `core/` | Tonhöhenerkennung und Notenlogik, reines C++ ohne Abhängigkeiten |
 | `app/` | Fenster, Audio-Eingang, MIDI-Ausgang und Updater (JUCE) |
 | `tests/` | Automatische Tests mit künstlichen Geigensignalen |
-| `tools/` | `violinmidi_wav` zum Prüfen von Aufnahmen |
-| `assets/` | Das App-Icon, erzeugt mit `ViolinMIDI --render-icon assets/AppIcon.png` |
+| `tools/` | `VioLogic_wav` zum Prüfen von Aufnahmen |
+| `assets/` | Das App-Icon, erzeugt mit `VioLogic --render-icon assets/AppIcon.png` |
 
 ## Erweitern
 
@@ -318,11 +317,11 @@ Die App ist so aufgebaut, dass Neues an genau einer Stelle dazukommt:
 
 | Vorhaben | Wo |
 | --- | --- |
-| Name, Farben, Logo ändern | `app/Brand.h`, `app/Brand.cpp` (Anzeigename für macOS zusätzlich `VIOLINMIDI_DISPLAY_NAME` in `app/CMakeLists.txt`) |
+| Name, Farben, Logo ändern | `app/Brand.h`, `app/Brand.cpp` (Anzeigename für macOS zusätzlich `VioLogic_DISPLAY_NAME` in `app/CMakeLists.txt`) |
 | Aussehen aller Standard-Bedienelemente | `app/Theme.cpp` |
 | Neue Einstellung, die gespeichert wird | eine Zeile in der Tabelle in `app/SettingsFields.cpp`; sie landet damit in der Einstellungsdatei und in den Presets |
 | Kamera: was die Körperpunkte bedeuten | `app/CameraLogic.cpp` (ohne JUCE, getestet in `tests/test_camera.h`); das Bild und die Punkte kommen aus `app/CameraTracker_mac.mm` |
-| Klang der Audio-Harmonie | `core/Harmonizer.cpp`; ausprobieren ohne App mit `violinmidi_harmonize` |
+| Klang der Audio-Harmonie | `core/Harmonizer.cpp`; ausprobieren ohne App mit `VioLogic_harmonize` |
 | Neues Bedienelement im Fenster | im Konstruktor von `app/MainComponent.cpp` anlegen und mit `addItem()` in eine Spalte setzen; das Layout ergibt sich |
 | Regler per MIDI steuerbar machen | ein Eintrag in `app/Params.cpp`; er erscheint von selbst in der Mapping-Tabelle |
 | Neue Live-Anzeige | `app/Widgets.cpp`, gefüttert aus `MainComponent::timerCallback()` |
@@ -337,7 +336,7 @@ Regeln, damit es schnell und sicher bleibt:
 - Anzeigen zeichnen sich nur neu, wenn sich etwas geändert hat (30 Bilder pro Sekunde).
 - Bestehende Einstellungs-Schlüssel nie umbenennen: Alle Versionen lesen dieselbe Datei. Ändert
   sich die Bedeutung eines Werts, `kSchema` erhöhen und in `migrate()` umrechnen.
-- Dateiname, Programmname und Bundle-ID (`ViolinMIDI`, `app.violinmidi.ViolinMIDI`) nicht ändern:
+- Dateiname, Programmname und Bundle-ID (`VioLogic`, `app.VioLogic.VioLogic`) nicht ändern:
   Ältere Versionen erkennen Updates daran, und macOS hängt die Mikrofon-Freigabe daran.
 
 ## Lizenz
