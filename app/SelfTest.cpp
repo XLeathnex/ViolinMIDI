@@ -152,6 +152,36 @@ namespace
             {
                 expect (false, "the preset in slot 9 is found");
             }
+
+            // 2.1: patch() replaces only the given keys; every other one stays, also those of other versions.
+            expect (again.save (11, "Zum Patchen", wanted), "save a preset to patch");
+            if (const auto* entry = again.find (11))
+            {
+                auto doc = juce::JSON::parse (entry->file);
+                if (auto* stored = doc["settings"].getDynamicObject())
+                    stored->setProperty ("future", 7);
+                entry->file.replaceWithText (juce::JSON::toString (doc));
+            }
+            auto louder = wanted;
+            louder.harmonyGainDb = -3.0f;
+            juce::NamedValueSet before;
+            expect (again.patch (11, fields::subset (louder, { "harmonyGainDb", "noSuchKey" }), &before), "patch");
+            vm::Settings patched;
+            expect (again.load (11, patched) && std::abs (patched.harmonyGainDb + 3.0f) < 1.0e-6f, "patch: the new value is in the preset");
+            patched.harmonyGainDb = wanted.harmonyGainDb;
+            expect (image (patched) == image (wanted), "patch: every other setting stays");
+            expect (again.find (11) != nullptr && again.find (11)->file.loadFileAsString().contains ("future"), "patch: keys of other versions stay");
+            expect (before.size() == 1 && std::abs ((double) before["harmonyGainDb"] - (double) wanted.harmonyGainDb) < 1.0e-6,
+                    "patch: the old value is handed back for undo");
+            vm::Settings undone;
+            expect (again.patch (11, before) && again.load (11, undone) && image (undone) == image (wanted), "patch: undo restores the preset");
+            expect (! again.patch (12, before), "patch: no such preset");
+
+            // 2.1: the preset image leaves out the instrument profile and the wiring.
+            const auto presetPart = fields::toVar (wanted, fields::Part::presetImage);
+            expect (fields::toVar (wanted).hasProperty ("gainDb") && ! presetPart.hasProperty ("gainDb") && ! presetPart.hasProperty ("dryKill")
+                        && presetPart.hasProperty ("harmonyGainDb") && fields::profileKeys().size() == 13,
+                    "the preset image has no profile or wiring keys");
         }
 
         {

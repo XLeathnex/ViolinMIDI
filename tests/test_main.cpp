@@ -6,6 +6,8 @@
 #include "Harness.h"
 #include "../core/OutputStage.h"
 #include "../core/Scale.h"
+#include "../core/SettingsText.h"
+#include "../core/SpscRing.h"
 #include "CameraLogic.h"
 
 #include <vector>
@@ -13,11 +15,16 @@
 #include <sstream>
 #include <random>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdarg>
 #include <cstring>
 #include <functional>
 #include <limits>
+#include <set>
+#include <thread>
+#include <type_traits>
 
 using namespace vmtest;
 
@@ -93,6 +100,7 @@ double periodMs (double note) { return 1000.0 / noteToHz (note); }
 #include "test_tracker3.h"
 #include "test_harmonizer.h"
 #include "test_v2.h"
+#include "test_settings21.h"
 
 //==============================================================================
 // Single bowed notes over the whole range of a 7-string violin.
@@ -1163,6 +1171,11 @@ const TestCase kTests[] = {
     { "ensemble and high-cut", ensembleAndHiCut },
     { "armed harmony freeze in the audio harmonizer", armedFreezeAudio },
     { "camera gestures", cameraGestures },
+    { "settings 2.1: table, scope and text", settingsTable21 },
+    { "settings 2.1: migrate hold", settingsMigrateHold },
+    { "settings 2.1: keep on preset load", settingsKeepOnPresetLoad },
+    { "settings 2.1: a 2.0 settings text", settingsText20 },
+    { "spsc ring", spscRing },
 };
 
 } // namespace

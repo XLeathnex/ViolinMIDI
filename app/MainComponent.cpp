@@ -939,8 +939,9 @@ void MainComponent::remoteControl (int paramIndex, bool isNote, int value)
         presetBar->step (1);
     else if (param.id == "presetPrevious")
         presetBar->step (-1);
-    else
+    else if (param.id == "panic")
         allNotesOff();
+    // The triggers of 2.1 (chordReset, padZero, padCentre, profileNext, profilePrevious) act once their parts are in.
 }
 
 bool MainComponent::keyPressed (const juce::KeyPress& key)

@@ -79,11 +79,24 @@ namespace
     {
         std::vector<Param> list;
 
+        // The order is the mapping table's. Bindings are stored by id, so 2.1 inserts its
+        // entries where they belong; 2.0 keeps the ids it does not know.
         list.push_back (toggle ("enabled", "Tonh\xc3\xb6henerkennung", &E::enabled));
         list.push_back (toggle ("keyFilter", "Nur T\xc3\xb6ne der Tonart", &E::keyFilter));
+        list.push_back (toggle ("pentaFilter", "Nur Pentatonik-T\xc3\xb6ne", &E::pentaFilter));
         list.push_back (choice ("keyRoot", "Grundton", &E::keyRoot, 0, 12));
         list.push_back (choice ("scaleMode", "Skala", &E::scaleMode, 0, vm::scale::kScaleCount));
-        list.push_back (toggle ("pentaSustain", "Pentatonik-Ton halten", &E::pentaSustain));
+        {
+            // The foot switch between the two sources: on = the chords of the keyboard.
+            Param p;
+            p.id = "harmonySource";
+            p.name = "Externe Chords";
+            p.kind = Param::Kind::Toggle;
+            p.get = [] (const AppSettings& s) { return s.engine.harmonySource == vm::HarmonySource::ExternalChords ? 1.0 : 0.0; };
+            p.set = [] (AppSettings& s, double v) { s.engine.harmonySource = v >= 0.5 ? vm::HarmonySource::ExternalChords : vm::HarmonySource::FixedKey; };
+            list.push_back (p);
+        }
+        list.push_back (toggle ("pentaSustain", "Ton halten", &E::pentaSustain));   // id of 1.3 ("Pentatonik-Ton halten")
         list.push_back (toggle ("triad", "Harmonie", &E::triad));
         {
             // A new voicing starts with its own voices: what was added to the previous one is not carried over.
@@ -102,13 +115,14 @@ namespace
             list.push_back (p);
         }
         list.push_back (enumChoice ("harmonyMode", "Harmonie-Modus", &E::harmonyMode, 2));
+        list.push_back (enumChoice ("chordMode", "Harmonie-Modus (Externe Chords)", &E::chordMode, 4));
         list.push_back (choice ("triadChannel", "Harmonie-Kanal", &E::triadChannel, 1, 16));
         list.push_back (range ("harmonyOffset", "Harmonie-Offset", &E::harmonyOffset, -0.5, 0.0, 0.01));
         list.push_back (toggle ("audioHarmony", "Audio-Harmonizer", &E::audioHarmony));
         list.push_back (range ("harmonyGain", "Harmonie-Pegel (Audio)", &E::harmonyGainDb, -60.0, 6.0, 0.5));
         list.push_back (toggle ("dropVoicing", "Drop-Voicing (Audio)", &E::dropVoicing));
         list.push_back (range ("ensemble", "Ensemble-Entkopplung", &E::ensemble, 0.0, 1.0, 0.01));
-        list.push_back (toggle ("dryKill", "Dry-Kill", &E::dryKill));
+        list.push_back (toggle ("dryKill", "Nur Harmoniestimmen (Wet)", &E::dryKill));   // id of 1.5 ("Dry-Kill")
         list.push_back (toggle ("freezeSolo", "Freeze Solo", &E::freezeSolo));
         list.push_back (toggle ("freezeHarmony", "Freeze Harmonie", &E::freezeHarmony));
         list.push_back (action ("presetNext", "N\xc3\xa4" "chstes Preset"));
@@ -194,6 +208,23 @@ namespace
         list.push_back (range ("tuning", "Kammerton", &E::a4Hz, 430.0, 450.0, 0.5));
 
         list.push_back (action ("panic", "Alle Noten aus"));
+
+        // --- 2.1
+        {
+            // The keyboardist's rig: app-wide, not in presets.
+            Param p;
+            p.id = "chordLatch";
+            p.name = "Akkord halten (Auto-Latch)";
+            p.kind = Param::Kind::Toggle;
+            p.get = [] (const AppSettings& s) { return s.chordLatch ? 1.0 : 0.0; };
+            p.set = [] (AppSettings& s, double v) { s.chordLatch = v >= 0.5; };
+            list.push_back (p);
+        }
+        list.push_back (action ("chordReset", "Akkord zur\xc3\xbc" "cksetzen"));
+        list.push_back (action ("padZero", "Kamera: Nullpunkt setzen"));
+        list.push_back (action ("padCentre", "Kamera: Totzone mittig setzen"));
+        list.push_back (action ("profileNext", "N\xc3\xa4" "chstes Instrumenten-Profil"));
+        list.push_back (action ("profilePrevious", "Vorheriges Instrumenten-Profil"));
 
         return list;
     }

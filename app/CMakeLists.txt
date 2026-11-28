@@ -36,7 +36,8 @@ juce_add_gui_app(ViolinMIDI
     CAMERA_PERMISSION_TEXT "${VIOLINMIDI_DISPLAY_NAME} kann die Haltung der Geige und Kopfbewegungen als Steuerung nutzen. Das Bild bleibt auf diesem Mac."
     # MainStage is in front while playing. macOS must not put this app to sleep behind it.
     # The minimum system version lets older Macs say clearly why the app will not open.
-    PLIST_TO_MERGE "<plist version=\"1.0\"><dict><key>CFBundleName</key><string>${VIOLINMIDI_DISPLAY_NAME}</string><key>CFBundleDisplayName</key><string>${VIOLINMIDI_DISPLAY_NAME}</string><key>NSAppSleepDisabled</key><true/><key>LSMinimumSystemVersion</key><string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string></dict></plist>"
+    # The Profimodus of the calibration writes its diagnosis folder to the Desktop, which macOS asks about.
+    PLIST_TO_MERGE "<plist version=\"1.0\"><dict><key>CFBundleName</key><string>${VIOLINMIDI_DISPLAY_NAME}</string><key>CFBundleDisplayName</key><string>${VIOLINMIDI_DISPLAY_NAME}</string><key>NSAppSleepDisabled</key><true/><key>LSMinimumSystemVersion</key><string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string><key>NSDesktopFolderUsageDescription</key><string>${VIOLINMIDI_DISPLAY_NAME} legt im Profimodus des Einmessens einen Diagnose-Ordner auf dem Schreibtisch ab.</string></dict></plist>"
     NEEDS_CURL FALSE
     NEEDS_WEB_BROWSER FALSE)
 

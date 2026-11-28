@@ -5,7 +5,7 @@
 // Adding a control: create it in the constructor, add it to a column with
 // addItem(), read and write it in pushSettings() / applySettingsToControls().
 // The layout follows by itself. An engine setting is stored (settings file and
-// presets) by one line in SettingsFields.cpp; to make it controllable by MIDI
+// presets) by one line in core/SettingsText.cpp; to make it controllable by MIDI
 // as well, add one entry in Params.cpp.
 #pragma once
 

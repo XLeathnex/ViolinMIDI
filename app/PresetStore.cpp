@@ -223,6 +223,40 @@ bool PresetStore::rename (int slot, const juce::String& newName)
     return write (slot, newName, doc["settings"]);
 }
 
+bool PresetStore::patch (int slot, const juce::NamedValueSet& keys, juce::NamedValueSet* previous)
+{
+    const auto* e = find (slot);
+    if (e == nullptr)
+        return false;
+
+    juce::var doc;
+    if (! readJson (e->file, doc))
+        return false;
+
+    auto* settings = doc["settings"].getDynamicObject();
+    if (settings == nullptr)
+        return false;
+
+    juce::NamedValueSet old;
+    for (const auto& key : keys)
+    {
+        old.set (key.name, settings->getProperty (key.name));   // void if it was not there
+        if (key.value.isVoid())
+            settings->removeProperty (key.name);
+        else
+            settings->setProperty (key.name, key.value);
+    }
+
+    // Copied: write() refreshes the list, which invalidates the entry.
+    const auto name = e->name;
+    if (! write (slot, name, doc["settings"]))
+        return false;
+
+    if (previous != nullptr)
+        *previous = old;
+    return true;
+}
+
 bool PresetStore::remove (int slot)
 {
     const auto* e = find (slot);

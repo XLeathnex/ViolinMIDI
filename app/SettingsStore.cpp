@@ -7,7 +7,7 @@
 
 namespace key
 {
-    // The engine settings and their keys are in SettingsFields.cpp.
+    // The engine settings and their keys are in core/SettingsText.cpp.
     constexpr const char* audioState    = "audioState";
     // added in 1.2
     constexpr const char* schema        = "settingsSchema";
@@ -24,8 +24,22 @@ namespace key
     // added in 1.5
     constexpr const char* camera        = "camera";
     constexpr const char* bufferChosen  = "bufferChosen";
-    // an engine setting (SettingsFields.cpp) whose default changed in 2.0
+    // an engine setting (core/SettingsText.cpp) whose default changed in 2.0
     constexpr const char* stereoSpread  = "stereoSpread";
+    // added in 2.1
+    constexpr const char* chordInput    = "chordInput";
+    constexpr const char* chordSplit    = "chordSplit";
+    constexpr const char* chordWholeKeyboard = "chordWholeKeyboard";
+    constexpr const char* chordLatch    = "chordLatch";
+    constexpr const char* profiles      = "instrumentProfiles";
+    constexpr const char* profilesUnreadable = "instrumentProfilesUnreadable";
+    constexpr const char* calibrationMode = "calibrationMode";
+    constexpr const char* lastCalibration = "lastCalibration";
+    constexpr const char* fullscreen    = "fullscreen";
+    constexpr const char* displayZoomX  = "displayZoomX";
+    constexpr const char* displayZoomY  = "displayZoomY";
+    constexpr const char* harmonizerOutputDevice = "harmonizerOutputDevice";
+    constexpr const char* harmonizerOutputPair   = "harmonizerOutputPair";
 }
 
 SettingsStore::SettingsStore (juce::PropertiesFile& file) : props (file)
@@ -84,6 +98,25 @@ AppSettings SettingsStore::load()
     s.hasWindowPosition = props.containsKey (key::windowX) && props.containsKey (key::windowY);
     s.windowX = props.getIntValue (key::windowX);
     s.windowY = props.getIntValue (key::windowY);
+
+    s.chordInputName = props.getValue (key::chordInput);
+    s.chordSplit = juce::jlimit (24, 96, props.getIntValue (key::chordSplit, 60));
+    s.chordWholeKeyboard = props.getBoolValue (key::chordWholeKeyboard, false);
+    s.chordLatch = props.getBoolValue (key::chordLatch, true);
+
+    s.profilesJson = props.getValue (key::profiles);
+    s.profilesUnreadable = props.getValue (key::profilesUnreadable);
+    s.lastVersion = props.getValue (key::lastVersion);   // save() overwrites it with this version
+
+    s.calibrationMode = juce::jlimit (0, 1, props.getIntValue (key::calibrationMode, 0));
+    s.lastCalibration = props.getValue (key::lastCalibration);
+
+    s.fullscreen = props.getBoolValue (key::fullscreen, false);
+    s.displayZoomX = juce::jlimit (0, 4, props.getIntValue (key::displayZoomX, 2));
+    s.displayZoomY = juce::jlimit (0, 4, props.getIntValue (key::displayZoomY, 2));
+    s.harmonizerOutputStored = props.containsKey (key::harmonizerOutputDevice);
+    s.harmonizerOutputDevice = props.getValue (key::harmonizerOutputDevice);
+    s.harmonizerOutputPair = juce::jlimit (0, 31, props.getIntValue (key::harmonizerOutputPair, 0));
     return s;
 }
 
@@ -104,6 +137,27 @@ void SettingsStore::save (const AppSettings& s)
     {
         props.setValue (key::windowX, s.windowX);
         props.setValue (key::windowY, s.windowY);
+    }
+
+    props.setValue (key::chordInput, s.chordInputName);
+    props.setValue (key::chordSplit, juce::jlimit (24, 96, s.chordSplit));
+    props.setValue (key::chordWholeKeyboard, s.chordWholeKeyboard);
+    props.setValue (key::chordLatch, s.chordLatch);
+
+    props.setValue (key::profiles, s.profilesJson);
+    if (s.profilesUnreadable.isNotEmpty())
+        props.setValue (key::profilesUnreadable, s.profilesUnreadable);
+
+    props.setValue (key::calibrationMode, juce::jlimit (0, 1, s.calibrationMode));
+    props.setValue (key::lastCalibration, s.lastCalibration);
+
+    props.setValue (key::fullscreen, s.fullscreen);
+    props.setValue (key::displayZoomX, juce::jlimit (0, 4, s.displayZoomX));
+    props.setValue (key::displayZoomY, juce::jlimit (0, 4, s.displayZoomY));
+    if (s.harmonizerOutputStored)
+    {
+        props.setValue (key::harmonizerOutputDevice, s.harmonizerOutputDevice);
+        props.setValue (key::harmonizerOutputPair, juce::jlimit (0, 31, s.harmonizerOutputPair));
     }
 }
 

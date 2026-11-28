@@ -59,6 +59,22 @@ enum class Articulation : int
     Strong = 2  ///< steep start 95..127, soft start 45..65
 };
 
+/** Where the harmony takes its key from (OutputStage R9). */
+enum class HarmonySource : int
+{
+    FixedKey       = 0, ///< keyRoot / scaleMode, as in 2.0
+    ExternalChords = 1  ///< the chords of a MIDI keyboard (ChordTracker)
+};
+
+/** How the voices follow external chords (OutputStage R9). */
+enum class ChordMode : int
+{
+    Pentatonic = 0, ///< "Nur Pentatonik": the voices snap to the chord's pentatonic
+    Diatonic   = 1, ///< "Diatonisch": the voices are counted in the scale of the chord
+    HybridA    = 2, ///< chord tones if the played note is one, decided when the harmony starts
+    HybridB    = 3  ///< as A; a non-chord tone that stays for hybridLockMs snaps the voices to chord tones
+};
+
 struct Settings
 {
     BendMode     bendMode       = BendMode::Continuous;
@@ -89,6 +105,10 @@ struct Settings
     float        jumpLockMs         = 50.0f; ///< how long the leap must last, 20 .. 150
     float        bridgeMs           = 30.0f; ///< a note survives this long without a detectable pitch while the level stays above gateOffDb, 0 .. 200
 
+    // --- the camera announces changes of bow (NoteTracker, Input::bowCue). Set by the app, not stored.
+    bool         bowAssist          = false; ///< a softer level dip may be a new stroke while the camera says so
+    float        bowCueDipDb        = 4.5f;  ///< ... this deep, 3 .. 8 dB (otherwise 9 dB)
+
     // --- ringing on (OutputStage for MIDI, Harmonizer for audio)
     float        overlapMs          = 0.0f;  ///< at a change of note the previous one stays this long, 0 .. 1500
     float        releaseMs          = 0.0f;  ///< after the end of playing the note fades out over this time, 0 .. 3000
@@ -103,7 +123,18 @@ struct Settings
     int          keyRoot        = 0;      ///< 0 = C .. 11 = B
     int          scaleMode      = 0;      ///< index into scale::kScales, 0 .. scale::kScaleCount - 1
     bool         pentatonic     = false;  ///< with keyFilter: only the five pentatonic notes of the scale's family
-    bool         pentaSustain   = false;  ///< with keyFilter and a scale of fewer than seven notes: hold the last valid note through foreign ones
+    bool         pentaFilter    = false;  ///< melody: only the pentatonic of the key (fixed) or of the chord (external)
+    bool         pentaSustain   = false;  ///< "Ton halten", with keyFilter or pentaFilter: hold the last valid note through foreign ones (2.0: only with a scale of fewer than seven notes)
+
+    // --- harmony from external chords (ChordTracker, OutputStage R9)
+    HarmonySource harmonySource = HarmonySource::FixedKey;
+    ChordMode    chordMode      = ChordMode::HybridA;
+    float        hybridLockMs   = 330.0f; ///< Hybrid B, 150 .. 1000
+
+    // --- the chord keyboard: app-wide, not in presets; set by the app from AppSettings (like `enabled`)
+    int          chordSplit     = 60;     ///< keys below this note make the chord (60 = C4, middle C), 24 .. 96
+    bool         chordWholeKeyboard = false;
+    bool         chordLatch     = true;   ///< the last chord stays after all keys and the pedal are up
 
     // --- harmony voices on a second channel (the names date from when it was a triad only)
     bool         triad          = false;  ///< harmony on

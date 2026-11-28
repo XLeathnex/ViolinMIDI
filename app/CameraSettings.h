@@ -31,6 +31,9 @@ struct CameraSettings
 
     static bool validTarget (int t) noexcept { return t == targetNone || t == targetHarmonyMix || (t >= 0 && t <= 127); }
 
+    /** The largest dead zone 2.0 knows, and so the largest written under its key "padDeadZone". */
+    static constexpr float kLegacyMaxDeadZone = 0.15f;
+
     /** For the settings file. */
     juce::String toJson() const
     {
@@ -38,7 +41,9 @@ struct CameraSettings
                                                        : new juce::DynamicObject();
         o->setProperty ("device", deviceName);
         o->setProperty ("rightHand", pad.rightHand);
-        o->setProperty ("padDeadZone", pad.deadZone);
+        // 2.0 reads the dead zone clamped to 0.15. From 2.1 the instrument profile holds the
+        // full value (up to 0.25); this key keeps what 2.0 can show, nothing more.
+        o->setProperty ("padDeadZone", juce::jmin (pad.deadZone, kLegacyMaxDeadZone));
         o->setProperty ("padSpeed", pad.speed);
         o->setProperty ("responseX", pad.responseX);
         o->setProperty ("responseY", pad.responseY);
@@ -76,7 +81,7 @@ struct CameraSettings
 
         s.deviceName = v.getProperty ("device", juce::String()).toString();
         s.pad.rightHand = (bool) v.getProperty ("rightHand", false);
-        s.pad.deadZone = (float) number ("padDeadZone", s.pad.deadZone, 0.03, 0.15);
+        s.pad.deadZone = (float) number ("padDeadZone", s.pad.deadZone, 0.03, kLegacyMaxDeadZone);   // read once, at start
         s.pad.speed = (float) number ("padSpeed", s.pad.speed, 0.1, 4.0);
         s.pad.responseX = (int) number ("responseX", s.pad.responseX, 0, cam::PadTracker::numResponses - 1);
         s.pad.responseY = (int) number ("responseY", s.pad.responseY, 0, cam::PadTracker::numResponses - 1);

@@ -45,6 +45,12 @@ public:
     bool rename (int slot, const juce::String& newName);
     bool remove (int slot);
 
+    /** Replaces only the given keys inside the preset's settings, as written; every other key,
+        also those of other versions, stays. A key with a void value is removed. `previous`
+        receives the old value of each key (void if it was not there), for undo. False: no such
+        preset, unreadable, or not written (the file is then unchanged, `previous` untouched). */
+    bool patch (int slot, const juce::NamedValueSet& keys, juce::NamedValueSet* previous = nullptr);
+
     /** 0 if all 128 are taken. */
     int firstFreeSlot() const noexcept;
     /** The next existing slot after `slot`, wrapping; 0 if there is none. */
