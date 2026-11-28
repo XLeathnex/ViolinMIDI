@@ -268,29 +268,30 @@ inline void dropVoicing()
         return out;
     };
 
-    struct Case { const char* what; std::vector<float> semis; int chord, root; bool on; const char* expected; };
+    // The chord is the violin plus the voices: two voices make three notes.
+    struct Case { const char* what; std::vector<float> semis; int root; bool on; const char* expected; };
     const Case cases[] = {
-        { "triad on A4: the fifth drops",                  { 4.0f, 7.0f },        3, 69, true,  "4 -5" },
-        { "triad on E5",                                   { 3.0f, 7.0f },        3, 76, true,  "3 -5" },
-        { "triad on G#4 (below A4): nothing",              { 3.0f, 7.0f },        3, 68, true,  "3 7" },
-        { "two-note chord on A4: nothing",                 { 4.0f },              2, 69, true,  "4" },
-        { "switched off: nothing",                         { 4.0f, 7.0f },        3, 69, false, "4 7" },
-        { "seventh chord: the seventh drops",              { 4.0f, 7.0f, 10.0f }, 4, 72, true,  "4 7 -2" },
-        { "octave would land on the violin: nothing",      { 4.0f, 12.0f },       3, 72, true,  "4 12" },
-        { "would land on another voice: nothing",          { -5.0f, 7.0f },       3, 72, true,  "-5 7" },
-        { "all voices below the violin: nothing",          { -12.0f, -5.0f },     3, 72, true,  "-12 -5" },
-        { "vibrato drift kept on the dropped voice",       { 3.8f, 6.8f },        3, 70, true,  "4 -5" },
+        { "triad on A4: the fifth drops",                  { 4.0f, 7.0f },        69, true,  "4 -5" },
+        { "triad on E5",                                   { 3.0f, 7.0f },        76, true,  "3 -5" },
+        { "triad on G#4 (below A4): nothing",              { 3.0f, 7.0f },        68, true,  "3 7" },
+        { "two-note chord on A4: nothing",                 { 4.0f },              69, true,  "4" },
+        { "switched off: nothing",                         { 4.0f, 7.0f },        69, false, "4 7" },
+        { "seventh chord: the seventh drops",              { 4.0f, 7.0f, 10.0f }, 72, true,  "4 7 -2" },
+        { "octave would land on the violin: nothing",      { 4.0f, 12.0f },       72, true,  "4 12" },
+        { "would land on another voice: nothing",          { -5.0f, 7.0f },       72, true,  "-5 7" },
+        { "all voices below the violin: nothing",          { -12.0f, -5.0f },     72, true,  "-12 -5" },
+        { "vibrato drift kept on the dropped voice",       { 3.8f, 6.8f },        70, true,  "4 -5" },
     };
     for (const Case& c : cases)
     {
         s.dropVoicing = c.on;
         vm::Harmonizer::Frame f = frame (c.semis);
-        vm::Engine::applyDropVoicing (f, c.chord, c.root, s);
+        vm::Engine::applyDropVoicing (f, c.root, s);
         check (text (f) == c.expected, "%s: expected \"%s\", found \"%s\"", c.what, c.expected, text (f).c_str());
     }
     s.dropVoicing = true;
     vm::Harmonizer::Frame f = frame ({ 3.8f, 6.8f });
-    vm::Engine::applyDropVoicing (f, 3, 70, s);
+    vm::Engine::applyDropVoicing (f, 70, s);
     check (std::abs (f.semitones[1] - (-5.2f)) < 1e-5f, "dropped by exactly an octave: %.3f", (double) f.semitones[1]);
 
     // Through the engine: a triad played on A4 with the audio harmonizer sounds the fifth below.
@@ -303,12 +304,12 @@ inline void dropVoicing()
         es.ensemble = 0.0f;
         es.stereoSpread = 0.0f;
         es.voicing = 5;                                  // duet in thirds: two notes, nothing drops
-        for (int pass = 0; pass < 2; ++pass)
+        for (int pass = 0; pass < 3; ++pass)
         {
-            if (pass == 1)
-            {
+            if (pass >= 1)
                 es.voicing = 0;                            // triad: A C E, the E drops below
-            }
+            if (pass == 2)
+                es.triadChannel = es.midiChannel;          // the harmony on the melody's channel: the same chord
             vm::Engine engine;
             engine.prepare (fs);
             Synth synth (fs, 21);
@@ -341,7 +342,8 @@ inline void dropVoicing()
             if (pass == 0)
                 check (power (noteToHz (72.0)) > 10.0 * power (noteToHz (60.0)), "duet on A4: the third C5 sounds above, not dropped");
             else
-                check (low > 4.0 * high, "triad on A4: the fifth sounds as E4 below (E4 %.3g, E5 %.3g)", low, high);
+                check (low > 4.0 * high, "triad on A4%s: the fifth sounds as E4 below (E4 %.3g, E5 %.3g)",
+                       pass == 2 ? " (harmony on the melody's channel)" : "", low, high);
         }
     }
 }

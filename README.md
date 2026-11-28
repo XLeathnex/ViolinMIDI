@@ -35,8 +35,8 @@ alte App in den Papierkorb legen und die Zeile noch einmal ausführen.
 
 1. `ViolinMIDI-macOS.zip` von der [Seite mit den Versionen](https://github.com/XLeathnex/ViolinMIDI/releases/latest)
    laden und doppelklicken. Es entsteht `ViolinMIDI.app` (der Dateiname ist aus Gründen der
-   Update-Kompatibilität geblieben; nach Belieben in `VioLogic.app` umbenennen).
-2. Die App in den Ordner „Programme“ ziehen.
+   Update-Kompatibilität geblieben).
+2. Die App in den Ordner „Programme“ ziehen und dort in `VioLogic.app` umbenennen.
 3. Die App ist nicht bei Apple registriert. macOS blockiert deshalb den ersten Start, wenn die
    Datei über den Browser kam. Einmalig im Terminal ausführen:
 
@@ -59,8 +59,9 @@ Voraussetzung: macOS 11 oder neuer, Intel oder Apple Silicon.
    sie gilt für alle Programme am Interface.
 2. Kräftig spielen und die **Eingangsverstärkung** so stellen, dass der Pegelbalken weit nach
    rechts geht, ohne gelb zu werden (gelb heißt übersteuert).
-3. Nicht spielen und die **Ansprechschwelle** (weiße Marke) knapp über das Grundrauschen legen.
-4. Einen Ton spielen: Die große Anzeige zeigt die Note, der Punkt „MIDI“ leuchtet.
+3. Nicht spielen und die **In-Schwelle** (die hohe weiße Marke am Pegelbalken) knapp über das
+   Grundrauschen legen.
+4. Einen Ton spielen: Die große Anzeige zeigt die Note in Rot, darunter steht „MIDI-Note …“.
 
 ### In MainStage
 
@@ -282,7 +283,7 @@ verlängert die Zeit, weil die Saite später eine klare Tonhöhe hat.
 | --- | --- |
 | Kein Pegel, obwohl gespielt wird | Richtigen Eingang wählen. Mikrofon-Zugriff unter Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon erlauben. |
 | Kein Pegel nach einem Update | macOS hat neu nach dem Mikrofon gefragt. Zugriff erlauben und die App neu starten. |
-| Regler anderer MIDI-Geräte bewegen sich mit | Eigenen MIDI-Kanal wählen oder „Lautstärke“ auf „Nur Anschlagstärke“, siehe oben. |
+| Regler anderer MIDI-Geräte bewegen sich mit | Eigenen MIDI-Kanal wählen oder „Dynamik“ auf „Nur Anschlag“, siehe oben. |
 | Geisternoten in Pausen | In-Schwelle höher stellen. |
 | Leise Töne fehlen | In-Schwelle senken oder Verstärkung erhöhen. |
 | Töne brechen beim leisen Streichen ab | Out-Schwelle senken. |

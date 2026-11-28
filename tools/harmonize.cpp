@@ -312,7 +312,7 @@ struct FrameBuilder
             const float target = (float) m.triad[i] + coupling * (lastPitch - (float) root);
             f.semitones[f.voiceCount++] = target - lastPitch;
         }
-        vm::Engine::applyDropVoicing (f, m.triadCount, root, s);
+        vm::Engine::applyDropVoicing (f, root, s);
         return f;
     }
 };

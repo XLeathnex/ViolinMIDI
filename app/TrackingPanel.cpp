@@ -1,6 +1,7 @@
 #include "TrackingPanel.h"
 
 #include "Brand.h"
+#include "Theme.h"
 
 namespace
 {
@@ -47,6 +48,7 @@ TrackingPanel::Switch::Switch (int radioGroup, const juce::String& tip)
     }
     offButton.setConnectedEdges (juce::Button::ConnectedOnRight);
     onButton.setConnectedEdges (juce::Button::ConnectedOnLeft);
+    setSwitchStyle (row, SwitchStyle::status);   // AN emerald, AUS crimson, like every switch
 }
 
 void TrackingPanel::Switch::set (bool on)
@@ -181,7 +183,7 @@ void TrackingPanel::paint (juce::Graphics& g)
 
     for (const int y : { kSep1Y, kSep2Y, kSep3Y })
     {
-        g.setColour (colour::separator);
+        g.setColour (colour::hairline);
         g.fillRect (kMargin, y, kContentW, 1);
     }
 

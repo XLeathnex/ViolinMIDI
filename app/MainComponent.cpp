@@ -10,6 +10,7 @@
 #include "SettingsPanel.h"
 #include "Theme.h"
 #include "TrackingPanel.h"
+#include "Updater.h"
 #include "VoicingPanel.h"
 
 #include <cmath>
@@ -169,7 +170,8 @@ MainComponent::MainComponent (const Options& o) : options (o)
     addColumn ("Eingang");
     setupName (meterName, "Pegel");
     setupValue (meterValue);
-    levelMeter.setTooltip (U ("Die hohe Marke ist die In-Schwelle: dar\xc3\xbc" "ber kann eine Note beginnen. Die kurze Marke ist die Out-Schwelle: darunter endet sie."));
+    levelMeter.setTooltip (U ("Der Pegel der Geige: silbern unter der In-Schwelle, rot dar\xc3\xbc" "ber, gelb bei \xc3\x9c" "bersteuerung. "
+                              "Die hohe Marke ist die In-Schwelle: dar\xc3\xbc" "ber kann eine Note beginnen. Die kurze Marke ist die Out-Schwelle: darunter endet sie."));
     addAndMakeVisible (levelMeter);
     addItem (meterName, levelMeter, &meterValue);
 
@@ -177,7 +179,8 @@ MainComponent::MainComponent (const Options& o) : options (o)
     setupValue (gainValue);
     setupSlider (gainSlider, -12.0, 36.0, 0.5);
     gainSlider.setDoubleClickReturnValue (true, 0.0);
-    gainSlider.setTooltip (U ("Bei kr\xc3\xa4" "ftigem Spiel soll der Pegel weit nach rechts gehen, ohne rot zu werden. Doppelklick: 0 dB."));
+    gainSlider.setTooltip (U ("Bei kr\xc3\xa4" "ftigem Spiel soll der Pegel weit nach rechts gehen, ohne gelb zu werden (gelb hei\xc3\x9f" "t \xc3\xbc" "bersteuert). "
+                              "Rot hei\xc3\x9f" "t: \xc3\xbc" "ber der In-Schwelle, ein Ton kann beginnen. Doppelklick: 0 dB."));
     addItem (gainName, gainSlider, &gainValue);
 
     setupName (gateName, "In-Schwelle");
@@ -540,6 +543,10 @@ void MainComponent::initialiseAudio()
     audioReady = true;
     if (splash != nullptr)
         splash->finish();
+
+    // Only now has this version shown that it starts: with audio and MIDI open (a
+    // downloaded version that fails here falls back to the installed app).
+    updater::startedSuccessfully();
 }
 
 MainComponent::~MainComponent()
@@ -750,7 +757,10 @@ void MainComponent::pushSettings()
     // elsewhere (foot switch, preset) and follows a change of the harmony mode.
     if (auto* openPanel = voicingPanel.getComponent())
     {
-        if (e.voicing != voicingPanelType || ! e.triad)
+        // ...and closes when its voices were changed from elsewhere (a preset of the same type),
+        // so its next click cannot write the old ones back.
+        if (e.voicing != voicingPanelType || ! e.triad
+            || vm::scale::cleanFreeMask (vm::voicingMask (e)) != openPanel->mask())
         {
             if (auto* box = openPanel->findParentComponentOfClass<juce::CallOutBox>())
                 box->dismiss();
@@ -815,6 +825,11 @@ void MainComponent::pushSettings()
 
     if (presetBar->currentSlot() > 0)
         presetBar->setModified (image (e) != presetImage);
+
+    // The harmonizer's window shows what a preset or a foot switch changed, too.
+    if (audioDialog != nullptr)
+        if (auto* panel = dynamic_cast<AudioPanel*> (audioDialog->getContentComponent()))
+            panel->setValues (audioPanelValues());
 
     store->save (settings);
 }
@@ -969,8 +984,10 @@ void MainComponent::showVoicingPanel()
         }
         else
         {
-            engine.voicingVoices = mask;
-            engine.voicingEdited = true;
+            // Back at the type's own voices is the pure type again (no "FV", no changed preset).
+            const auto own = vm::scale::presetMask (voicing);
+            engine.voicingEdited = vm::scale::cleanFreeMask (mask) != own;
+            engine.voicingVoices = engine.voicingEdited ? mask : own;
         }
         safeThis->pushSettings();
     };
@@ -1036,14 +1053,8 @@ juce::String MainComponent::audioOutputInfo (bool& isProblem) const
     return U ("Kein Audio-Ausgang. Unter \xe2\x80\x9e" "Einstellungen\xe2\x80\x9c einen Ausgang w\xc3\xa4hlen.");
 }
 
-void MainComponent::showAudioPanel()
+AudioPanel::Values MainComponent::audioPanelValues() const
 {
-    if (audioDialog != nullptr)
-    {
-        audioDialog->toFront (true);
-        return;
-    }
-
     const auto& e = settings.engine;
     AudioPanel::Values values;
     values.on = e.audioHarmony;
@@ -1055,6 +1066,18 @@ void MainComponent::showAudioPanel()
     values.stereoSpread = e.stereoSpread;
     values.harmonyGainDb = e.harmonyGainDb;
     values.dryKill = e.dryKill;
+    return values;
+}
+
+void MainComponent::showAudioPanel()
+{
+    if (audioDialog != nullptr)
+    {
+        audioDialog->toFront (true);
+        return;
+    }
+
+    const auto values = audioPanelValues();
 
     bool problem = false;
     const auto info = audioOutputInfo (problem);
@@ -1214,6 +1237,17 @@ void MainComponent::applyCameraSettings (const CameraSettings& next)
     if (cameraSettings.xTarget != CameraSettings::targetHarmonyMix && cameraSettings.yTarget != CameraSettings::targetHarmonyMix)
         cameraMix = 1.0f;
 
+    // An axis on "Harmonie-Mix" starts where the mix is (full the first time), so the
+    // harmony does not jump at the first movement and the window shows what is applied.
+    if (cameraSettings.enabled && (! wasOn || targetsChanged))
+    {
+        const float x = cameraSettings.xTarget == CameraSettings::targetHarmonyMix ? cameraMix : pad.x();
+        const float y = cameraSettings.yTarget == CameraSettings::targetHarmonyMix ? cameraMix : pad.y();
+        pad.setValues (x, y);
+        padSent[0] = cameraSettings.xTarget == CameraSettings::targetHarmonyMix ? pad.valueX() : padSent[0];
+        padSent[1] = cameraSettings.yTarget == CameraSettings::targetHarmonyMix ? pad.valueY() : padSent[1];
+    }
+
     if (cameraSettings.enabled && (! wasOn || deviceChanged))
     {
         // Switching on: where the violin rests now is the zero point (spec 6). The values stay where they were.
@@ -1231,8 +1265,7 @@ void MainComponent::applyCameraSettings (const CameraSettings& next)
     {
         camera.stop();
         cameraHasPicture = false;
-        cameraMix = 1.0f;
-        padHud.setState (pad.x(), pad.y(), false);
+        padHud.setState (pad.x(), pad.y(), false);   // the mix is ignored while the camera is off and goes on from here
     }
 
     padHud.setAxisNames (padTargetName (cameraSettings.xTarget), padTargetName (cameraSettings.yTarget));
@@ -1625,7 +1658,7 @@ void MainComponent::paint (juce::Graphics& g)
     }
 
     // hairlines under the presets and under the display
-    g.setColour (juce::Colours::black.withAlpha (0.6f));
+    g.setColour (colour::hairline);
     g.fillRect (0, kHeaderHeight - 1, getWidth(), 1);
     g.fillRect (0, kHeaderHeight + kDisplayHeight, getWidth(), 1);
 
@@ -1637,7 +1670,7 @@ void MainComponent::paint (juce::Graphics& g)
 
     // status line
     const int sy = getHeight() - kStatusHeight;
-    g.setColour (colour::separator);
+    g.setColour (colour::hairline);
     g.fillRect (0, sy, getWidth(), 1);
     g.setColour (statusIsProblem ? colour::problem : colour::secondary);
     g.setFont (font (12.5f));

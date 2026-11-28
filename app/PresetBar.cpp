@@ -47,6 +47,7 @@ PresetBar::PresetBar (PresetStore& s)
     nameButton.setTooltip (tip);
     saveButton.setTooltip (tip);
     saveAsButton.setTooltip (tip);
+    moreButton.setTooltip (U ("Das aktuelle Preset umbenennen oder l\xc3\xb6schen, oder den Preset-Ordner im Finder zeigen."));
     prevButton.setTooltip (U ("Vorheriges Preset"));
     nextButton.setTooltip (U ("N\xc3\xa4" "chstes Preset"));
 

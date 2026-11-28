@@ -939,7 +939,7 @@ void CameraPanel::paint (juce::Graphics& g)
     g.drawText (gestureText, juce::Rectangle<int> (kMargin, kGestureLineY, kContentW, kLineH),
                 juce::Justification::centredLeft, true);
 
-    g.setColour (colour::separator);
+    g.setColour (colour::hairline);
     g.fillRect (kMargin, kSep1Y, kContentW, 1);
     g.fillRect (kMargin, kSep2Y, kContentW, 1);
 

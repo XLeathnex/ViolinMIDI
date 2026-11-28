@@ -45,6 +45,10 @@ public:
     /** One line under the heading, e.g. "Ausgang: MacBook Pro-Lautsprecher", or a problem text (amber). */
     void setOutputInfo (const juce::String& text, bool isProblem);
 
+    /** Shows values that changed elsewhere (a preset, a foot switch) without calling
+        onChange. A curve that is the same is left alone, so a drag goes on undisturbed. */
+    void setValues (const Values&);
+
     /** The pitch being played (fractional MIDI note) for the live line in both
         curves; negative while nothing is played. Repaints only when it moves. */
     void setPlayhead (float midiNote);

@@ -85,6 +85,10 @@ public:
     /** Both values back to the middle, and a new zero point with the next frame. */
     void reset() noexcept;
 
+    /** Puts the values where they are elsewhere already (0..1 each), so an axis
+        takes over from there instead of jumping. */
+    void setValues (float x, float y) noexcept;
+
 private:
     static int toValue (float v) noexcept;
 

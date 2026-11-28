@@ -311,7 +311,7 @@ void MappingPanel::paint (juce::Graphics& g)
 {
     g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
 
-    g.setColour (brand::colour::separator);
+    g.setColour (brand::colour::hairline);
     g.fillRect (kMargin, separatorY, getWidth() - 2 * kMargin, 1);
 
     const auto c = columnsFor (headerArea);

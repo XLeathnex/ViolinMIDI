@@ -189,7 +189,11 @@ float CurveEditor::valueAtY (float y) const
     const auto plot = plotArea();
     const float norm = juce::jlimit (0.0f, 1.0f, (plot.getBottom() - y) / juce::jmax (1.0f, plot.getHeight()));
     const float v = logScale ? low * std::pow (high / low, norm) : low + norm * (high - low);
-    return juce::jlimit (low, high, v);
+
+    // Rounded to what the settings file and the presets store exactly (whole Hz,
+    // thousandths of a share), so a saved curve reads back as the same curve.
+    const float rounded = logScale ? std::round (v) : std::round (v * 1000.0f) / 1000.0f;
+    return juce::jlimit (low, high, rounded);
 }
 
 juce::Point<float> CurveEditor::nodePosition (int index) const

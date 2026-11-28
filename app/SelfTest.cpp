@@ -3,6 +3,8 @@
 #include "Brand.h"
 #include "Engine.h"
 #include "PresetStore.h"
+#include "CameraSettings.h"
+#include "MidiRemote.h"
 #include "SettingsFields.h"
 #include "SettingsStore.h"
 
@@ -185,6 +187,51 @@ namespace
             juce::PropertiesFile fresh (folder.getChildFile ("fresh.settings"), options);
             const SettingsStore storeFresh (fresh);
             expect (fresh.getValue ("midiPortName") == brand::kName && ! fresh.containsKey ("stereoSpread"), "a new installation: VioLogic");
+
+            // 2.0 -> 1.5 -> 2.0: 1.5 writes schema 2 again but leaves "ensemble": a 50 % chosen in 2.0 stays.
+            juce::PropertiesFile visited (folder.getChildFile ("visited.settings"), options);
+            visited.setValue ("settingsSchema", 2);
+            visited.setValue ("ensemble", 1.0);
+            visited.setValue ("stereoSpread", 0.5);
+            const SettingsStore storeVisited (visited);
+            expect (std::abs (visited.getDoubleValue ("stereoSpread") - 0.5) < 1.0e-6, "after a visit to 1.5 a spread chosen in 2.0 stays");
+        }
+
+        {
+            // Voices edited in 2.0 for "Enger Dreiklang"; 1.5 then chose the seventh chord (it only knows "voicing").
+            juce::PropertiesFile::Options options;
+            options.millisecondsBeforeSaving = -1;
+            juce::PropertiesFile props (folder.getChildFile ("voicing.settings"), options);
+            vm::Settings edited;
+            edited.voicing = 0;
+            edited.voicingEdited = true;
+            edited.voicingVoices = vm::scale::presetMask (0) | vm::scale::maskBit (12);
+            fields::save (props, edited);
+            vm::Settings same;
+            fields::load (props, same);
+            expect (same.voicingEdited && vm::voicingMask (same) == edited.voicingVoices, "edited voices come back with their voicing");
+            props.setValue ("voicing", 1);
+            vm::Settings changed;
+            fields::load (props, changed);
+            expect (! changed.voicingEdited && vm::voicingMask (changed) == vm::scale::presetMask (1),
+                    "voices edited for another voicing are not played on this one");
+        }
+
+        {
+            // MIDI bindings of parameters another version has (1.5's "bodyKeep") are written back unchanged.
+            MidiRemote remote;
+            remote.fromJson ("[{\"id\":\"bodyKeep\",\"type\":\"cc\",\"channel\":0,\"number\":20},"
+                             "{\"id\":\"triad\",\"type\":\"note\",\"channel\":3,\"number\":60}]");
+            const auto json = remote.toJson();
+            expect (json.contains ("bodyKeep") && json.contains ("\"triad\""), "MIDI bindings of other versions are kept");
+
+            // The camera settings of 1.5 stay in the file for 1.5.
+            auto camera = CameraSettings::fromJson ("{\"heightTarget\":2,\"low\":-0.3,\"high\":0.7}");
+            expect (camera.yTarget == 11, "1.5's camera height on CC 11 becomes the Y axis on CC 11");
+            camera.xTarget = 74;
+            const auto cameraJson = camera.toJson();
+            expect (cameraJson.contains ("heightTarget") && cameraJson.contains ("\"high\"") && cameraJson.contains ("xTarget"),
+                    "1.5's camera keys are kept next to 2.0's");
         }
 
         folder.deleteRecursively();

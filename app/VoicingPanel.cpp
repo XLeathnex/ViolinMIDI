@@ -373,7 +373,7 @@ void VoicingPanel::paint (juce::Graphics& g)
     paintMatrix (g);
     paintInfo (g);
 
-    g.setColour (brand::colour::separator);
+    g.setColour (brand::colour::hairline);
     g.fillRect (kMargin, kSepY, kRowWidth, 1);
 
     paintLegend (g);

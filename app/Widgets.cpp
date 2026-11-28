@@ -378,7 +378,7 @@ void LiveDisplay::paint (juce::Graphics& g)
     g.fillAll (colour::display);
     const auto l = layout();
 
-    g.setColour (colour::separator);
+    g.setColour (colour::hairline);
     g.fillRect ((float) kNoteWidth, kPad, 1.0f, (float) getHeight() - 2.0f * kPad);
 
     paintNote (g, l.note);

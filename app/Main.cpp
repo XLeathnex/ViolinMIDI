@@ -249,11 +249,18 @@ public:
         if (arguments.contains ("--show-about"))
             juce::Timer::callAfterDelay (700, [this] { AboutPanel::show (getApplicationVersion(), mainWindow.get()); });
 
-        updater::startedSuccessfully();
+        // With audio, the window reports a good start once audio and MIDI are open
+        // (MainComponent::initialiseAudio); without, the window is all there is.
+        if (! options.openAudio)
+            updater::startedSuccessfully();
     }
 
     void shutdown() override
     {
+        // Quitting during the start animation is a good start too, not a failed one.
+        if (mainWindow != nullptr)
+            updater::startedSuccessfully();
+
        #if JUCE_MAC
         appMenu = nullptr;
        #endif

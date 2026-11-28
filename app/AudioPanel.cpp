@@ -256,6 +256,29 @@ juce::String AudioPanel::valueText (const Block& b) const
 }
 
 /** Everything but the main switch is dimmed and locked while the harmonizer is off. */
+void AudioPanel::setValues (const Values& v)
+{
+    onSwitch.set (v.on);
+    dropSwitch.set (v.dropVoicing);
+    dryKillSwitch.set (v.dryKill);
+
+    if (v.formant != formantEditor.getCurve())
+        formantEditor.setCurve (v.formant);
+    if (v.hiCut != hiCutEditor.getCurve())
+        hiCutEditor.setCurve (v.hiCut);
+
+    blocks[0].slider.setValue (v.ensemble * 100.0, juce::dontSendNotification);
+    blocks[1].slider.setValue (v.vibratoCoupling * 100.0, juce::dontSendNotification);
+    blocks[2].slider.setValue (v.stereoSpread * 100.0, juce::dontSendNotification);
+    blocks[3].slider.setValue (v.harmonyGainDb, juce::dontSendNotification);
+
+    current = v;
+    current.formant = formantEditor.getCurve();
+    current.hiCut = hiCutEditor.getCurve();
+    showEnabledState();
+    repaint();
+}
+
 void AudioPanel::showEnabledState()
 {
     const bool on = current.on;
@@ -316,7 +339,7 @@ void AudioPanel::paint (juce::Graphics& g)
                 juce::Justification::centredLeft, true);
 
     // hairlines: under the header, between the columns, between the groups on the right
-    g.setColour (colour::separator);
+    g.setColour (colour::hairline);
     g.fillRect (kMargin, kTopSepY, kContentW, 1);
     g.fillRect (kMargin + kLeftW + kColumnGap / 2, kColumnsY, 1, kColumnsBottom - kColumnsY);
     g.fillRect (kRightX, kSep1Y, kRightW, 1);

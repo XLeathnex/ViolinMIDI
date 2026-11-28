@@ -174,6 +174,9 @@ juce::String MidiRemote::toJson() const
         list.add (juce::var (entry.get()));
     }
 
+    for (const auto& entry : foreign)
+        list.add (entry);
+
     return juce::JSON::toString (juce::var (list), true);
 }
 
@@ -181,6 +184,7 @@ void MidiRemote::fromJson (const juce::String& json)
 {
     for (auto& b : bindings)
         b = Binding();
+    foreign.clear();
 
     const auto parsed = juce::JSON::parse (json);
     const auto* list = parsed.getArray();
@@ -192,10 +196,16 @@ void MidiRemote::fromJson (const juce::String& json)
         if (! entry.isObject())
             continue;
 
-        // Unknown ids come from newer or older versions; skipping them keeps the rest.
+        // Unknown ids come from newer or older versions (1.5's "bodyKeep", 2.0's
+        // "dropVoicing"): kept as they are and written back, so switching versions
+        // does not lose them.
         const int index = params::indexOf (entry["id"].toString());
         if (! juce::isPositiveAndBelow (index, (int) bindings.size()))
+        {
+            if (entry["id"].toString().isNotEmpty())
+                foreign.add (entry);
             continue;
+        }
 
         Binding b;
         const auto type = entry["type"].toString();

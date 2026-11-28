@@ -12,6 +12,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include "AudioHost.h"
+#include "AudioPanel.h"
 #include "CameraSettings.h"
 #include "CameraTracker.h"
 #include "MidiRemote.h"
@@ -140,6 +141,7 @@ private:
     void showVoicingPanel();
     void showTrackingPanel();
     void showAudioPanel();
+    AudioPanel::Values audioPanelValues() const;
     void showCamera();
     juce::String audioOutputInfo (bool& isProblem) const;
     void ensureAudioOutput();

@@ -80,6 +80,7 @@ private:
     std::unique_ptr<juce::MidiInput> input;
     juce::MidiDeviceListConnection deviceListConnection;
     std::vector<Binding> bindings;
+    juce::Array<juce::var> foreign;   // stored bindings of parameters this version does not have: kept for the versions that do
     int learning = -1;
     int programChan = 0;
 

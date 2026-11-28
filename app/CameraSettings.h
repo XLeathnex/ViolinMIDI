@@ -25,12 +25,17 @@ struct CameraSettings
     int  nodAction = actionNone;
     int  shakeAction = actionNone;
 
+    /** The object as read: keys of other versions (1.5's heightTarget, low, high,
+        smoothingMs, deadZone) are written back unchanged, so switching back keeps them. */
+    juce::var stored;
+
     static bool validTarget (int t) noexcept { return t == targetNone || t == targetHarmonyMix || (t >= 0 && t <= 127); }
 
     /** For the settings file. */
     juce::String toJson() const
     {
-        auto* o = new juce::DynamicObject();
+        auto* o = stored.getDynamicObject() != nullptr ? stored.getDynamicObject()->clone().release()
+                                                       : new juce::DynamicObject();
         o->setProperty ("device", deviceName);
         o->setProperty ("rightHand", pad.rightHand);
         o->setProperty ("padDeadZone", pad.deadZone);
@@ -52,6 +57,7 @@ struct CameraSettings
         const auto v = juce::JSON::parse (text);
         if (! v.isObject())
             return s;
+        s.stored = v;
 
         const auto has = [&v] (const char* key)
         {

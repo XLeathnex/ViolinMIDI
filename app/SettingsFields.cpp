@@ -3,6 +3,7 @@
 #include "Scale.h"
 #include "SettingsStore.h"
 
+#include <cmath>
 #include <functional>
 #include <vector>
 
@@ -129,6 +130,7 @@ namespace
     // Masks of voices and curves are not plain numbers: written by hand below.
     constexpr const char* kFreeVoicing = "freeVoicing";       // the semitone distances, e.g. "-12 0 7"
     constexpr const char* kVoicingVoices = "voicingVoices";   // since 2.0, the same for the preset voicing as played
+    constexpr const char* kVoicingVoicesOf = "voicingVoicesOf"; // since 2.0, the voicing those voices were made for
     constexpr const char* kFormantCurve = "formantCurve";     // since 2.0, "note:value" pairs, e.g. "55:0.05 69:0.2"
     constexpr const char* kHiCutCurve = "hiCutCurve";         // since 2.0, "note:Hz" pairs
 
@@ -301,6 +303,11 @@ void fromVar (const juce::var& object, vm::Settings& into)
         if (object.hasProperty (f.key))
             into.*(f.member) = curveFromVar (object.getProperty (f.key, juce::var()), f);
 
+    // A preset from before 2.0 ("ensemble" is new) at the old default spread of 50 %
+    // gets the new default, as the settings file does (SettingsStore::migrate).
+    if (! object.hasProperty ("ensemble") && std::abs ((double) object.getProperty ("stereoSpread", 0.0) - 0.5) < 1.0e-6)
+        into.stereoSpread = vm::Settings().stereoSpread;
+
     tidy (into);
 }
 
@@ -334,6 +341,11 @@ void load (juce::PropertiesFile& props, vm::Settings& into)
     if (! readVoices (kVoicingVoices, into.voicingVoices))
         into.voicingEdited = false;
 
+    // 1.5 knows neither key: after a visit there the voicing may have changed while the
+    // edited voices stayed. They belong to the voicing they were made for, or to none.
+    if (into.voicingEdited && props.getIntValue (kVoicingVoicesOf, -1) != into.voicing)
+        into.voicingEdited = false;
+
     for (const auto& f : kCurves)
         if (props.containsKey (f.key))
             into.*(f.member) = curveFromText (props.getValue (f.key), f);
@@ -365,6 +377,7 @@ void save (juce::PropertiesFile& props, const vm::Settings& e)
 
     writeVoices (kFreeVoicing, e.freeVoicing);
     writeVoices (kVoicingVoices, e.voicingVoices);
+    props.setValue (kVoicingVoicesOf, e.voicing);
 
     for (const auto& f : kCurves)
         props.setValue (f.key, curveText (e.*(f.member)));

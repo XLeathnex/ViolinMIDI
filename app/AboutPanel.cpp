@@ -194,7 +194,7 @@ void AboutPanel::paint (juce::Graphics& g)
     g.setColour (colour::secondary);
     g.drawText (U ("Fr\xc3\xbcher Archet und ViolinMIDI."), row (*this, kLegacyY, kLineH), juce::Justification::centred, false);
 
-    g.setColour (colour::separator);
+    g.setColour (colour::hairline);
     g.fillRect ((getWidth() - kRuleW) / 2, kRuleY, kRuleW, 1);
 
     g.setFont (brand::font (11.5f));

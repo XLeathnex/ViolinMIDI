@@ -213,7 +213,7 @@ void Engine::updateHarmonizerFrame (const Settings& s) noexcept
         for (int i = 0; i < stage.triadCount() && frame.voiceCount < Harmonizer::kMaxVoices; ++i)
             if (stage.triadNote (i) != lastRoot)      // the unison is the violin itself
                 frame.semitones[frame.voiceCount++] = (float) stage.triadNote (i) - frozenPitch;
-        applyDropVoicing (frame, stage.triadCount(), lastRoot, s);
+        applyDropVoicing (frame, lastRoot, s);
         return;
     }
 
@@ -232,7 +232,7 @@ void Engine::updateHarmonizerFrame (const Settings& s) noexcept
     for (int i = 0; i < stage.triadCount() && frame.voiceCount < Harmonizer::kMaxVoices; ++i)
         if (stage.triadNote (i) != root)
             frame.semitones[frame.voiceCount++] = (float) (stage.triadNote (i) - root) - drift;
-    applyDropVoicing (frame, stage.triadCount(), root, s);
+    applyDropVoicing (frame, root, s);
 }
 
 void Engine::analyseHop (const Settings& s, int offset, MidiEventList& out)
@@ -365,8 +365,12 @@ void Engine::appendAllNotesOff (const Settings& s, int offset, MidiEventList& ou
     }
 }
 
-void Engine::applyDropVoicing (Harmonizer::Frame& f, int chordNotes, int root, const Settings& s) noexcept
+void Engine::applyDropVoicing (Harmonizer::Frame& f, int root, const Settings& s) noexcept
 {
+    // The chord that sounds is the violin itself plus the voices, whichever MIDI
+    // channel the harmony uses (on the melody's channel the played note is not
+    // among the harmony notes, but it is still played).
+    const int chordNotes = f.voiceCount + 1;
     if (! s.dropVoicing || chordNotes < 3 || root < kDropFromNote || f.voiceCount < 1)
         return;
 

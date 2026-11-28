@@ -508,7 +508,7 @@ juce::Result installZip (const juce::File& zip, const juce::String& expectedVers
 
     const auto bundle = incoming.getChildFile (kBundleName);
     if (! executableIn (bundle).existsAsFile())
-        return juce::Result::fail (text ("Das Archiv enth\xc3\xa4lt keine ViolinMIDI-App."));
+        return juce::Result::fail (text ("Das Archiv enth\xc3\xa4lt keine VioLogic-App."));
 
     if (plistValue (infoPlist (bundle), "CFBundleIdentifier") != kBundleId)
         return juce::Result::fail (text ("Das Archiv enth\xc3\xa4lt eine andere App."));

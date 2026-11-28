@@ -249,7 +249,7 @@ void SettingsPanel::paint (juce::Graphics& g)
 {
     g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
 
-    g.setColour (brand::colour::separator);
+    g.setColour (brand::colour::hairline);
     g.fillRect (0, kMargin + kPageBarHeight + kMargin - 1, getWidth(), 1);
 }
 

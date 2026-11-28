@@ -37,7 +37,8 @@ namespace colour
     inline const juce::Colour control    { 0xff28292d };   // buttons, menus, tracks
     inline const juce::Colour controlHi  { 0xff313237 };   // hover
     inline const juce::Colour selected   { 0xff4a4c53 };   // chosen segment of a neutral choice
-    inline const juce::Colour separator  { 0xff2c2e33 };   // hairlines on the window
+    inline const juce::Colour separator  { 0xff2c2e33 };   // outlines of fields, lists and tooltips
+    inline const juce::Colour hairline   { 0xff47494e };   // separating lines: the brushed silver at about a quarter, as a fine line
     inline const juce::Colour grid       { 0xff1f2125 };
     inline const juce::Colour text       { 0xffe9edf2 };   // cool white
     inline const juce::Colour silver     { 0xffc8cdd4 };   // brushed silver: measured values, knobs, grid labels

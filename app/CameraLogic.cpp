@@ -154,6 +154,12 @@ void PadTracker::reset() noexcept
     *this = PadTracker();
 }
 
+void PadTracker::setValues (float x, float y) noexcept
+{
+    px = clampf (x, 0.0f, 1.0f);
+    py = clampf (y, 0.0f, 1.0f);
+}
+
 //==============================================================================
 Gesture GestureDetector::update (const Pose& p, const Settings& s) noexcept
 {

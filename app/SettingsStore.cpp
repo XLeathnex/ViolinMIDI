@@ -55,8 +55,11 @@ void SettingsStore::migrate()
     props.setValue (key::midiPortName, brand::kName);
 
     // 2.0: the voices of the audio harmonizer are spread +-35 % by default
-    // instead of +-50 %. A spread still at the old default moves with it.
-    if (schema >= 1 && props.containsKey (key::stereoSpread) && std::abs (props.getDoubleValue (key::stereoSpread) - 0.5) < 1.0e-6)
+    // instead of +-50 %. A spread still at the old default moves with it - once:
+    // 1.5 writes schema 2 again after a visit, but it leaves "ensemble", which
+    // only 2.0 writes, so a 50 % chosen in 2.0 is never taken for the old default.
+    if (schema >= 1 && ! props.containsKey ("ensemble") && props.containsKey (key::stereoSpread)
+        && std::abs (props.getDoubleValue (key::stereoSpread) - 0.5) < 1.0e-6)
         props.setValue (key::stereoSpread, (double) vm::Settings().stereoSpread);
 
     props.setValue (key::schema, kSchema);
