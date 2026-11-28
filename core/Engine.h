@@ -54,6 +54,14 @@ public:
         notes on. For the panic button and the master switch. */
     static void appendAllNotesOff (const Settings& settings, int sampleOffset, MidiEventList& out);
 
+    /** Drop voicing (Settings::dropVoicing), for the audio harmonizer: in a
+        chord of three notes or more (`chordNotes`, the played one counted if
+        the voicing has it) whose root is A4 or higher, the highest voice above
+        the violin sounds an octave lower - a viola or cello register under the
+        melody instead of a cluster high above it. Not if it would land on the
+        violin itself or on another voice. */
+    static void applyDropVoicing (Harmonizer::Frame& frame, int chordNotes, int root, const Settings& settings) noexcept;
+
     void prepare (double sampleRate);
 
     /** Clears the audio history without sending MIDI. */

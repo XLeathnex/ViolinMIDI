@@ -2,6 +2,9 @@
 // Plain C++17, no dependencies, so the same code runs in the app and in the tests.
 #pragma once
 
+#include "Curve.h"
+#include "Scale.h"
+
 #include <cstdint>
 #include <vector>
 
@@ -105,18 +108,21 @@ struct Settings
     // --- harmony voices on a second channel (the names date from when it was a triad only)
     bool         triad          = false;  ///< harmony on
     int          triadChannel   = 2;      ///< 1..16
-    int          voicing        = 0;      ///< index into scale::kVoicings, 0 .. scale::kVoicingCount - 1
+    int          voicing        = 0;      ///< index into scale::kVoicings, 0 .. scale::kVoicingCount - 1 (kFreeVoicing: "Total Free Voicing")
     HarmonyMode  harmonyMode    = HarmonyMode::Diatonic;
-    uint64_t     freeVoicing    = (1ull << 24) | (1ull << 28) | (1ull << 31); ///< free voicing: bit (semitones + 24) for -24 .. +24, at most 10 set
+    bool         voicingEdited  = false;  ///< voices were added to or taken away from the preset voicing: voicingVoices holds them ("FV")
+    uint64_t     voicingVoices  = scale::presetMask (0); ///< with voicingEdited: the voices of the preset voicing as played
+    uint64_t     freeVoicing    = scale::maskBit (0) | scale::maskBit (4) | scale::maskBit (7); ///< Total Free Voicing; both masks: bit (semitones + 24) for -24 .. +24, at most 10 set
     float        harmonyOffset  = 0.0f;   ///< harmony softer than the played note: -0.5 .. 0 (velocity and dynamics controllers are scaled by 1 + this)
 
     // --- the harmony as sound: the violin's own tone, shifted (Harmonizer)
     bool         audioHarmony   = false;
-    float        bodyKeep       = 1.0f;     ///< 1: the resonance of the body stays where it is, 0: it moves with the pitch
-    float        humanize       = 0.2f;     ///< small differences in pitch and time between the voices, 0 .. 1
+    Curve        formantCurve   = curve::defaultFormant(); ///< over the played pitch: share of the body resonance the voices keep (1: it stays where it is, 0: it moves with the pitch)
+    Curve        hiCutCurve     = curve::defaultHiCut();   ///< over the played pitch: cut-off in Hz of the low-pass (12 dB/oct) on the voices only
+    bool         dropVoicing    = true;     ///< chords of three notes or more, played from A4 up: the highest voice an octave lower
+    float        ensemble       = 1.0f;     ///< ensemble decoupling, 0 .. 1: micro-delay, slow detune and its own place for every voice
     float        vibratoCoupling = 1.0f;    ///< how much of the player's vibrato the voices follow, 0 .. 1
-    float        stereoSpread   = 0.5f;     ///< voices spread left and right, 0 .. 1
-    float        hiCutHz        = 10000.0f; ///< low-pass for the voices only, 4000 .. 16000
+    float        stereoSpread   = 0.35f;    ///< voices spread left and right, 0 .. 1 (0.35: +-35 %)
     float        harmonyGainDb  = 0.0f;     ///< level of the voices, -60 (treated as off) .. +6
     bool         dryKill        = false;    ///< the violin's own sound is left out of the output
 
@@ -127,6 +133,24 @@ struct Settings
     bool         freezeSolo     = false;
     bool         freezeHarmony  = false;
 };
+
+/** The voices of the harmony as a template (see scale::voices): the Total Free
+    Voicing's own, those of a preset voicing that were edited, or else the
+    preset's own. */
+inline uint64_t voicingMask (const Settings& s) noexcept
+{
+    const int v = scale::clampVoicing (s.voicing);
+    if (v == scale::kFreeVoicing)
+        return s.freeVoicing;
+    return s.voicingEdited ? s.voicingVoices : scale::presetMask (v);
+}
+
+/** A preset voicing whose voices differ from its own ("Dreiklang FV"). */
+inline bool voicingModified (const Settings& s) noexcept
+{
+    const int v = scale::clampVoicing (s.voicing);
+    return v != scale::kFreeVoicing && s.voicingEdited && scale::cleanFreeMask (s.voicingVoices) != scale::presetMask (v);
+}
 
 /** Limits used when sizing buffers; settings are clamped to these. */
 constexpr int   kAbsLowestNote  = 28;   // E1, 41.2 Hz

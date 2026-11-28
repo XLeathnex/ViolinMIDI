@@ -28,7 +28,8 @@ struct AppSettings
 class SettingsStore
 {
 public:
-    static constexpr int kSchema = 2;
+    /** 2: since 1.2 (the MIDI port's name is stored). 3: since 2.0 (VioLogic). */
+    static constexpr int kSchema = 3;
 
     explicit SettingsStore (juce::PropertiesFile& file);
 

@@ -13,11 +13,12 @@ else()
     FetchContent_MakeAvailable(JUCE)
 endif()
 
-# The product is called Archet. The bundle keeps its file name, executable and
-# identifier from before the rename (ViolinMIDI): versions 1.1.x look for exactly
-# these when they install an update, and macOS keeps the microphone permission.
-# What the user sees - menu bar, Dock, window - comes from CFBundleName below.
-set(VIOLINMIDI_DISPLAY_NAME "Archet")
+# The product is called VioLogic (1.2 to 1.5: Archet). The bundle keeps its file
+# name, executable and identifier from the first name (ViolinMIDI): every earlier
+# version looks for exactly these when it installs an update, and macOS keeps the
+# microphone permission. What the user sees - menu bar, Dock, window, "About" -
+# comes from CFBundleName below.
+set(VIOLINMIDI_DISPLAY_NAME "VioLogic")
 set(VIOLINMIDI_ICON "${PROJECT_SOURCE_DIR}/assets/AppIcon.png")
 set(VIOLINMIDI_ICON_ARGS)
 if(EXISTS "${VIOLINMIDI_ICON}")
@@ -38,6 +39,14 @@ juce_add_gui_app(ViolinMIDI
     PLIST_TO_MERGE "<plist version=\"1.0\"><dict><key>CFBundleName</key><string>${VIOLINMIDI_DISPLAY_NAME}</string><key>CFBundleDisplayName</key><string>${VIOLINMIDI_DISPLAY_NAME}</string><key>NSAppSleepDisabled</key><true/><key>LSMinimumSystemVersion</key><string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string></dict></plist>"
     NEEDS_CURL FALSE
     NEEDS_WEB_BROWSER FALSE)
+
+# Pictures the app draws: the emblem (icon, header, watermark, "About", camera)
+# and the start animation. Reached as VioLogicAssets::<file name> in the code.
+juce_add_binary_data(VioLogicAssets
+    HEADER_NAME VioLogicAssets.h
+    NAMESPACE VioLogicAssets
+    SOURCES
+        "${PROJECT_SOURCE_DIR}/assets/Emblem.png")
 
 target_sources(ViolinMIDI PRIVATE
     Main.cpp
@@ -88,6 +97,7 @@ endif()
 target_link_libraries(ViolinMIDI
     PRIVATE
         violinmidi_core
+        VioLogicAssets
         juce::juce_audio_utils
         juce::juce_cryptography
     PUBLIC

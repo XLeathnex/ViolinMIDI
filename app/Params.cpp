@@ -85,13 +85,29 @@ namespace
         list.push_back (choice ("scaleMode", "Skala", &E::scaleMode, 0, vm::scale::kScaleCount));
         list.push_back (toggle ("pentaSustain", "Pentatonik-Ton halten", &E::pentaSustain));
         list.push_back (toggle ("triad", "Harmonie", &E::triad));
-        list.push_back (choice ("voicing", "Voicing", &E::voicing, 0, vm::scale::kVoicingCount));
+        {
+            // A new voicing starts with its own voices: what was added to the previous one is not carried over.
+            Param p = choice ("voicing", "Voicing", &E::voicing, 0, vm::scale::kVoicingCount);
+            const auto setVoicing = p.set;
+            p.set = [setVoicing] (AppSettings& s, double v)
+            {
+                const int before = s.engine.voicing;
+                setVoicing (s, v);
+                if (s.engine.voicing != before)
+                {
+                    s.engine.voicingEdited = false;
+                    s.engine.voicingVoices = vm::scale::presetMask (s.engine.voicing);
+                }
+            };
+            list.push_back (p);
+        }
         list.push_back (enumChoice ("harmonyMode", "Harmonie-Modus", &E::harmonyMode, 2));
         list.push_back (choice ("triadChannel", "Harmonie-Kanal", &E::triadChannel, 1, 16));
         list.push_back (range ("harmonyOffset", "Harmonie-Offset", &E::harmonyOffset, -0.5, 0.0, 0.01));
         list.push_back (toggle ("audioHarmony", "Audio-Harmonizer", &E::audioHarmony));
         list.push_back (range ("harmonyGain", "Harmonie-Pegel (Audio)", &E::harmonyGainDb, -60.0, 6.0, 0.5));
-        list.push_back (range ("bodyKeep", "Korpus-Erhalt", &E::bodyKeep, 0.0, 1.0, 0.01));
+        list.push_back (toggle ("dropVoicing", "Drop-Voicing (Audio)", &E::dropVoicing));
+        list.push_back (range ("ensemble", "Ensemble-Entkopplung", &E::ensemble, 0.0, 1.0, 0.01));
         list.push_back (toggle ("dryKill", "Dry-Kill", &E::dryKill));
         list.push_back (toggle ("freezeSolo", "Freeze Solo", &E::freezeSolo));
         list.push_back (toggle ("freezeHarmony", "Freeze Harmonie", &E::freezeHarmony));

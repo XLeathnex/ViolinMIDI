@@ -8,6 +8,7 @@
 #include "Scale.h"
 #include "SettingsFields.h"
 #include "SettingsPanel.h"
+#include "Theme.h"
 #include "TrackingPanel.h"
 #include "VoicingPanel.h"
 
@@ -25,6 +26,8 @@ namespace
     constexpr int kTitleHeight = 18, kTitleGap = 12, kNameHeight = 16, kNameGap = 6, kControlHeight = 24, kItemGap = 12;
     constexpr int kTimerHz = 30;
     constexpr int kMpeItem = 17;   // the entry after the sixteen channels
+    constexpr int kEmblemSize = 30, kBrandGap = 8, kBrandWidth = 132;   // the emblem and word mark at the left of the header
+    constexpr float kWordMarkHeight = 17.0f;
 
     juce::String decimalComma (double value, int places)
     {
@@ -68,7 +71,9 @@ namespace
     };
 
     // The closed box shows the name; the steps stand in front of the description.
+    // "Total Free Voicing" comes first (spec 2.0); `index` keeps the files' numbering.
     const Described kVoicingMenu[] = {
+        { 12, "Total Free Voicing",     "Frei von \xe2\x88\x92" "24 bis +24 Halbt\xc3\xb6nen: bis zu 10 eigene Harmoniestimmen in der Matrix kombinieren und im Preset speichern." },
         { 0,  "Enger Dreiklang",        "1 \xe2\x80\x93 3 \xe2\x80\x93 5 \xc2\xb7 Kompakter, klassischer Chor- oder Streichersatz (diatonisch Dur/Moll je nach Tonstufe); funktioniert gut in mittleren bis hohen Lagen." },
         { 1,  "Vierklang / Septakkord", "1 \xe2\x80\x93 3 \xe2\x80\x93 5 \xe2\x80\x93 7 \xc2\xb7 Voller, jazzig-warmer 4-stimmiger Akkord (inkl. Septime); erzeugt automatisch Major-7-, Moll-7- und Dominant-7-Akkorde passend zur Tonart." },
         { 2,  "Open / Drop-2",          "1 \xe2\x80\x93 5 \xe2\x80\x93 10 \xc2\xb7 Sehr weiter, luftiger und monumentaler Klang; ideal f\xc3\xbcr schwebende Ambient-Pads und breite Synth-Teppiche ohne Frequenz-Mulm." },
@@ -80,9 +85,17 @@ namespace
         { 8,  "Doppel-Sub",             "Oktave \xe2\x88\x92" "12 / \xe2\x88\x92" "24 \xc2\xb7 Massiver, extrem tiefer Sub-Bass-Teppich \xc3\xbc" "ber zwei Oktaven nach unten." },
         { 9,  "Oktav-Klammer",          "Oktave \xe2\x88\x92" "12 / +12 \xc2\xb7 Rahmt den gespielten Ton gleichzeitig nach unten und oben ein \xe2\x80\x93 sehr breit und orchestraler Orgel-Charakter." },
         { 10, "Hohe Oktave",            "Oktave +12 \xc2\xb7 Doppelt die Melodie eine Oktave h\xc3\xb6her f\xc3\xbcr brillante Pr\xc3\xa4senz und Durchsetzungskraft." },
-        { 11, "Shimmer-Oktaven",        "Oktave +12 / +24 \xc2\xb7 Glitzernde, strahlende H\xc3\xb6henstaffelung \xc3\xbc" "ber zwei Oktaven nach oben f\xc3\xbcr sph\xc3\xa4rische Leads und Pads." },
-        { 12, "Free-Voicing \xe2\x80\xa6",         "\xc3\x96" "ffnet ein Auswahlfeld von \xe2\x88\x92" "24 bis +24 Halbt\xc3\xb6nen, in dem du bis zu 10 eigene Harmoniestimmen frei kombinieren und im Preset speichern kannst." }
+        { 11, "Shimmer-Oktaven",        "Oktave +12 / +24 \xc2\xb7 Glitzernde, strahlende H\xc3\xb6henstaffelung \xc3\xbc" "ber zwei Oktaven nach oben f\xc3\xbcr sph\xc3\xa4rische Leads und Pads." }
     };
+
+    /** The voicing's name as the menu shows it. */
+    juce::String voicingName (int index)
+    {
+        for (const auto& entry : kVoicingMenu)
+            if (entry.index == index)
+                return U (entry.name);
+        return {};
+    }
 }
 
 //==============================================================================
@@ -121,27 +134,36 @@ MainComponent::MainComponent (const Options& o) : options (o)
     addAndMakeVisible (*presetBar);
 
     audioButton.setButtonText (U ("Audio-Harmonizer \xe2\x80\xa6"));
-    audioButton.setTooltip (U ("Spielt die Harmoniestimmen mit dem eigenen Klang der Geige \xc3\xbc" "ber den Audio-Ausgang. Ein Klick \xc3\xb6" "ffnet die Einstellungen."));
+    audioButton.setTooltip (U ("Spielt die Harmoniestimmen mit dem eigenen Klang der Geige \xc3\xbc" "ber den Audio-Ausgang. "
+                               "Der Punkt zeigt, ob er an (gr\xc3\xbcn) oder aus (rot) ist. Ein Klick \xc3\xb6" "ffnet sein Fenster mit Kurven und Reglern."));
     audioButton.setWantsKeyboardFocus (false);
     audioButton.onClick = [this] { showAudioPanel(); };
     addAndMakeVisible (audioButton);
 
     cameraButton.setButtonText (U ("Kamera \xe2\x80\xa6"));
-    cameraButton.setTooltip (U ("Kamera-Steuerung: die H\xc3\xb6he des Geigenhalses als Controller, Nicken und Kopfsch\xc3\xbctteln als Schalter. Ein Klick \xc3\xb6" "ffnet das Kamera-Fenster."));
+    cameraButton.setTooltip (U ("Kamera-Steuerung: Die Geigenschnecke steuert zwei Controller wie ein XY-Pad, Nicken und Kopfsch\xc3\xbctteln schalten Funktionen. "
+                                "Der Punkt zeigt, ob sie an (gr\xc3\xbcn) oder aus (rot) ist. Ein Klick \xc3\xb6" "ffnet das Kamera-Fenster."));
     cameraButton.setWantsKeyboardFocus (false);
     cameraButton.onClick = [this] { showCamera(); };
     addAndMakeVisible (cameraButton);
 
     cameraSettings = CameraSettings::fromJson (settings.cameraJson);
     camera.onFrame = [this] (const juce::Image& preview, const cam::Pose& pose) { cameraFrame (preview, pose); };
+    padHud.setAxisNames (padTargetName (cameraSettings.xTarget), padTargetName (cameraSettings.yTarget));
 
     addAndMakeVisible (display);
+    padHud.setInterceptsMouseClicks (false, false);
+    addAndMakeVisible (padHud);
 
-    setupLatch (masterButton, {}, U ("Schaltet die Tonh\xc3\xb6henerkennung ein und aus. Aus beendet sofort alle Noten. Leertaste."));
+    setupLatch (masterButton, {}, U ("Hauptschalter der Tonh\xc3\xb6henerkennung: gr\xc3\xbcn an, rot aus. Aus beendet sofort alle Noten "
+                                     "und sendet nichts mehr. Leertaste."));
+    setSwitchStyle (masterButton, SwitchStyle::status);
     const auto freezeTip = U ("Freeze (Halten): Friert den aktuell gespielten Ton bzw. Akkord als endlos stehenden Klangteppich (Drone) ein, "
                               "w\xc3\xa4hrend du auf der anderen Spur frei weiterspielen kannst. Klingt gerade nichts, wird der n\xc3\xa4" "chste Ton eingefroren.");
     setupLatch (freezeSoloButton, "Solo halten", freezeTip);
     setupLatch (freezeHarmonyButton, "Harmonie halten", freezeTip);
+    setSwitchStyle (freezeSoloButton, SwitchStyle::latch);
+    setSwitchStyle (freezeHarmonyButton, SwitchStyle::latch);
 
     // --- input
     addColumn ("Eingang");
@@ -199,7 +221,8 @@ MainComponent::MainComponent (const Options& o) : options (o)
     setupValue (tuningValue);
     setupSlider (tuningSlider, 430.0, 450.0, 0.5);
     tuningSlider.setDoubleClickReturnValue (true, 440.0);
-    tuningSlider.setTooltip (U ("Doppelklick: 440 Hz."));
+    tuningSlider.setTooltip (U ("Kammerton A: der Bezugston, nach dem die T\xc3\xb6ne den MIDI-Noten zugeordnet werden. "
+                                "Auf die Stimmung der Band oder des Orchesters stellen. Doppelklick: 440 Hz."));
     addItem (tuningName, tuningSlider, &tuningValue);
 
     setupName (octaveName, "Tracking-Filter");
@@ -286,12 +309,14 @@ MainComponent::MainComponent (const Options& o) : options (o)
     setupSegments (filterButtons, filterRow, 3, { "Aus", "An" },
                    { U ("Jeder gespielte Ton wird gesendet."),
                      U ("Nur die T\xc3\xb6ne der gew\xc3\xa4hlten Skala werden angeschlagen. Ein fremder Ton beendet die Note.") });
+    setSwitchStyle (filterRow, SwitchStyle::status);
     addItem (filterName, filterRow);
 
     setupName (holdName, "Pentatonik-Ton halten");
     setupSegments (holdButtons, holdRow, 4, { "Aus", "An" },
                    { U ("Ein fremder Ton beendet die Note."),
                      U ("Bei Pentatonik- und Blues-Skala: Der letzte g\xc3\xbcltige Ton klingt weiter, solange der Pegel \xc3\xbc" "ber der Out-Schwelle liegt, bis der n\xc3\xa4" "chste g\xc3\xbcltige Ton kommt.") });
+    setSwitchStyle (holdRow, SwitchStyle::status);
     addItem (holdName, holdRow);
 
     // --- harmony
@@ -300,21 +325,24 @@ MainComponent::MainComponent (const Options& o) : options (o)
     setupSegments (triadButtons, triadRow, 5, { "Aus", "An" },
                    { U ("Keine Harmoniestimmen."),
                      U ("Zu jedem Ton erklingen die Stimmen des gew\xc3\xa4hlten Voicings auf dem Harmonie-Kanal, immer vollst\xc3\xa4ndig, also mit dem gespielten Ton.") });
+    setSwitchStyle (triadRow, SwitchStyle::status);
     addItem (triadName, triadRow);
 
     setupName (voicingName, "Voicing");
     for (const auto& entry : kVoicingMenu)
         addDescribedItem (voicingBox, entry.index + 1, U (entry.name), U (entry.description));
-    voicingBox.setTooltip (U ("Welche Stimmen die Harmonie bildet. In der Liste steht unter jedem Namen die Klangwirkung."));
+    voicingBox.setTooltip (U ("Welche Stimmen die Harmonie bildet. In der Liste steht unter jedem Namen die Klangwirkung. "
+                              "Nach der Wahl \xc3\xb6" "ffnet sich die Intervall-Matrix: Dort lassen sich T\xc3\xb6ne hinzuf\xc3\xbcgen oder abw\xc3\xa4hlen. "
+                              "\xe2\x80\x9e" "FV\xe2\x80\x9c hinter dem Namen zeigt, dass die Harmonieart so ver\xc3\xa4ndert wurde."));
     voicingBox.onChange = [this]
     {
         pushSettings();
-        if (! loading && settings.engine.voicing == vm::scale::kFreeVoicing)
-            showVoicingPanel();
+        if (! loading)
+            showVoicingPanel();   // every type opens its matrix (2.0)
     };
     voicingEditButton.setButtonText (U ("\xe2\x80\xa6"));
-    voicingEditButton.setTooltip (U ("Free-Voicing: \xc3\x96" "ffnet ein Auswahlfeld von \xe2\x88\x92" "24 bis +24 Halbt\xc3\xb6nen, in dem du bis zu 10 eigene "
-                                     "Harmoniestimmen frei kombinieren und im Preset speichern kannst."));
+    voicingEditButton.setTooltip (U ("\xc3\x96" "ffnet die Intervall-Matrix der gew\xc3\xa4hlten Harmonieart von \xe2\x88\x92" "24 bis +24 Halbt\xc3\xb6nen: "
+                                     "bis zu 10 Stimmen hinzuf\xc3\xbcgen oder abw\xc3\xa4hlen, im Preset gespeichert."));
     voicingEditButton.setWantsKeyboardFocus (false);
     voicingEditButton.onClick = [this] { showVoicingPanel(); };
     voicingRow.set (voicingBox, voicingEditButton, 30, true);
@@ -386,6 +414,7 @@ MainComponent::MainComponent (const Options& o) : options (o)
     setupName (velocityName, U ("Feste Anschlagst\xc3\xa4rke"));
     setupValue (velocityValue);
     setupSlider (velocitySlider, 1.0, 127.0, 1.0);
+    velocitySlider.setTooltip (U ("Die Anschlagst\xc3\xa4rke (Velocity) jeder Note bei \xe2\x80\x9e" "Dynamik: Feste St\xc3\xa4rke\xe2\x80\x9c, 1 bis 127."));
     addItem (velocityName, velocitySlider, &velocityValue);
 
     // --- status line
@@ -399,6 +428,8 @@ MainComponent::MainComponent (const Options& o) : options (o)
     updateButton.setColour (juce::TextButton::buttonColourId, colour::accent);
     updateButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff1a1a1a));
     updateButton.setWantsKeyboardFocus (false);
+    updateButton.setTooltip (U ("L\xc3\xa4" "dt die neue Version und startet die App damit neu. Die bisherige Version bleibt unter "
+                                "\xe2\x80\x9e" "Einstellungen\xe2\x80\x9c w\xc3\xa4hlbar."));
     updateButton.onClick = [this]
     {
         const auto version = updates.availableUpdate();
@@ -462,9 +493,31 @@ MainComponent::MainComponent (const Options& o) : options (o)
     }
 
     startTimerHz (kTimerHz);
-    if (! options.openAudio)
-        return;
 
+    // The start animation covers the window while audio and MIDI come up. They start a moment
+    // after the window has been drawn, so the animation is on screen while that takes its time.
+    splash = std::make_unique<SplashOverlay>();
+    splash->setStatusText (options.openAudio ? U ("Audio und MIDI werden gestartet \xe2\x80\xa6") : U ("Vorschau ohne Audio"));
+    splash->onFinished = [this] { splash = nullptr; };
+    addAndMakeVisible (*splash);
+    splash->setBounds (getLocalBounds());
+
+    if (! options.openAudio)
+    {
+        splash->finish();
+        return;
+    }
+
+    juce::Component::SafePointer<MainComponent> safeThis (this);
+    juce::Timer::callAfterDelay (150, [safeThis]
+    {
+        if (safeThis != nullptr)
+            safeThis->initialiseAudio();
+    });
+}
+
+void MainComponent::initialiseAudio()
+{
     // --- MIDI out, MIDI in and audio in
     midiPortOk = host.openMidiPort (settings.midiPortName);
     remote.setInput (settings.midiInputName);
@@ -488,6 +541,10 @@ MainComponent::MainComponent (const Options& o) : options (o)
 
     // A quiet look for a newer version. Nothing is installed without a click.
     updates.check();
+
+    audioReady = true;
+    if (splash != nullptr)
+        splash->finish();
 }
 
 MainComponent::~MainComponent()
@@ -495,8 +552,11 @@ MainComponent::~MainComponent()
     stopTimer();
     camera.onFrame = nullptr;
     camera.stop();
+    splash = nullptr;
     if (cameraDialog != nullptr)
         delete cameraDialog.getComponent();
+    if (audioDialog != nullptr)
+        delete audioDialog.getComponent();
     if (settingsDialog != nullptr)
         delete settingsDialog.getComponent();
 
@@ -681,7 +741,15 @@ void MainComponent::pushSettings()
     e.triadChannel = juce::jlimit (1, 16, triadChannelBox.getSelectedId());
     e.keyRoot = juce::jlimit (0, 11, rootBox.getSelectedId() - 1);
     e.scaleMode = vm::scale::clampMode (scaleBox.getSelectedId() - 1);
-    e.voicing = vm::scale::clampVoicing (voicingBox.getSelectedId() - 1);
+
+    // A newly chosen harmony type starts with its own voices; what was added to the previous one is not carried over.
+    const int voicing = vm::scale::clampVoicing (voicingBox.getSelectedId() - 1);
+    if (voicing != e.voicing)
+    {
+        e.voicingEdited = false;
+        e.voicingVoices = vm::scale::presetMask (voicing);
+    }
+    e.voicing = voicing;
     e.inputGainDb = (float) gainSlider.getValue();
     e.fixedVelocity = juce::roundToInt (velocitySlider.getValue());
     e.a4Hz = (float) tuningSlider.getValue();
@@ -723,16 +791,17 @@ void MainComponent::pushSettings()
     dim (e.triad, harmonyModeRow, harmonyModeName);
     dim (e.triad, triadChannelBox, triadChannelName);
     dim (e.triad, offsetSlider, offsetName, &offsetValue);
-    voicingEditButton.setEnabled (e.triad && e.voicing == vm::scale::kFreeVoicing);
+    voicingEditButton.setEnabled (e.triad);
     freezeSoloButton.setEnabled (e.enabled);
     freezeHarmonyButton.setEnabled (e.enabled && e.triad);
 
     masterButton.setButtonText (e.enabled ? "Erkennung an" : "Erkennung aus");
     octaveButton.setButtonText (juce::String (e.jumpGuard ? "Sprungschutz an" : "Sprungschutz aus") + U ("  \xc2\xb7  ")
                                 + milliseconds (e.bridgeMs) + U (" \xe2\x80\xa6"));
-    audioButton.setToggleState (e.audioHarmony, quiet);
-    cameraButton.setToggleState (cameraSettings.enabled, quiet);
+    setStatusDot (audioButton, e.audioHarmony);
+    setStatusDot (cameraButton, cameraSettings.enabled);
     updateValueLabels();
+    refreshVoicingLabel();
 
     if (presetBar->currentSlot() > 0)
         presetBar->setModified (image (e) != presetImage);
@@ -756,6 +825,20 @@ void MainComponent::updateValueLabels()
     releaseValue.setText (duration (e.releaseMs), quiet);
     const int percent = juce::roundToInt (e.harmonyOffset * 100.0f);
     offsetValue.setText ((percent < 0 ? U ("\xe2\x88\x92") : juce::String()) + juce::String (std::abs (percent)) + " %", quiet);
+}
+
+void MainComponent::refreshVoicingLabel()
+{
+    // The closed box names the type and marks one whose voices were changed ("Enger Dreiklang FV").
+    const auto& e = settings.engine;
+    const int current = vm::scale::clampVoicing (e.voicing);
+    for (const auto& entry : kVoicingMenu)
+    {
+        const auto wanted = U (entry.name) + (entry.index == current && vm::voicingModified (e) ? " FV" : "");
+        if (voicingBox.getItemText (voicingBox.indexOfItemId (entry.index + 1)) != wanted)
+            voicingBox.changeItemText (entry.index + 1, wanted);
+    }
+    voicingBox.setSelectedId (current + 1, juce::dontSendNotification);   // shows a changed text of the same entry
 }
 
 void MainComponent::setMode (int index)
@@ -855,13 +938,39 @@ void MainComponent::showSettings()
 
 void MainComponent::showVoicingPanel()
 {
-    auto panel = std::make_unique<VoicingPanel> (settings.engine.freeVoicing);
+    const auto& e = settings.engine;
+    const int voicing = vm::scale::clampVoicing (e.voicing);
+    const bool isFree = voicing == vm::scale::kFreeVoicing;
+
+    auto panel = std::make_unique<VoicingPanel> (voicingName (voicing), isFree, vm::voicingMask (e), vm::scale::presetMask (voicing),
+                                                 e.harmonyMode == vm::HarmonyMode::Diatonic);
     juce::Component::SafePointer<MainComponent> safeThis (this);
-    panel->onChange = [safeThis] (uint64_t mask)
+
+    // The panel belongs to the type it was opened for; if the type changes meanwhile
+    // (a foot switch, a preset), its clicks no longer apply.
+    panel->onChange = [safeThis, voicing, isFree] (uint64_t mask)
     {
-        if (safeThis == nullptr)
+        if (safeThis == nullptr || safeThis->settings.engine.voicing != voicing)
             return;
-        safeThis->settings.engine.freeVoicing = mask;
+        auto& engine = safeThis->settings.engine;
+        if (isFree)
+        {
+            engine.freeVoicing = mask;
+        }
+        else
+        {
+            engine.voicingVoices = mask;
+            engine.voicingEdited = true;
+        }
+        safeThis->pushSettings();
+    };
+    panel->onReset = [safeThis, voicing, isFree]
+    {
+        if (safeThis == nullptr || safeThis->settings.engine.voicing != voicing || isFree)
+            return;
+        auto& engine = safeThis->settings.engine;
+        engine.voicingEdited = false;
+        engine.voicingVoices = vm::scale::presetMask (voicing);
         safeThis->pushSettings();
     };
     juce::CallOutBox::launchAsynchronously (std::move (panel), voicingRow.getScreenBounds(), nullptr);
@@ -917,35 +1026,43 @@ juce::String MainComponent::audioOutputInfo (bool& isProblem) const
 
 void MainComponent::showAudioPanel()
 {
+    if (audioDialog != nullptr)
+    {
+        audioDialog->toFront (true);
+        return;
+    }
+
     const auto& e = settings.engine;
     AudioPanel::Values values;
     values.on = e.audioHarmony;
-    values.bodyKeep = e.bodyKeep;
-    values.humanize = e.humanize;
+    values.formant = e.formantCurve;
+    values.hiCut = e.hiCutCurve;
+    values.dropVoicing = e.dropVoicing;
+    values.ensemble = e.ensemble;
     values.vibratoCoupling = e.vibratoCoupling;
     values.stereoSpread = e.stereoSpread;
-    values.hiCutHz = e.hiCutHz;
     values.harmonyGainDb = e.harmonyGainDb;
     values.dryKill = e.dryKill;
 
     bool problem = false;
     const auto info = audioOutputInfo (problem);
-    auto panel = std::make_unique<AudioPanel> (values, info);
+    auto* panel = new AudioPanel (values, info);
     panel->setOutputInfo (info, problem);
 
     juce::Component::SafePointer<MainComponent> safeThis (this);
-    juce::Component::SafePointer<AudioPanel> safePanel (panel.get());
+    juce::Component::SafePointer<AudioPanel> safePanel (panel);
     panel->onChange = [safeThis, safePanel] (const AudioPanel::Values& v)
     {
         if (safeThis == nullptr)
             return;
         auto& engine = safeThis->settings.engine;
         engine.audioHarmony = v.on;
-        engine.bodyKeep = v.bodyKeep;
-        engine.humanize = v.humanize;
+        engine.formantCurve = v.formant;
+        engine.hiCutCurve = v.hiCut;
+        engine.dropVoicing = v.dropVoicing;
+        engine.ensemble = v.ensemble;
         engine.vibratoCoupling = v.vibratoCoupling;
         engine.stereoSpread = v.stereoSpread;
-        engine.hiCutHz = v.hiCutHz;
         engine.harmonyGainDb = v.harmonyGainDb;
         engine.dryKill = v.dryKill;
         safeThis->pushSettings();
@@ -957,7 +1074,15 @@ void MainComponent::showAudioPanel()
             safePanel->setOutputInfo (text, isProblem);
         }
     };
-    juce::CallOutBox::launchAsynchronously (std::move (panel), audioButton.getScreenBounds(), nullptr);
+
+    juce::DialogWindow::LaunchOptions launch;
+    launch.content.setOwned (panel);
+    launch.dialogTitle = "Audio-Harmonizer";
+    launch.dialogBackgroundColour = colour::window;
+    launch.escapeKeyTriggersCloseButton = true;
+    launch.useNativeTitleBar = true;
+    launch.resizable = false;
+    audioDialog = launch.launchAsync();
 }
 
 /** The harmonizer needs somewhere to play. Until now the app only listened. */
@@ -1041,9 +1166,10 @@ vm::Settings MainComponent::hostSettings() const
 {
     auto e = settings.engine;
 
-    // "Harmonie-Mix" from the camera: the height of the violin fades the harmony
-    // between half as loud (low) and the level that is set (high).
-    if (cameraSettings.enabled && cameraSettings.heightTarget == CameraSettings::targetHarmonyLevel)
+    // "Harmonie-Mix" from the camera: an axis of the pad fades the harmony
+    // between half as loud (0 %) and the level that is set (100 %).
+    if (cameraSettings.enabled && (cameraSettings.xTarget == CameraSettings::targetHarmonyMix
+                                   || cameraSettings.yTarget == CameraSettings::targetHarmonyMix))
     {
         e.harmonyOffset = -0.5f + cameraMix * (e.harmonyOffset + 0.5f);
         e.harmonyGainDb -= 24.0f * (1.0f - cameraMix);
@@ -1051,28 +1177,49 @@ vm::Settings MainComponent::hostSettings() const
     return e;
 }
 
+juce::String MainComponent::padTargetName (int target)
+{
+    if (target == CameraSettings::targetHarmonyMix)
+        return "Harmonie-Mix";
+    if (target >= 0 && target <= 127)
+        return "CC " + juce::String (target);
+    return "aus";
+}
+
 void MainComponent::applyCameraSettings (const CameraSettings& next)
 {
     const bool wasOn = cameraSettings.enabled;
     const bool deviceChanged = next.deviceName != cameraSettings.deviceName;
+    const bool targetsChanged = next.xTarget != cameraSettings.xTarget || next.yTarget != cameraSettings.yTarget;
     cameraSettings = next;
     settings.cameraJson = cameraSettings.toJson();
     store->save (settings);
 
+    if (targetsChanged)
+        for (auto& sent : padSent)
+            sent = -1;   // a new target gets the value at the next movement
+
+    if (cameraSettings.xTarget != CameraSettings::targetHarmonyMix && cameraSettings.yTarget != CameraSettings::targetHarmonyMix)
+        cameraMix = 1.0f;
+
     if (cameraSettings.enabled && (! wasOn || deviceChanged))
     {
-        heightTracker.reset();
+        // Switching on: where the violin rests now is the zero point (spec 6). The values stay where they were.
+        pad.recalibrate();
         gestures.reset();
-        cameraMix = 1.0f;
+        cameraHasPicture = false;
         cameraSettings.enabled = camera.start (cameraSettings.deviceName);   // false: see camera.error()
     }
     else if (! cameraSettings.enabled && wasOn)
     {
         camera.stop();
+        cameraHasPicture = false;
         cameraMix = 1.0f;
+        padHud.setState (pad.x(), pad.y(), false);
     }
 
-    cameraButton.setToggleState (cameraSettings.enabled, juce::dontSendNotification);
+    padHud.setAxisNames (padTargetName (cameraSettings.xTarget), padTargetName (cameraSettings.yTarget));
+    setStatusDot (cameraButton, cameraSettings.enabled);
     host.setSettings (hostSettings());
     updateCameraStatus();
 }
@@ -1090,6 +1237,25 @@ void MainComponent::updateCameraStatus()
         panel->setStatus (U ("Die Kamera ist aus."), false);
     else
         panel->setStatus (U ("Die Kamera l\xc3\xa4uft. Das Bild bleibt auf diesem Mac."), false);
+
+    panel->setWaiting (cameraSettings.enabled && ! cameraHasPicture);
+}
+
+void MainComponent::sendPadValue (int slot, int target, int value)
+{
+    if (slot < 0 || slot >= AudioHost::kControllerSlots || value == padSent[slot])
+        return;
+    padSent[slot] = value;
+
+    if (target >= 0 && target <= 127)
+    {
+        host.sendController (slot, target, value);
+    }
+    else if (target == CameraSettings::targetHarmonyMix)
+    {
+        cameraMix = (float) value / 127.0f;
+        host.setSettings (hostSettings());
+    }
 }
 
 void MainComponent::cameraFrame (const juce::Image& preview, const cam::Pose& pose)
@@ -1097,22 +1263,18 @@ void MainComponent::cameraFrame (const juce::Image& preview, const cam::Pose& po
     if (! cameraSettings.enabled)
         return;
 
-    int value = -1;
-    if (heightTracker.update (pose, cameraSettings.height, value))
+    if (preview.isValid() && ! cameraHasPicture)
     {
-        switch (cameraSettings.heightTarget)
-        {
-            case CameraSettings::targetModWheel:    host.sendController (1, value); break;
-            case CameraSettings::targetExpression:  host.sendController (11, value); break;
-            case CameraSettings::targetFilter:      host.sendController (74, value); break;
-            case CameraSettings::targetHarmonyLevel:
-                cameraMix = (float) value / 127.0f;
-                host.setSettings (hostSettings());
-                break;
-            default: break;
-        }
-        cameraValue = value;
+        cameraHasPicture = true;
+        updateCameraStatus();
     }
+
+    if (pad.update (pose, cameraSettings.pad))
+    {
+        sendPadValue (0, cameraSettings.xTarget, pad.valueX());
+        sendPadValue (1, cameraSettings.yTarget, pad.valueY());
+    }
+    padHud.setState (pad.x(), pad.y(), pad.active());
 
     const auto gesture = gestures.update (pose, cameraSettings.gestures);
     if (gesture == cam::Gesture::Nod)         cameraAction (cameraSettings.nodAction);
@@ -1120,7 +1282,7 @@ void MainComponent::cameraFrame (const juce::Image& preview, const cam::Pose& po
 
     if (cameraDialog != nullptr)
         if (auto* panel = dynamic_cast<CameraPanel*> (cameraDialog->getContentComponent()))
-            panel->showFrame (preview, pose, cameraValue, gesture);
+            panel->showFrame (preview, pose, pad, gesture);
 }
 
 void MainComponent::cameraAction (int action)
@@ -1155,6 +1317,11 @@ void MainComponent::showCamera()
         if (safeThis != nullptr)
             safeThis->applyCameraSettings (next);
     };
+    panel->onRecalibrate = [safeThis]
+    {
+        if (safeThis != nullptr)
+            safeThis->pad.recalibrate();
+    };
 
     juce::DialogWindow::LaunchOptions launch;
     launch.content.setOwned (panel);
@@ -1166,7 +1333,7 @@ void MainComponent::showCamera()
     cameraDialog = launch.launchAsync();
     updateCameraStatus();
 
-    // Layout check without a camera: a made-up picture of a player.
+    // Layout check without a camera: a made-up picture of a player, the hand moved up and to the right.
     if (options.demo)
     {
         juce::Image picture (juce::Image::RGB, 320, 240, true);
@@ -1175,9 +1342,9 @@ void MainComponent::showCamera()
             g.fillAll (juce::Colour (0xff2a2a2a));
         }
 
+        const auto at = [] (float x, float y) { cam::Point point; point.x = x; point.y = y; point.confidence = 0.9f; return point; };
         cam::Pose pose;
         pose.valid = true;
-        const auto at = [] (float x, float y) { cam::Point point; point.x = x; point.y = y; point.confidence = 0.9f; return point; };
         pose.nose = at (0.50f, 0.30f);
         pose.leftEye = at (0.53f, 0.27f);
         pose.rightEye = at (0.47f, 0.27f);
@@ -1190,8 +1357,19 @@ void MainComponent::showCamera()
         pose.leftWrist = at (0.82f, 0.38f);
         pose.rightElbow = at (0.30f, 0.66f);
         pose.rightWrist = at (0.46f, 0.62f);
-        panel->showFrame (picture, pose, 84, cam::Gesture::Nod);
+
+        cam::PadTracker demoPad;
+        demoPad.update (pose, cameraSettings.pad);        // zero point
+        for (int i = 1; i <= 8; ++i)
+        {
+            pose.timeSec = i / 15.0;
+            pose.leftWrist = at (0.82f + 0.012f * (float) i, 0.38f - 0.012f * (float) i);
+            demoPad.update (pose, cameraSettings.pad);
+        }
+        panel->showFrame (picture, pose, demoPad, cam::Gesture::Nod);
         panel->setStatus (U ("Die Kamera l\xc3\xa4uft. Das Bild bleibt auf diesem Mac."), false);
+        padHud.setAxisNames (padTargetName (cameraSettings.xTarget), padTargetName (cameraSettings.yTarget));
+        padHud.setState (demoPad.x(), demoPad.y(), true);
     }
 }
 
@@ -1284,8 +1462,8 @@ AudioHost::Meters MainComponent::demoMeters()
 
     if (e.triad)
     {
-        const auto chord = vm::scale::voices (step.note, e.keyRoot, e.scaleMode, e.voicing, e.harmonyMode == vm::HarmonyMode::Diatonic,
-                                              e.freeVoicing, ! e.mpe && e.triadChannel == e.midiChannel);
+        const auto chord = vm::scale::voices (step.note, e.keyRoot, e.scaleMode, vm::voicingMask (e), e.harmonyMode == vm::HarmonyMode::Diatonic,
+                                              ! e.mpe && e.triadChannel == e.midiChannel);
         m.triadCount = chord.count;
         for (int i = 0; i < chord.count; ++i)
             m.triad[i] = chord.notes[i];
@@ -1317,8 +1495,13 @@ void MainComponent::timerCallback()
     for (int i = 0; i < vm::scale::kMaxVoices; ++i)
         f.triad[i] = m.triad[i];
 
-    display.push (f, e.a4Hz);
+    display.push (f, e.a4Hz, e.gateDb, e.gateOffDb);
     levelMeter.update (f.levelDb, e.gateDb, e.gateOffDb, clipTicks > 0);
+
+    // The harmonizer's curves show where the played pitch is on them.
+    if (audioDialog != nullptr)
+        if (auto* panel = dynamic_cast<AudioPanel*> (audioDialog->getContentComponent()))
+            panel->setPlayhead (f.heard || f.active ? f.pitch : -1.0f);
 
     // the level as a number; a change of a whole dB is enough to read it
     if (std::abs (f.levelDb - lastLevelDb) >= 1.0f)
@@ -1342,7 +1525,9 @@ void MainComponent::updateStatus (const AudioHost::Meters& m)
     const auto update = updates.statusText();
     const auto& e = settings.engine;
 
-    if (error.isNotEmpty())
+    if (options.openAudio && ! audioReady)
+        text = U ("Audio und MIDI werden gestartet \xe2\x80\xa6");
+    else if (error.isNotEmpty())
         text = U ("Audio-Fehler: ") + error;
     else if (options.openAudio && ! options.demo && ! m.running)
         text = U ("Kein Audio-Eingang. Unter \xe2\x80\x9e" "Einstellungen\xe2\x80\x9c das Interface w\xc3\xa4hlen.");
@@ -1357,7 +1542,10 @@ void MainComponent::updateStatus (const AudioHost::Meters& m)
     else
         problem = false;
 
-    if (! problem)
+    if (options.openAudio && ! audioReady)
+        problem = false;
+
+    if (! problem && audioReady == options.openAudio)
     {
         if (update.isNotEmpty())
         {
@@ -1405,6 +1593,20 @@ void MainComponent::paint (juce::Graphics& g)
 {
     g.fillAll (colour::window);
 
+    // the emblem and the word mark "VioLogic" ("Vio" in crimson, "Logic" in silver, as the logo writes it)
+    const auto header = juce::Rectangle<int> (kMargin, 0, kBrandWidth, kHeaderHeight);
+    brand::drawEmblem (g, header.withWidth (kEmblemSize).withSizeKeepingCentre (kEmblemSize, kEmblemSize).toFloat());
+    {
+        const auto wordFont = font (kWordMarkHeight, true);
+        const float x = (float) (header.getX() + kEmblemSize + kBrandGap);
+        const float baseline = (float) header.getCentreY() + kWordMarkHeight * 0.33f;
+        g.setFont (wordFont);
+        g.setColour (colour::crimson);
+        g.drawSingleLineText ("Vio", juce::roundToInt (x), juce::roundToInt (baseline));
+        g.setColour (colour::silver);
+        g.drawSingleLineText ("Logic", juce::roundToInt (x + juce::GlyphArrangement::getStringWidth (wordFont, "Vio")), juce::roundToInt (baseline));
+    }
+
     // hairlines under the presets and under the display
     g.setColour (juce::Colours::black.withAlpha (0.6f));
     g.fillRect (0, kHeaderHeight - 1, getWidth(), 1);
@@ -1432,14 +1634,16 @@ void MainComponent::resized()
 
     auto header = area.removeFromTop (kHeaderHeight);
     auto headerRow = header.withSizeKeepingCentre (header.getWidth() - 2 * kMargin, PresetBar::kHeight);
-    cameraButton.setBounds (headerRow.removeFromRight (96));
+    headerRow.removeFromLeft (kBrandWidth + 16);   // the emblem and the word mark, painted
+    cameraButton.setBounds (headerRow.removeFromRight (108));
     headerRow.removeFromRight (8);
-    audioButton.setBounds (headerRow.removeFromRight (164));
+    audioButton.setBounds (headerRow.removeFromRight (176));
     headerRow.removeFromRight (24);
     presetBar->setBounds (headerRow.withWidth (juce::jmin (640, headerRow.getWidth())));
 
     const auto displayArea = area.removeFromTop (kDisplayHeight);
     display.setBounds (displayArea);
+    padHud.setBounds (display.overlayArea().translated (displayArea.getX(), displayArea.getY()));
 
     // under the note: the master switch, below it the two freeze buttons side by side
     const int buttonsWidth = LiveDisplay::kNoteWidth - 2 * kMargin;
@@ -1479,4 +1683,7 @@ void MainComponent::resized()
             inner.removeFromTop (kItemGap);
         }
     }
+
+    if (splash != nullptr)
+        splash->setBounds (getLocalBounds());
 }

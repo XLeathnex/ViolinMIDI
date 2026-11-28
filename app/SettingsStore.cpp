@@ -8,7 +8,6 @@
 namespace key
 {
     // The engine settings and their keys are in SettingsFields.cpp.
-    constexpr const char* bendMode      = "bendMode";
     constexpr const char* audioState    = "audioState";
     // added in 1.2
     constexpr const char* schema        = "settingsSchema";
@@ -25,6 +24,8 @@ namespace key
     // added in 1.5
     constexpr const char* camera        = "camera";
     constexpr const char* bufferChosen  = "bufferChosen";
+    // an engine setting (SettingsFields.cpp) whose default changed in 2.0
+    constexpr const char* stereoSpread  = "stereoSpread";
 }
 
 SettingsStore::SettingsStore (juce::PropertiesFile& file) : props (file)
@@ -43,14 +44,20 @@ int SettingsStore::bendRangeIndex (float semitones)
 
 void SettingsStore::migrate()
 {
-    if (props.getIntValue (key::schema, 0) >= kSchema)
+    const int schema = props.getIntValue (key::schema, 0);
+    if (schema >= kSchema)
         return;
 
-    // Files from 1.0 and 1.1 have no schema number. Someone who used those
-    // versions has set up MainStage for the port called "ViolinMIDI": keep it.
-    const bool earlierInstall = props.containsKey (key::bendMode) || props.containsKey (key::audioState);
-    if (! props.containsKey (key::midiPortName))
-        props.setValue (key::midiPortName, earlierInstall ? brand::kLegacyName : brand::kName);
+    // 2.0: the app is called VioLogic, and so is its MIDI port - for every
+    // installation, also those set up for "Archet" or "ViolinMIDI" (MainStage
+    // needs the port chosen once more). Until 1.5 the port of an installation
+    // from 1.0 or 1.1 kept the name "ViolinMIDI".
+    props.setValue (key::midiPortName, brand::kName);
+
+    // 2.0: the voices of the audio harmonizer are spread +-35 % by default
+    // instead of +-50 %. A spread still at the old default moves with it.
+    if (schema >= 1 && props.containsKey (key::stereoSpread) && std::abs (props.getDoubleValue (key::stereoSpread) - 0.5) < 1.0e-6)
+        props.setValue (key::stereoSpread, (double) vm::Settings().stereoSpread);
 
     props.setValue (key::schema, kSchema);
 }

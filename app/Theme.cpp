@@ -8,6 +8,29 @@ using namespace brand;
 namespace
 {
     constexpr float kRadius = kControlRadius;   // controls; nothing else in the app is rounded more
+    const juce::Identifier kSwitchStyleKey ("viologicSwitchStyle");
+    const juce::Identifier kStatusDotKey ("viologicStatusDot");
+}
+
+void setSwitchStyle (juce::Component& c, SwitchStyle style)
+{
+    c.getProperties().set (kSwitchStyleKey, (int) style);
+    c.repaint();
+}
+
+SwitchStyle switchStyle (const juce::Component& c)
+{
+    const auto v = c.getProperties()[kSwitchStyleKey];
+    return v.isInt() ? (SwitchStyle) (int) v : SwitchStyle::plain;
+}
+
+void setStatusDot (juce::Button& b, bool moduleOn)
+{
+    const auto before = b.getProperties()[kStatusDotKey];
+    if (before.isBool() && (bool) before == moduleOn)
+        return;
+    b.getProperties().set (kStatusDotKey, moduleOn);
+    b.repaint();
 }
 
 Theme::Theme()
@@ -32,11 +55,11 @@ Theme::Theme()
     setColour (juce::ComboBox::outlineColourId, colour::control);
     setColour (juce::ComboBox::textColourId, colour::text);
     setColour (juce::ComboBox::arrowColourId, colour::secondary);
-    setColour (juce::ComboBox::focusedOutlineColourId, colour::secondary);
+    setColour (juce::ComboBox::focusedOutlineColourId, colour::crimson);
 
     setColour (juce::PopupMenu::backgroundColourId, colour::control);
     setColour (juce::PopupMenu::textColourId, colour::text);
-    setColour (juce::PopupMenu::highlightedBackgroundColourId, colour::selected);
+    setColour (juce::PopupMenu::highlightedBackgroundColourId, colour::crimsonDim);
     setColour (juce::PopupMenu::highlightedTextColourId, colour::text);
 
     setColour (juce::Slider::textBoxTextColourId, colour::text);
@@ -46,7 +69,7 @@ Theme::Theme()
     setColour (juce::TextEditor::backgroundColourId, colour::display);
     setColour (juce::TextEditor::textColourId, colour::secondary);
     setColour (juce::TextEditor::outlineColourId, colour::separator);
-    setColour (juce::TextEditor::focusedOutlineColourId, colour::secondary);
+    setColour (juce::TextEditor::focusedOutlineColourId, colour::crimson);
     setColour (juce::TextEditor::highlightColourId, colour::selected);
     setColour (juce::CaretComponent::caretColourId, colour::text);
 
@@ -80,6 +103,13 @@ void Theme::drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce
     const bool on = b.getToggleState();
 
     auto fill = background;
+    switch (switchStyle (b))
+    {
+        case SwitchStyle::status: fill = on ? colour::emeraldDim : colour::crimsonDim; break;
+        case SwitchStyle::latch:  fill = on ? colour::emeraldDim : background; break;
+        case SwitchStyle::plain:  break;
+    }
+
     if (! b.isEnabled())
         fill = fill.withMultipliedAlpha (0.5f);
     else if (down)
@@ -103,6 +133,16 @@ void Theme::drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce
         g.setColour (colour::window.withAlpha (0.8f));
         g.fillRect (r.getRight() - 1.0f, r.getY() + 5.0f, 1.0f, r.getHeight() - 10.0f);
     }
+
+    // the status dot of a module button
+    const auto dot = b.getProperties()[kStatusDotKey];
+    if (dot.isBool())
+    {
+        const float d = 7.0f;
+        const auto area = juce::Rectangle<float> (d, d).withCentre ({ r.getX() + 13.0f, r.getCentreY() });
+        g.setColour (((bool) dot ? colour::emerald : colour::crimson).withMultipliedAlpha (b.isEnabled() ? 1.0f : 0.5f));
+        g.fillEllipse (area);
+    }
 }
 
 //==============================================================================
@@ -121,6 +161,13 @@ void Theme::drawComboBox (juce::Graphics& g, int width, int height, bool, int, i
     const auto r = juce::Rectangle<float> ((float) width, (float) height);
     g.setColour (box.isEnabled() && box.isMouseOver (true) ? colour::controlHi : colour::control);
     g.fillRoundedRectangle (r, kRadius);
+
+    // the active field: a fine crimson frame while its list is open or it has the keyboard
+    if (box.isEnabled() && (box.isPopupActive() || box.hasKeyboardFocus (true)))
+    {
+        g.setColour (colour::crimson);
+        g.drawRoundedRectangle (r.reduced (0.5f), kRadius, 1.0f);
+    }
 
     // up/down marks, as macOS pop-up buttons have
     const float cx = (float) width - 13.0f, cy = (float) height * 0.5f;
@@ -163,14 +210,18 @@ void Theme::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int he
 
     g.setColour (colour::control.brighter (0.12f));
     g.fillRoundedRectangle (track, 2.0f);
-    g.setColour (enabled ? colour::secondary : colour::tertiary.withAlpha (0.5f));
+    g.setColour (enabled ? colour::crimson : colour::tertiary.withAlpha (0.5f));
     g.fillRoundedRectangle (track.withRight (sliderPos), 2.0f);
 
-    // the round knob of a macOS slider, with a thin dark edge instead of a shadow
+    // the round knob of a macOS slider in brushed silver, with a thin dark edge instead of a shadow
     const auto thumb = juce::Rectangle<float> (14.0f, 14.0f).withCentre ({ sliderPos, cy });
-    g.setColour (juce::Colours::black.withAlpha (0.45f));
+    g.setColour (juce::Colours::black.withAlpha (0.5f));
     g.fillEllipse (thumb.expanded (1.0f));
-    g.setColour (enabled ? colour::text : colour::tertiary);
+    if (enabled)
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xfff4f6f8), thumb.getX(), thumb.getY(),
+                                                 colour::silver.darker (0.18f), thumb.getX(), thumb.getBottom(), false));
+    else
+        g.setColour (colour::tertiary);
     g.fillEllipse (thumb);
 }
 

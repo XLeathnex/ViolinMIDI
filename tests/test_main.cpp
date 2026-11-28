@@ -92,6 +92,7 @@ double periodMs (double note) { return 1000.0 / noteToHz (note); }
 #include "test_tracker2.h"
 #include "test_tracker3.h"
 #include "test_harmonizer.h"
+#include "test_v2.h"
 
 //==============================================================================
 // Single bowed notes over the whole range of a 7-string violin.
@@ -1154,7 +1155,12 @@ const TestCase kTests[] = {
     { "ring-on interrupted", ringOnInterrupted },
     { "harmony offset", harmonyOffsetTests },
     { "stage random 3", stageRandom3 },
-    { "camera height", cameraHeight },
+    { "camera pad", cameraPad },
+    { "voicing templates", voicingTemplates },
+    { "voicing voices in the stage", voicingVoicesStage },
+    { "curves", curves },
+    { "drop voicing", dropVoicing },
+    { "ensemble and high-cut", ensembleAndHiCut },
     { "camera gestures", cameraGestures },
 };
 

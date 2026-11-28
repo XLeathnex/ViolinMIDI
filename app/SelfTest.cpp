@@ -4,6 +4,7 @@
 #include "Engine.h"
 #include "PresetStore.h"
 #include "SettingsFields.h"
+#include "SettingsStore.h"
 
 #include <atomic>
 #include <cmath>
@@ -85,6 +86,14 @@ namespace
         wanted.articulation = vm::Articulation::Strong;
         wanted.dynamicsTarget = vm::DynamicsTarget::ModAndExpression;
         wanted.dynamicsSmoothingMs = 120.0f;
+        // 2.0: the voices of a preset voicing as edited, the two curves, drop voicing, ensemble
+        wanted.voicingEdited = true;
+        wanted.voicingVoices = vm::scale::maskBit (-12) | vm::scale::maskBit (0) | vm::scale::maskBit (7);
+        wanted.formantCurve = vm::curve::make ({ { 55.0f, 0.1f }, { 70.5f, 0.35f }, { 88.0f, 0.9f } });
+        wanted.hiCutCurve = vm::curve::make ({ { 55.0f, 9000.0f }, { 80.0f, 2800.0f } });
+        wanted.dropVoicing = false;
+        wanted.ensemble = 0.4f;
+        wanted.stereoSpread = 0.7f;
         const auto image = [] (const vm::Settings& s) { return juce::JSON::toString (fields::toVar (s), true); };
 
         const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory)
@@ -144,8 +153,38 @@ namespace
             old.setValue ("keyFilter", true);
             vm::Settings migrated;
             fields::load (old, migrated);
-            expect (migrated.gateOffDb == -44.0f, "an older file ends notes 6 dB below its threshold");
+            expect (std::abs (migrated.gateOffDb + 44.0f) < 1.0e-4f, "an older file ends notes 6 dB below its threshold");
             expect (migrated.scaleMode == 11 && ! migrated.pentatonic, "the pentatonic switch becomes the pentatonic scale");
+            expect (! migrated.voicingEdited && vm::voicingMask (migrated) == vm::scale::presetMask (migrated.voicing),
+                    "a file from before 2.0 plays the voicing's own voices");
+            expect (migrated.formantCurve == vm::curve::defaultFormant() && migrated.hiCutCurve == vm::curve::defaultHiCut(),
+                    "a file from before 2.0 starts with the standard curves");
+        }
+
+        {
+            // A settings file of 1.5 (schema 2): the port is renamed, an untouched spread moves to the new default.
+            juce::PropertiesFile::Options options;
+            options.millisecondsBeforeSaving = -1;
+            juce::PropertiesFile old15 (folder.getChildFile ("v15.settings"), options);
+            old15.setValue ("settingsSchema", 2);
+            old15.setValue ("midiPortName", "Archet");
+            old15.setValue ("stereoSpread", 0.5);
+            const SettingsStore store15 (old15);
+            expect (old15.getValue ("midiPortName") == brand::kName && old15.getIntValue ("settingsSchema") == SettingsStore::kSchema,
+                    "1.5 -> 2.0: the MIDI port is called VioLogic");
+            expect (std::abs (old15.getDoubleValue ("stereoSpread") - 0.35) < 1.0e-6, "1.5 -> 2.0: the untouched spread of 50 % becomes 35 %");
+
+            juce::PropertiesFile chosen (folder.getChildFile ("chosen.settings"), options);
+            chosen.setValue ("settingsSchema", 2);
+            chosen.setValue ("midiPortName", "ViolinMIDI");
+            chosen.setValue ("stereoSpread", 0.8);
+            const SettingsStore storeChosen (chosen);
+            expect (chosen.getValue ("midiPortName") == brand::kName && std::abs (chosen.getDoubleValue ("stereoSpread") - 0.8) < 1.0e-6,
+                    "1.5 -> 2.0: a spread the player chose stays");
+
+            juce::PropertiesFile fresh (folder.getChildFile ("fresh.settings"), options);
+            const SettingsStore storeFresh (fresh);
+            expect (fresh.getValue ("midiPortName") == brand::kName && ! fresh.containsKey ("stereoSpread"), "a new installation: VioLogic");
         }
 
         folder.deleteRecursively();
@@ -184,7 +223,7 @@ SelfTest::~SelfTest()
 
 void SelfTest::start()
 {
-    say (juce::String ("ViolinMIDI self-test, version ") + JUCE_APPLICATION_VERSION_STRING);
+    say (juce::String ("VioLogic (ViolinMIDI) self-test, version ") + JUCE_APPLICATION_VERSION_STRING);
     say ("fonts: " + brand::fontDescription());
     engineOk = engineCheck();
     engineOk = storageCheck() && engineOk;

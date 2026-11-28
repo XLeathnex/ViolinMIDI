@@ -113,18 +113,84 @@ namespace
             number ("releaseMs",     &E::releaseMs, 0.0, 3000.0),
             number ("harmonyOffset", &E::harmonyOffset, -0.5, 0.0),
             flag   ("audioHarmony",  &E::audioHarmony),
-            number ("bodyKeep",      &E::bodyKeep, 0.0, 1.0),
-            number ("humanize",      &E::humanize, 0.0, 1.0),
             number ("vibratoCoupling", &E::vibratoCoupling, 0.0, 1.0),
             number ("stereoSpread",  &E::stereoSpread, 0.0, 1.0),
-            number ("hiCutHz",       &E::hiCutHz, 4000.0, 16000.0),
             number ("harmonyGainDb", &E::harmonyGainDb, -60.0, 6.0),
-            flag   ("dryKill",       &E::dryKill)
+            flag   ("dryKill",       &E::dryKill),
+            // since 2.0 (1.5 wrote "bodyKeep", "humanize" and "hiCutHz", now the two
+            // curves and "ensemble"; the old keys stay in the file for 1.5)
+            flag   ("dropVoicing",   &E::dropVoicing),
+            number ("ensemble",      &E::ensemble, 0.0, 1.0),
+            flag   ("voicingEdited", &E::voicingEdited)
         };
         return list;
     }
 
-    constexpr const char* kFreeVoicing = "freeVoicing";   // the semitone distances, e.g. "-12 0 7"
+    // Masks of voices and curves are not plain numbers: written by hand below.
+    constexpr const char* kFreeVoicing = "freeVoicing";       // the semitone distances, e.g. "-12 0 7"
+    constexpr const char* kVoicingVoices = "voicingVoices";   // since 2.0, the same for the preset voicing as played
+    constexpr const char* kFormantCurve = "formantCurve";     // since 2.0, "note:value" pairs, e.g. "55:0.05 69:0.2"
+    constexpr const char* kHiCutCurve = "hiCutCurve";         // since 2.0, "note:Hz" pairs
+
+    struct CurveField
+    {
+        const char* key;
+        vm::Curve E::* member;
+        float low, high;
+        vm::Curve (*fallback)();
+    };
+
+    const CurveField kCurves[] = {
+        { kFormantCurve, &E::formantCurve, vm::curve::kFormantLow, vm::curve::kFormantHigh, &vm::curve::defaultFormant },
+        { kHiCutCurve,   &E::hiCutCurve,   vm::curve::kHiCutLowHz, vm::curve::kHiCutHighHz, &vm::curve::defaultHiCut }
+    };
+
+    juce::String curveText (const vm::Curve& c)
+    {
+        juce::StringArray points;
+        for (int i = 0; i < c.count; ++i)
+            points.add (juce::String (c.x[i], 2) + ":" + juce::String (c.y[i], 4));
+        return points.joinIntoString (" ");
+    }
+
+    vm::Curve curveFromText (const juce::String& text, const CurveField& f)
+    {
+        vm::Curve c;
+        for (const auto& token : juce::StringArray::fromTokens (text, " ", ""))
+        {
+            if (c.count >= vm::Curve::kMaxPoints || ! token.containsChar (':'))
+                continue;
+            c.x[c.count] = token.upToFirstOccurrenceOf (":", false, false).getFloatValue();
+            c.y[c.count] = token.fromFirstOccurrenceOf (":", false, false).getFloatValue();
+            ++c.count;
+        }
+        return vm::curve::sanitised (c, f.low, f.high, f.fallback());
+    }
+
+    juce::var curveVar (const vm::Curve& c)
+    {
+        juce::Array<juce::var> points;
+        for (int i = 0; i < c.count; ++i)
+            points.add (juce::Array<juce::var> { juce::var ((double) c.x[i]), juce::var ((double) c.y[i]) });
+        return points;
+    }
+
+    bool isNumber (const juce::var& v) { return v.isInt() || v.isInt64() || v.isDouble(); }
+
+    vm::Curve curveFromVar (const juce::var& value, const CurveField& f)
+    {
+        vm::Curve c;
+        if (const auto* points = value.getArray())
+            for (const auto& point : *points)
+                if (const auto* pair = point.getArray(); pair != nullptr && pair->size() == 2 && c.count < vm::Curve::kMaxPoints
+                                                         && isNumber ((*pair)[0]) && isNumber ((*pair)[1]))
+                {
+                    c.x[c.count] = (float) (double) (*pair)[0];
+                    c.y[c.count] = (float) (double) (*pair)[1];
+                    ++c.count;
+                }
+        return vm::curve::sanitised (c, f.low, f.high, f.fallback());
+    }
 
     juce::Array<int> freeVoices (uint64_t mask)
     {
@@ -147,6 +213,13 @@ namespace
     /** What has to hold between fields, whatever the file said. */
     void tidy (E& e)
     {
+        e.voicing = vm::scale::clampVoicing (e.voicing);
+        e.freeVoicing = vm::scale::cleanFreeMask (e.freeVoicing);
+        // Edited voices without the flag (or a file from before 2.0): the preset's own.
+        e.voicingVoices = e.voicingEdited ? vm::scale::cleanFreeMask (e.voicingVoices) : vm::scale::presetMask (e.voicing);
+        for (const auto& f : kCurves)
+            e.*(f.member) = vm::curve::sanitised (e.*(f.member), f.low, f.high, f.fallback());
+
         e.bendRangeSemis = SettingsStore::kBendRanges[SettingsStore::bendRangeIndex (e.bendRangeSemis)];
         e.gateOffDb = juce::jmin (e.gateOffDb, e.gateDb);
         e.highestNote = E().highestNote;
@@ -181,6 +254,14 @@ juce::var toVar (const vm::Settings& e)
         voices.add (s);
     object->setProperty (kFreeVoicing, voices);
 
+    juce::Array<juce::var> played;
+    for (int s : freeVoices (e.voicingVoices))
+        played.add (s);
+    object->setProperty (kVoicingVoices, played);
+
+    for (const auto& f : kCurves)
+        object->setProperty (f.key, curveVar (e.*(f.member)));
+
     return juce::var (object);
 }
 
@@ -198,14 +279,27 @@ void fromVar (const juce::var& object, vm::Settings& into)
             f.set (into, juce::jlimit (f.low, f.high, (double) value));
     }
 
-    if (const auto* voices = object.getProperty (kFreeVoicing, juce::var()).getArray())
+    const auto readVoices = [&object] (const char* key, uint64_t& mask)
     {
+        const auto* voices = object.getProperty (key, juce::var()).getArray();
+        if (voices == nullptr)
+            return false;
+
         juce::Array<int> semitones;
         for (const juce::var& v : *voices)
-            if (v.isInt() || v.isInt64() || v.isDouble())
+            if (isNumber (v))
                 semitones.add (juce::roundToInt ((double) v));
-        into.freeVoicing = freeMask (semitones);
-    }
+        mask = freeMask (semitones);
+        return true;
+    };
+
+    readVoices (kFreeVoicing, into.freeVoicing);
+    if (! readVoices (kVoicingVoices, into.voicingVoices))
+        into.voicingEdited = false;
+
+    for (const auto& f : kCurves)
+        if (object.hasProperty (f.key))
+            into.*(f.member) = curveFromVar (object.getProperty (f.key, juce::var()), f);
 
     tidy (into);
 }
@@ -223,14 +317,26 @@ void load (juce::PropertiesFile& props, vm::Settings& into)
             f.set (into, juce::jlimit (f.low, f.high, props.getDoubleValue (f.key)));
     }
 
-    if (props.containsKey (kFreeVoicing))
+    const auto readVoices = [&props] (const char* key, uint64_t& mask)
     {
+        if (! props.containsKey (key))
+            return false;
+
         juce::Array<int> semitones;
-        for (const auto& token : juce::StringArray::fromTokens (props.getValue (kFreeVoicing), " ", ""))
+        for (const auto& token : juce::StringArray::fromTokens (props.getValue (key), " ", ""))
             if (token.isNotEmpty())
                 semitones.add (token.getIntValue());
-        into.freeVoicing = freeMask (semitones);
-    }
+        mask = freeMask (semitones);
+        return true;
+    };
+
+    readVoices (kFreeVoicing, into.freeVoicing);
+    if (! readVoices (kVoicingVoices, into.voicingVoices))
+        into.voicingEdited = false;
+
+    for (const auto& f : kCurves)
+        if (props.containsKey (f.key))
+            into.*(f.member) = curveFromText (props.getValue (f.key), f);
 
     // Until 1.3 a note ended 6 dB below the one threshold there was.
     if (! props.containsKey ("gateOffDb"))
@@ -249,10 +355,19 @@ void save (juce::PropertiesFile& props, const vm::Settings& e)
         else                                    props.setValue (f.key, v);
     }
 
-    juce::StringArray voices;
-    for (int s : freeVoices (e.freeVoicing))
-        voices.add (juce::String (s));
-    props.setValue (kFreeVoicing, voices.joinIntoString (" "));
+    const auto writeVoices = [&props] (const char* key, uint64_t mask)
+    {
+        juce::StringArray voices;
+        for (int s : freeVoices (mask))
+            voices.add (juce::String (s));
+        props.setValue (key, voices.joinIntoString (" "));
+    };
+
+    writeVoices (kFreeVoicing, e.freeVoicing);
+    writeVoices (kVoicingVoices, e.voicingVoices);
+
+    for (const auto& f : kCurves)
+        props.setValue (f.key, curveText (e.*(f.member)));
 }
 
 } // namespace fields

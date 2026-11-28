@@ -61,12 +61,14 @@ public:
         typeBox.addItem ("Controller", 2);
         typeBox.addItem ("Note", 3);
         typeBox.onChange = [this] { commit(); };
+        typeBox.setTooltip (text ("Womit dieser Regler gesteuert wird: ein Controller (Fu\xc3\x9f" "pedal, Fader) oder eine Note (Taster)."));
         addAndMakeVisible (typeBox);
 
         channelBox.addItem ("Alle", 1);
         for (int channel = 1; channel <= 16; ++channel)
             channelBox.addItem (juce::String (channel), channel + 1);
         channelBox.onChange = [this] { commit(); };
+        channelBox.setTooltip (text ("Auf welchem MIDI-Kanal die Nachricht kommen muss. \xe2\x80\x9e" "Alle\xe2\x80\x9c nimmt jeden Kanal."));
         addAndMakeVisible (channelBox);
 
         // The field is drawn by paint() with the combo corners; the editor stays see-through.
@@ -90,8 +92,10 @@ public:
             numberLabel.setText (juce::String (number), juce::dontSendNotification);
             commit();
         };
+        numberLabel.setTooltip (text ("Nummer des Controllers oder der Note, 0 bis 127. Doppelklick zum Eintippen."));
         addAndMakeVisible (numberLabel);
 
+        learnButton.setTooltip (text ("\xc3\x9c" "bernimmt die n\xc3\xa4" "chste eintreffende Nachricht (Controller oder Note). Noch einmal klicken bricht ab."));
         learnButton.onClick = [this] { remote.startLearn (index); };
         addAndMakeVisible (learnButton);
 
@@ -178,6 +182,7 @@ MappingPanel::MappingPanel (MidiRemote& midiRemote)
         if (juce::isPositiveAndBelow (index, inputNames.size()) && inputNames[index] != remote.inputName())
             remote.setInput (inputNames[index]);
     };
+    inputBox.setTooltip (text ("Der MIDI-Eingang f\xc3\xbcr Fu\xc3\x9f" "pedal oder Controller. Ein abgezogenes Ger\xc3\xa4t bleibt gew\xc3\xa4hlt und wird wieder ge\xc3\xb6" "ffnet, sobald es da ist."));
     addAndMakeVisible (inputBox);
 
     lastLabel.setFont (brand::font (13.0f));
@@ -185,6 +190,7 @@ MappingPanel::MappingPanel (MidiRemote& midiRemote)
     lastLabel.setBorderSize ({ 1, 0, 1, 0 });
     lastLabel.setJustificationType (juce::Justification::centredLeft);
     lastLabel.setMinimumHorizontalScale (0.8f);
+    lastLabel.setTooltip (text ("Die zuletzt empfangene Nachricht: zum Pr\xc3\xbc" "fen, ob das Pedal ankommt und was es sendet."));
     addAndMakeVisible (lastLabel);
 
     const auto presetTip = text ("Ein Program Change auf diesem Kanal l\xc3\xa4" "dt das Preset mit dieser Nummer: "

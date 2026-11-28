@@ -10,7 +10,6 @@ namespace
 {
     constexpr float  kMinConfidence = 0.3f;     // below this a point is a guess
     constexpr float  kMinShoulderWidth = 0.03f; // of the frame: narrower, and nothing can be measured against it
-    constexpr float  kMinCalibratedSpan = 0.05f; // shoulder widths between "low" and "high"
     constexpr double kLongestStep = 0.5;        // s: a longer pause between frames starts afresh
 
     // Gestures. All sizes are in shoulder widths, so the distance to the camera does not matter.
@@ -39,7 +38,7 @@ namespace
 }
 
 //==============================================================================
-bool HeightTracker::measure (const Pose& p, bool rightHand, float& out) noexcept
+bool PadTracker::measure (const Pose& p, bool rightHand, float& dx, float& dy) noexcept
 {
     const Point& wrist = rightHand ? p.rightWrist : p.leftWrist;
     float midX = 0.0f, midY = 0.0f, width = 0.0f;
@@ -47,64 +46,112 @@ bool HeightTracker::measure (const Pose& p, bool rightHand, float& out) noexcept
     if (! shoulders (p, midX, midY, width) || ! seen (wrist))
         return false;
 
-    out = (midY - wrist.y) / width;   // y points down: above the shoulders is positive
+    dx = wrist.x - midX;
+    dy = wrist.y - midY;
     return true;
 }
 
-bool HeightTracker::update (const Pose& p, const Settings& s, int& value) noexcept
+float PadTracker::shape (float deflection, int response) noexcept
 {
-    float r = 0.0f;
-    if (! measure (p, s.rightHand, r))
+    const float d = clampf (deflection, -1.0f, 1.0f);
+    const float a = std::abs (d);
+    float out = a;
+
+    if (response == fine)
+        out = a * a;                                        // exponential: gentle near the zone, steep at the edge
+    else if (response == fast)
+        out = std::log1p (9.0f * a) / std::log (10.0f);     // logarithmic: quick off the mark
+
+    return d < 0.0f ? -out : out;
+}
+
+int PadTracker::toValue (float v) noexcept
+{
+    return (int) std::lround (clampf (v, 0.0f, 1.0f) * 127.0f);
+}
+
+bool PadTracker::update (const Pose& p, const Settings& s) noexcept
+{
+    float dx = 0.0f, dy = 0.0f;
+    if (! measure (p, s.rightHand, dx, dy))
+    {
+        moving = false;
+        haveTime = false;   // a gap: the next frame starts the clock afresh
+        haveBody = false;
+        return false;
+    }
+
+    const Point& wrist = s.rightHand ? p.rightWrist : p.leftWrist;
+    handX = wrist.x;
+    handY = wrist.y;
+    midX = handX - dx;
+    midY = handY - dy;
+    haveBody = true;
+
+    const double step = haveTime ? p.timeSec - lastTime : 0.0;
+    lastTime = p.timeSec;
+    haveTime = true;
+
+    if (needZero)
+    {
+        zeroX = dx;
+        zeroY = dy;
+        needZero = false;
+        moving = false;
+        return false;
+    }
+
+    // Away from the zero point, in units of the dead zone's radius.
+    const float zone = clampf (s.deadZone, 0.03f, 0.15f);
+    const float ox = dx - zeroX, oy = dy - zeroY;
+    const float r = std::sqrt (ox * ox + oy * oy) / zone;
+
+    if (r <= 1.0f)
+    {
+        moving = false;
+        return false;
+    }
+
+    moving = true;
+
+    // A step back in time or a long pause moves nothing.
+    if (! (step > 0.0) || step > kLongestStep)
         return false;
 
-    raw = r;
-    haveRaw = true;
+    // Only what lies beyond the edge of the zone counts, so the values set off from zero.
+    const float beyond = 1.0f - 1.0f / r;
+    const float ex = clampf (ox * beyond / kReach, -1.0f, 1.0f);
+    const float ey = clampf (-oy * beyond / kReach, -1.0f, 1.0f);   // up is more
 
-    const float span = s.high - s.low;
-    if (std::abs (span) < kMinCalibratedSpan)
-        return false;                               // not calibrated: low and high are the same place
+    const float rate = clampf (s.speed, 0.1f, 4.0f) * (float) step;
+    const int beforeX = valueX(), beforeY = valueY();
+    px = clampf (px + shape (ex, s.responseX) * rate, 0.0f, 1.0f);
+    py = clampf (py + shape (ey, s.responseY) * rate, 0.0f, 1.0f);
 
-    const float position = clampf ((r - s.low) / span, 0.0f, 1.0f);
-    const double step = p.timeSec - lastTime;
-    lastTime = p.timeSec;
-
-    if (! haveValue || step < 0.0 || step > kLongestStep)
-    {
-        smoothed = held = position;
-    }
-    else
-    {
-        const float tau = clampf (s.smoothingMs, 0.0f, 1000.0f) * 0.001f;
-        const float share = tau <= 0.0f ? 1.0f : 1.0f - std::exp (-(float) step / tau);
-        smoothed += share * (position - smoothed);
-
-        // Dead zone: the output only moves once the hand has left the zone around
-        // it, and then stays that far behind. The two ends are always reachable.
-        const float zone = clampf (s.deadZone, 0.0f, 0.2f);
-        if (smoothed - held > zone)        held = smoothed - zone;
-        else if (held - smoothed > zone)   held = smoothed + zone;
-
-        if (smoothed <= 0.005f)            held = 0.0f;
-        else if (smoothed >= 0.995f)       held = 1.0f;
-    }
-
-    const int next = (int) std::lround (clampf (held, 0.0f, 1.0f) * 127.0f);
-    const bool changed = ! haveValue || next != lastValue;
-    haveValue = true;
-    lastValue = next;
-    value = next;
-    return changed;
+    return valueX() != beforeX || valueY() != beforeY;
 }
 
-bool HeightTracker::lastRaw (float& out) const noexcept
+bool PadTracker::zeroPoint (float& x, float& y) const noexcept
 {
-    out = raw;
-    return haveRaw;
+    if (needZero || ! haveBody)
+        return false;
+    x = midX + zeroX;
+    y = midY + zeroY;
+    return true;
 }
 
-void HeightTracker::reset() noexcept
+bool PadTracker::handPoint (float& x, float& y) const noexcept
 {
-    *this = HeightTracker();
+    if (! haveBody)
+        return false;
+    x = handX;
+    y = handY;
+    return true;
+}
+
+void PadTracker::reset() noexcept
+{
+    *this = PadTracker();
 }
 
 //==============================================================================

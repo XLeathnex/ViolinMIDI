@@ -1,12 +1,11 @@
-# Archet
+# VioLogic
 
-Archet hört über das Audio-Interface auf deine Geige und gibt ihre Tonhöhe als MIDI aus.
+VioLogic hört über das Audio-Interface auf deine Geige und gibt ihre Tonhöhe als MIDI aus.
 Die App legt dafür einen virtuellen MIDI-Ausgang an, den MainStage, Logic und andere Programme
-wie ein angeschlossenes Keyboard sehen. Er heißt **Archet**, bei Installationen von vor
-Version 1.2 weiter **ViolinMIDI**, damit eine bestehende Einrichtung in MainStage bleibt. Der
-aktuelle Name steht oben im Fenster.
+wie ein angeschlossenes Keyboard sehen. Er heißt **VioLogic**. Wer von einer früheren Version
+kommt (dort hieß er „Archet“ oder „ViolinMIDI“), ordnet ihn in MainStage einmal neu zu.
 
-Bis Version 1.1 hieß die App ViolinMIDI.
+Von Version 1.2 bis 1.5 hieß die App Archet, bis 1.1 ViolinMIDI.
 
 Sie ist einstimmig, auf gestrichene Saiten abgestimmt und für eine 7-saitige Geige mit
 Tonabnehmer ausgelegt (B♭1 bis A7).
@@ -27,22 +26,22 @@ Das ist nur einmal nötig. Spätere Versionen holt die App selbst, siehe „Upda
 3. Die App wird geladen, in „Programme“ gelegt und gestartet. Beim ersten Start fragt macOS nach
    dem Mikrofon-Zugriff. Mit „Erlauben“ bestätigen, sonst kommt kein Signal an.
 
-Dafür muss nichts weiter installiert sein. Eine App unter dem früheren Namen ViolinMIDI wird dabei
-entfernt, die Einstellungen bleiben. Liegt schon eine ältere Archet-App in „Programme“
-und macOS lässt das Ersetzen nicht zu, sagt die Zeile das. Dann die alte App in den Papierkorb
-legen und die Zeile noch einmal ausführen.
+Dafür muss nichts weiter installiert sein. Eine App unter den früheren Namen Archet oder
+ViolinMIDI wird dabei entfernt, Einstellungen und Presets bleiben. Liegt schon eine ältere
+VioLogic-App in „Programme“ und macOS lässt das Ersetzen nicht zu, sagt die Zeile das. Dann die
+alte App in den Papierkorb legen und die Zeile noch einmal ausführen.
 
 ### Von Hand
 
 1. `ViolinMIDI-macOS.zip` von der [Seite mit den Versionen](https://github.com/XLeathnex/ViolinMIDI/releases/latest)
    laden und doppelklicken. Es entsteht `ViolinMIDI.app` (der Dateiname ist aus Gründen der
-   Update-Kompatibilität geblieben; nach Belieben in `Archet.app` umbenennen).
+   Update-Kompatibilität geblieben; nach Belieben in `VioLogic.app` umbenennen).
 2. Die App in den Ordner „Programme“ ziehen.
 3. Die App ist nicht bei Apple registriert. macOS blockiert deshalb den ersten Start, wenn die
    Datei über den Browser kam. Einmalig im Terminal ausführen:
 
    ```
-   xattr -dr com.apple.quarantine /Applications/Archet.app
+   xattr -dr com.apple.quarantine /Applications/VioLogic.app
    ```
 
    Alternativ: App starten, die Meldung schließen, dann unter Systemeinstellungen →
@@ -53,23 +52,23 @@ Voraussetzung: macOS 11 oder neuer, Intel oder Apple Silicon.
 
 ## Einrichtung
 
-### In Archet
+### In VioLogic
 
 1. **Einstellungen…** öffnen, das Interface und den Eingang wählen, an dem die Geige hängt.
    Puffergröße so klein wie möglich (64 oder 128 Samples). Die Abtastrate nicht verändern,
    sie gilt für alle Programme am Interface.
 2. Kräftig spielen und die **Eingangsverstärkung** so stellen, dass der Pegelbalken weit nach
-   rechts geht, ohne orange zu werden.
+   rechts geht, ohne gelb zu werden (gelb heißt übersteuert).
 3. Nicht spielen und die **Ansprechschwelle** (weiße Marke) knapp über das Grundrauschen legen.
 4. Einen Ton spielen: Die große Anzeige zeigt die Note, der Punkt „MIDI“ leuchtet.
 
 ### In MainStage
 
-1. Archet zuerst starten, dann MainStage. Der MIDI-Ausgang (Name oben im Fenster) erscheint dort
-   als MIDI-Gerät.
+1. VioLogic zuerst starten, dann MainStage. Der MIDI-Ausgang „VioLogic“ erscheint dort als
+   MIDI-Gerät.
 2. Ein Software-Instrument anlegen. Steht dessen Keyboard-Eingang auf „Alle“, spielt die Geige
    es sofort.
-3. Den **Pitch-Bend-Bereich des Instruments** auf denselben Wert stellen wie in Archet.
+3. Den **Pitch-Bend-Bereich des Instruments** auf denselben Wert stellen wie in VioLogic.
    Ab Werk stehen die meisten Instrumente auf ±2 Halbtöne, das ist auch hier die Voreinstellung.
    Für lange Glissandi beide Seiten auf ±12 oder ±24 stellen.
 4. Im Channel-Strip-Informationsfenster unter „MIDI-Eingang“ dürfen Pitch Bend und
@@ -80,16 +79,16 @@ leicht abweichen.
 
 ### Wenn andere MIDI-Geräte mit angeschlossen sind
 
-MainStage wirft alle MIDI-Geräte zusammen. Archet sendet neben den Noten laufend Pitch Bend
-und, bei „Lautstärke: Kontinuierlich“, Expression (Regler Nr. 11). Dieselbe Nummer benutzen
+MainStage wirft alle MIDI-Geräte zusammen. VioLogic sendet neben den Noten laufend Pitch Bend
+und, bei „Dynamik: Anschlag und Verlauf“, Expression (Regler Nr. 11). Dieselbe Nummer benutzen
 Expression-Pedale, deshalb können sich Regler anderer Geräte mitbewegen.
 
 - Oben im Fenster einen eigenen **MIDI-Kanal** wählen, den kein anderes Gerät benutzt.
 - In MainStage im Layout-Modus ein eigenes Keyboard-Bedienelement für die Geige anlegen und ihm
-  den MIDI-Ausgang von Archet zuweisen. Den übrigen Bedienelementen ihr jeweiliges Gerät zuweisen
+  den MIDI-Ausgang von VioLogic zuweisen. Den übrigen Bedienelementen ihr jeweiliges Gerät zuweisen
   statt „Alle“.
-- Schnelle Abhilfe ohne Umbau: „Lautstärke“ auf „Nur Anschlagstärke“ stellen. Dann sendet die
-  App keine Expression mehr.
+- Schnelle Abhilfe ohne Umbau: „Dynamik“ auf „Nur Anschlag“ stellen. Dann sendet die App keine
+  Expression mehr.
 
 ## Bedienung
 
@@ -100,13 +99,13 @@ Expression-Pedale, deshalb können sich Regler anderer Geräte mitbewegen.
 | **Halbtöne** (Taste 3) | Kein Pitch Bend. Beim Rutschen wird jeder erreichte Halbton neu angeschlagen. |
 | **Pitch-Bend-Bereich** | Muss zum Instrument passen, ±0,2 bis ±48 Halbtöne. Der Bend (14 Bit, Mitte 8192) wird genau auf den Bereich skaliert und bleibt darüber bei 0 bzw. 16383 stehen. Erreicht ein Glissando den nächsten Halbton außerhalb des Bereichs, wird neu angeschlagen. |
 | **Vibrato-Glättung** | Wie stark „Geglättet“ das Vibrato herausfiltert, 0 bis 100 %. |
-| **Erkennung an/aus** (Leertaste) | Aus beendet sofort alle Noten und sendet nichts mehr. |
+| **Erkennung an/aus** (Leertaste) | Grün an, rot aus. Aus beendet sofort alle Noten und sendet nichts mehr. |
 | **Tonart / Skala** | Grundton und Skala: Dur, natürliches, harmonisches und melodisches Moll, Dorisch, Mixolydisch, Phrygisch, Phrygisch Dominant, Lydisch, Lokrisch, Dur- und Moll-Pentatonik, Blues-Skala. In der Liste steht unter jedem Namen, wofür die Skala typisch ist. |
 | **Nur Töne der Tonart** | Fremde Töne werden nicht angeschlagen und beenden die laufende Note. Rutscht der Finger in einen Ton der Skala, beginnt dieser. |
 | **Pentatonik-Ton halten** | Bei Pentatonik- und Blues-Skala: Der letzte gültige Ton klingt bei fremden Tönen weiter, bis ein neuer gültiger Ton kommt oder der Pegel unter die Out-Schwelle fällt. |
 | **Harmonie** | Zu jedem Ton erklingen die Stimmen des Voicings auf dem Harmonie-Kanal, immer vollständig, also mit dem gespielten Ton. Der Akkord richtet sich nach der Tonhöhe, die wirklich klingt: Gleitet ein Ton von C nach D, wird aus C-Dur nach 30 ms D-Moll, statt dass C-Dur mitgebogen wird. |
-| **Voicing** | Enger Dreiklang (1-3-5), Septakkord (1-3-5-7), Open (1-5-10), Power (1-5-8), Quart (1-4-7), Terz-Duett, Sexten-Duett, fünf Oktav-Voicings (bei diesen klingen nur die genannten Oktaven) und das freie Voicing: bis zu 10 Stimmen zwischen −24 und +24 Halbtönen, über „…“ einstellbar. |
-| **Harmonie-Modus** | Diatonisch: Die Stimmen werden in der Tonart abgezählt, so entstehen je nach Stufe Dur-, Moll- oder verminderte Akkorde. Chromatisch: immer dieselben Halbtonabstände. Ein Ton außerhalb der Tonart bekommt auch diatonisch die festen Abstände. |
+| **Voicing** | Ganz oben „Total Free Voicing“: bis zu 10 eigene Stimmen zwischen −24 und +24 Halbtönen. Dann Enger Dreiklang (1-3-5), Septakkord (1-3-5-7), Open (1-5-10), Power (1-5-8), Quart (1-4-7), Terz-Duett, Sexten-Duett und fünf Oktav-Voicings (bei diesen klingen nur die genannten Oktaven). Nach der Wahl öffnet sich die Intervall-Matrix mit den Stimmen der Harmonieart (wieder über „…“). Dort lassen sich Töne hinzufügen und abwählen; die veränderte Harmonieart heißt dann zum Beispiel „Enger Dreiklang FV“, „Zurücksetzen“ holt die reine zurück. Mit dem Preset gespeichert. |
+| **Harmonie-Modus** | Diatonisch: Jeder Abstand der Matrix wird als Tonstufe gelesen (kleine oder große Terz = die Terz, Quinte = die Quinte) und in der Tonart abgezählt, so entstehen je nach Stufe Dur-, Moll- oder verminderte Akkorde. Das gilt für alle Harmoniearten, auch das Total Free Voicing. Chromatisch: genau die Halbtonabstände der Matrix. Ein Ton außerhalb der Tonart bekommt auch diatonisch die Abstände, wie sie sind. |
 | **Solo halten / Harmonie halten** | Freeze: Was auf der Spur gerade klingt, bleibt stehen, bis der Taster wieder gelöst wird; auf der anderen Spur wird weitergespielt. Klingt nichts, wird der nächste Ton eingefroren. „Alle Noten aus“ und „Erkennung aus“ lösen beide. |
 | **In-Schwelle / Out-Schwelle** | Über der In-Schwelle kann ein Ton beginnen, erst unter der Out-Schwelle endet er. Die Out-Schwelle liegt nie über der In-Schwelle. |
 | **Tracking-Filter** | Vier Schutzfunktionen in einem Feld. Anstreich-Schutz (wartet am Tonbeginn bis zu 60 ms, wenn auch die Oktave darunter möglich ist) und Oktavsprung-Sperre (ein Oktavsprung im Ton muss bis zu 100 ms anhalten). Sprungschutz: Kurz nach einem Tonbeginn wird ein Sprung ab dem gewählten Intervall erst nach der Sperrzeit gespielt; ein kurz angerissener Nachbarton fällt so weg, ein gewollter Sprung kommt um die Sperrzeit später. Überbrückung: So lange hält der Ton, wenn die Tonhöhe kurz nicht zu erkennen ist (Bogenwechsel), solange der Pegel über der Out-Schwelle bleibt; auf den tiefen Saiten wirkt sie erst ab etwa 45 ms. |
@@ -114,7 +113,7 @@ Expression-Pedale, deshalb können sich Regler anderer Geräte mitbewegen.
 | **Ausklingen (Spielende)** | 0 bis 3000 ms. Fällt der Pegel unter die Out-Schwelle, bleibt der Ton stehen und wird über diese Zeit mit Expression (CC11) ausgeblendet; erst dann kommt Note-Off. Ein neuer Ton beendet das Ausklingen. |
 | **Harmonie-Offset** | −50 % bis 0 %. Die Harmoniestimmen werden um diesen Anteil leiser gesendet (Anschlagstärke und Dynamik-Controller). |
 | **Artikulation** | Aus, Sanft oder Stark: Ein steiler Tonanfang (gezupft) bekommt eine hohe, ein weicher (gestrichen) eine niedrige Anschlagstärke. Verzögert nichts. Auf den tiefsten Saiten ist der Unterschied kleiner. |
-| **Werks-Preset „Lowest Latenz“** | Im Preset-Menü ganz oben. Stellt Ansprache auf „Schnell“, Bewegung auf „Stufenlos“, alle Glättungen auf null, den Sprungschutz und das Nachklingen aus und den Audio-Puffer auf die kleinste Größe ab 64 Samples. Tonart, Harmonie und MIDI-Einstellungen bleiben. |
+| **Werks-Preset „Lowest Latenz“** | Im Preset-Menü ganz oben. Stellt Ansprache auf „Schnell“, Bewegung auf „Stufenlos“, alle Glättungen auf null, den Sprungschutz und das Nachklingen aus und den Audio-Puffer auf die kleinste Größe ab 64 Samples. Tonart, Harmonie, Audio-Harmonizer und MIDI-Einstellungen bleiben. |
 | **Presets** | Oben im Fenster: alle Einstellungen unter einem Namen speichern, laden, umbenennen, löschen. Jedes Preset hat einen Platz von 001 bis 128 und liegt als lesbare JSON-Datei im Preset-Ordner („…“ → „Preset-Ordner zeigen“). |
 | **Dynamik: Anschlag und Verlauf** | Anschlagstärke plus laufender Controller: An- und Abschwellen des Bogens steuert das Instrument. |
 | **Dynamik: Nur Anschlag** | Velocity aus dem Pegel beim Tonbeginn, danach keine Dynamikdaten. |
@@ -128,7 +127,17 @@ Expression-Pedale, deshalb können sich Regler anderer Geräte mitbewegen.
 | **Alle Noten aus** | Beendet alle Noten, auch eingefrorene, und stellt Pitch Bend und Controller zurück. |
 
 Die Einstellungen werden gespeichert, aber nicht pro MainStage-Patch. Der Modus lässt sich
-mit den Tasten 1, 2 und 3 umschalten, solange das Archet-Fenster vorne ist.
+mit den Tasten 1, 2 und 3 umschalten, solange das VioLogic-Fenster vorne ist. Jedes
+Bedienelement erklärt sich, wenn die Maus kurz darauf stehen bleibt.
+
+### Die Echtzeit-Grafik
+
+Oben läuft die gespielte Melodie als silberne Linie über dem Notenraster, die gesendeten
+MIDI-Noten als rote Balken darunter. Direkt darunter, im selben Zeitraster, die Lautstärkekurve
+des Bogens mit den Linien der In- und der Out-Schwelle: Steigt die Kurve über In, kann ein Ton
+beginnen, fällt sie unter Out, endet er. In der Ecke stellt „+“, „−“ und „Standard“ den
+Ausschnitt ein, von 1,5 Sekunden und 5 Halbtönen (Vibrato, schnelle Läufe) bis 24 Sekunden und
+3 Oktaven (lange Phrasen).
 
 ### Steuerung per MIDI
 
@@ -145,25 +154,31 @@ und „Freeze Harmonie“.
 
 ### Audio-Harmonizer
 
-Knopf „Audio-Harmonizer …“ oben rechts. Eingeschaltet spielt Archet die Harmoniestimmen zusätzlich
+Knopf „Audio-Harmonizer …“ oben rechts öffnet ein eigenes Fenster; der Punkt im Knopf zeigt, ob
+er an ist (grün) oder aus (rot). Eingeschaltet spielt VioLogic die Harmoniestimmen zusätzlich
 mit dem eigenen Klang der Geige: Das Eingangssignal wird in der Tonhöhe verschoben und über den
 Audio-Ausgang ausgegeben, die Geige selbst unverändert in der Mitte. Es gelten Tonart, Voicing
 und Harmonie-Modus der Harmonie; die Harmonie muss eingeschaltet sein. Den Ausgang wählt man
 unter „Einstellungen“.
 
+Zwei Kurven über den Tonumfang der Geige (G3 bis E6) folgen der gespielten Tonhöhe. Ein Klick
+setzt einen Stützpunkt, Ziehen verschiebt ihn, ein Doppelklick löscht ihn; „Standard“ stellt die
+Kurve zurück. Eine rote Linie zeigt, wo der gespielte Ton gerade auf der Kurve liegt.
+
 | Regler | Wirkung |
 | --- | --- |
-| **Korpus-Erhalt** | 100 %: Die Resonanz des Geigenkorpus bleibt, wo sie ist, während die Tonhöhe wandert. Niedrige Werte lassen tiefe Oktaven wie ein Cello klingen. |
-| **Bogen-Variation** | Kleine Unterschiede in Tonhöhe und Zeit zwischen den Stimmen, gegen den Kammfilter-Klang. |
+| **Formantkorrektur (Kurve)** | Wie viel der Korpusresonanz die Stimmen behalten. 100 %: Die Resonanz bleibt, wo sie ist, die Stimme klingt nach demselben Instrument; 0 %: Sie wandert mit der Tonhöhe (tiefe Oktaven klingen wie ein Cello, hohe schrill). Standard: auf G- und D-Saite 5 bis 20 %, ab A4 steigend, auf der E-Saite 75 bis 95 %. |
+| **High-Cut (Kurve)** | Tiefpass mit 12 dB pro Oktave nur auf den Stimmen, die Geige behält ihre Brillanz. Standard: 8 bis 6 kHz auf G- und D-Saite, ab E5 3,5 bis 2,5 kHz. |
+| **Drop-Voicing** | Bei Akkorden ab drei Tönen, ab A4 gespielt, klingt die oberste Stimme eine Oktave tiefer: ein warmes Fundament im Bratschen- oder Celloregister statt einer schrillen Ballung über der Melodie. Nur im Audio-Harmonizer, die MIDI-Harmonie bleibt unverändert. |
+| **Ensemble-Entkopplung** | Bei 100 % kommt jede Stimme etwas später (Stimme 1 um 8 bis 12 ms, Stimme 2 um 16 bis 22 ms usw.) und ist langsam um ±4 bis 6 Cent verstimmt (0,2 bis 0,5 Hz). Das bricht den Kammfilter-Klang zwischen Geige und Stimmen auf. Bei 0 % kommen die Stimmen so früh wie möglich. |
 | **Vibrato-Kopplung** | Wie stark die Stimmen dem eigenen Vibrato folgen. |
-| **Stereo-Panorama** | Verteilt die Stimmen links und rechts. |
-| **Piezo-Glättung** | Höhenfilter nur für die Stimmen, 4 bis 16 kHz. |
+| **Stereo-Panorama** | Verteilt die Stimmen links und rechts, Standard ±35 %; die Geige bleibt in der Mitte. |
 | **Harmonie-Pegel, Dry-Kill** | Lautstärke der Stimmen; Dry-Kill lässt die Geige selbst aus dem Ausgang weg. |
 
-Die Stimmen kommen etwa eine halbe Schwingung des gespielten Tons später als die Geige: unter
-2 ms in hohen Lagen, 7 bis 12 ms auf der tiefsten Saite. Doppelgriffe kann der Harmonizer nicht,
-er folgt einem Ton. „Spiel-Überlappung“ und
-„Ausklingen“ gelten auch hier; „Harmonie halten“ friert den Akkord als stehenden Klang ein.
+Ohne Ensemble-Entkopplung kommen die Stimmen etwa eine halbe Schwingung des gespielten Tons
+später als die Geige: unter 2 ms in hohen Lagen, 7 bis 12 ms auf der tiefsten Saite. Doppelgriffe
+kann der Harmonizer nicht, er folgt einem Ton. „Spiel-Überlappung“ und „Ausklingen“ gelten auch
+hier; „Harmonie halten“ friert den Akkord als stehenden Klang ein.
 
 ### Kamera-Steuerung
 
@@ -171,10 +186,17 @@ Knopf „Kamera …“ oben rechts öffnet ein eigenes Fenster. Die Kamera sucht
 Arme und den Kopf; das Bild wird nur auf dem Mac ausgewertet und nicht gespeichert. macOS fragt
 beim ersten Einschalten nach dem Zugriff auf die Kamera.
 
-- **Schnecken-Höhe:** Die Höhe der Hand am Geigenhals wird zu einem Controller (CC1, CC11 oder
-  CC74) oder regelt den Harmonie-Mix. Geige in die tiefste Haltung bringen, „Tief-Position
-  setzen“ drücken, dann die höchste und „Hoch-Position setzen“. Glättung und Totzone beruhigen
-  den Verlauf.
+- **Schnecken-Pad (zwei Achsen):** Die Geigenschnecke steuert zwei frei wählbare Controller wie
+  ein XY-Pad: seitlich (X) und auf und ab (Y), jeweils ein beliebiger Controller (CC 0 bis 127)
+  oder der Harmonie-Mix. Die Hand am Geigenhals steht dabei für die Schnecke. Beim Einschalten
+  und mit „Nullpunkt setzen“ wird die Ruheposition zum Nullpunkt. Um ihn liegt ein silbernes
+  Totzonen-Oval (3 bis 15 % des Bildes): Darin bleiben die Werte stehen. Verlässt die Schnecke
+  das Oval, wandern die Werte, je weiter draußen, desto schneller; zurück im Oval bleiben sie, wo
+  sie gerade sind. Die Regelkurve je Achse bestimmt das Ansprechen: Linear, Fein (exponentiell,
+  feine Fahrten nahe der Totzone) oder Schnell (logarithmisch, kräftige Sweeps). „Tempo“ legt
+  fest, wie schnell ein voll ausgelenkter Wert durch seinen Bereich läuft. Solange die Werte
+  wandern, zeigt ein Fadenkreuz mit rotem Punkt die beiden Prozentwerte, auch über der Grafik
+  im Hauptfenster, und blendet danach wieder aus.
 - **Kopf-Gesten:** Nicken und Kopfschütteln können Harmonie, Halten, Presets oder die Erkennung
   schalten. Empfindlichkeit und Sperrzeit einstellen, bis es beim Spielen nicht versehentlich
   auslöst. Eine Kopfbewegung, die zur Musik gehört, sieht für die Kamera wie ein Nicken aus:
@@ -240,7 +262,7 @@ Tonbeginn bis zur MIDI-Note, ohne Audiopuffer:
 | E5 (659 Hz) | 9 ms | 10 ms | 14 ms |
 | E6 (1319 Hz) | 6 ms | 7 ms | 11 ms |
 
-Dazu kommen der Audiopuffer von Archet und der von MainStage. Ein weicher Bogenansatz
+Dazu kommen der Audiopuffer von VioLogic und der von MainStage. Ein weicher Bogenansatz
 verlängert die Zeit, weil die Saite später eine klare Tonhöhe hat.
 
 ## Grenzen
@@ -265,10 +287,10 @@ verlängert die Zeit, weil die Saite später eine klare Tonhöhe hat.
 | Leise Töne fehlen | In-Schwelle senken oder Verstärkung erhöhen. |
 | Töne brechen beim leisen Streichen ab | Out-Schwelle senken. |
 | Falsche Noten beim Bogenansatz tiefer Saiten | Ansprache auf „Sicher“. |
-| Zu träge | Werks-Preset „Lowest Latenz“ wählen. Unten im Fenster steht die Puffergröße: 64 oder 128 Samples sind gut, 512 kosten etwa 10 ms. |
+| Zu träge | Werks-Preset „Lowest Latenz“ wählen. Unten im Fenster steht die Puffergröße: 64 oder 128 Samples sind gut, 512 kosten etwa 10 ms. Im Audio-Harmonizer kommen die Stimmen mit Ensemble-Entkopplung bewusst 8 bis 22 ms später; für die kürzeste Verzögerung auf 0 % stellen. |
 | Instrument klingt verstimmt oder springt | Pitch-Bend-Bereich in App und Instrument angleichen. |
-| Instrument bleibt leise | Auf „Nur Anschlagstärke“ wechseln oder „Alle Noten aus“ drücken, das setzt Expression zurück. |
-| MainStage sieht den MIDI-Ausgang nicht | Archet vor MainStage starten. |
+| Instrument bleibt leise | „Dynamik“ auf „Nur Anschlag“ stellen oder „Alle Noten aus“ drücken, das setzt Expression zurück. |
+| MainStage sieht den MIDI-Ausgang nicht | VioLogic vor MainStage starten. Nach dem Update auf 2.0 heißt der Ausgang „VioLogic“: in MainStage neu zuordnen. |
 | Eine neue Version macht Ärger | Unter „Einstellungen…“ die vorige Version wählen. |
 
 ## Aufnahmen prüfen
@@ -310,7 +332,7 @@ Besteht der Build, erscheint die Version auf der Projektseite und der Update-Kno
 | `app/` | Fenster, Audio-Eingang, MIDI-Ausgang und Updater (JUCE) |
 | `tests/` | Automatische Tests mit künstlichen Geigensignalen |
 | `tools/` | `violinmidi_wav` zum Prüfen von Aufnahmen |
-| `assets/` | Das App-Icon, erzeugt mit `ViolinMIDI --render-icon assets/AppIcon.png` |
+| `assets/` | Das Emblem (`Emblem.png`, freigestellt aus dem Logo) und das App-Icon, erzeugt mit `ViolinMIDI --render-icon assets/AppIcon.png` |
 
 ## Erweitern
 
@@ -318,11 +340,13 @@ Die App ist so aufgebaut, dass Neues an genau einer Stelle dazukommt:
 
 | Vorhaben | Wo |
 | --- | --- |
-| Name, Farben, Logo ändern | `app/Brand.h`, `app/Brand.cpp` (Anzeigename für macOS zusätzlich `VIOLINMIDI_DISPLAY_NAME` in `app/CMakeLists.txt`) |
-| Aussehen aller Standard-Bedienelemente | `app/Theme.cpp` |
+| Name, Farben, Logo ändern | `app/Brand.h`, `app/Brand.cpp`, `assets/Emblem.png` (Anzeigename für macOS zusätzlich `VIOLINMIDI_DISPLAY_NAME` in `app/CMakeLists.txt`) |
+| Aussehen aller Standard-Bedienelemente | `app/Theme.cpp`; Schalter mit grün/rot: `setSwitchStyle()` in `app/Theme.h` |
+| Start-Animation, „Über VioLogic“ | `app/SplashOverlay.cpp`, `app/AboutPanel.cpp` |
 | Neue Einstellung, die gespeichert wird | eine Zeile in der Tabelle in `app/SettingsFields.cpp`; sie landet damit in der Einstellungsdatei und in den Presets |
-| Kamera: was die Körperpunkte bedeuten | `app/CameraLogic.cpp` (ohne JUCE, getestet in `tests/test_camera.h`); das Bild und die Punkte kommen aus `app/CameraTracker_mac.mm` |
-| Klang der Audio-Harmonie | `core/Harmonizer.cpp`; ausprobieren ohne App mit `violinmidi_harmonize` |
+| Kamera: was die Körperpunkte bedeuten | `app/CameraLogic.cpp` (Schnecken-Pad und Gesten, ohne JUCE, getestet in `tests/test_camera.h`); das Bild und die Punkte kommen aus `app/CameraTracker_mac.mm`, das Fadenkreuz ist `app/PadHud.cpp` |
+| Klang der Audio-Harmonie | `core/Harmonizer.cpp`, die Kurven `core/Curve.h` und ihr Editor `app/CurveEditor.cpp`; ausprobieren ohne App mit `violinmidi_harmonize` |
+| Harmoniearten, Diatonisch/Chromatisch | `core/Scale.h` (Voicings als Abstände, getestet in `tests/test_v2.h`) |
 | Neues Bedienelement im Fenster | im Konstruktor von `app/MainComponent.cpp` anlegen und mit `addItem()` in eine Spalte setzen; das Layout ergibt sich |
 | Regler per MIDI steuerbar machen | ein Eintrag in `app/Params.cpp`; er erscheint von selbst in der Mapping-Tabelle |
 | Neue Live-Anzeige | `app/Widgets.cpp`, gefüttert aus `MainComponent::timerCallback()` |

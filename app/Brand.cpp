@@ -1,5 +1,7 @@
 #include "Brand.h"
 
+#include <VioLogicAssets.h>   // the emblem and the start animation, see app/CMakeLists.txt
+
 namespace brand
 {
 
@@ -131,35 +133,25 @@ juce::String fontDescription()
          + "; headings: " + (faces.strong != nullptr ? faces.strongHow : juce::String ("no heavier cut passed the check, regular is used"));
 }
 
-void drawMark (juce::Graphics& g, juce::Rectangle<float> a)
+juce::Image emblem()
 {
-    const float w = a.getWidth(), h = a.getHeight();
-    auto P = [&] (float x, float y) { return juce::Point<float> (a.getX() + x * w, a.getY() + y * h); };
+    // Decoded once; ImageCache keeps it for the life of the app.
+    return juce::ImageCache::getFromMemory (VioLogicAssets::Emblem_png, VioLogicAssets::Emblem_pngSize);
+}
 
-    // f-hole: an integral-shaped stroke with a round eye at each end and the
-    // small cross cut in the middle.
-    juce::Path stem;
-    stem.startNewSubPath (P (0.47f, 0.14f));
-    stem.cubicTo (P (0.34f, 0.08f), P (0.31f, 0.30f), P (0.31f, 0.50f));
-    stem.cubicTo (P (0.31f, 0.70f), P (0.28f, 0.92f), P (0.15f, 0.86f));
+void drawEmblem (juce::Graphics& g, juce::Rectangle<float> area, float opacity)
+{
+    const auto image = emblem();
+    if (! image.isValid() || opacity <= 0.0f)
+        return;
 
-    juce::Path hole;
-    juce::PathStrokeType (h * 0.055f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded).createStrokedPath (hole, stem);
-    hole.addEllipse (juce::Rectangle<float> (w * 0.13f, w * 0.13f).withCentre (P (0.47f, 0.15f)));
-    hole.addEllipse (juce::Rectangle<float> (w * 0.15f, w * 0.15f).withCentre (P (0.15f, 0.85f)));
-    hole.addRoundedRectangle (juce::Rectangle<float> (w * 0.17f, h * 0.04f).withCentre (P (0.31f, 0.50f)), h * 0.02f);
+    const float side = juce::jmin (area.getWidth(), area.getHeight());
+    const auto target = area.withSizeKeepingCentre (side, side);
 
-    g.setColour (colour::accent);
-    g.fillPath (hole);
-
-    // Notes rising out of it: the pitch becoming MIDI.
-    struct Bar { float x0, x1, y; };
-    const Bar bars[] = { { 0.58f, 0.72f, 0.70f }, { 0.66f, 0.82f, 0.53f }, { 0.76f, 0.95f, 0.36f } };
-    for (const auto& b : bars)
-    {
-        const auto r = juce::Rectangle<float> (P (b.x0, b.y - 0.04f), P (b.x1, b.y + 0.04f));
-        g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
-    }
+    juce::Graphics::ScopedSaveState state (g);
+    g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+    g.setOpacity (juce::jlimit (0.0f, 1.0f, opacity));
+    g.drawImage (image, target, juce::RectanglePlacement::centred);
 }
 
 void drawIcon (juce::Graphics& g, juce::Rectangle<float> r)
@@ -176,12 +168,18 @@ void drawIcon (juce::Graphics& g, juce::Rectangle<float> r)
     juce::DropShadow (juce::Colours::black.withAlpha (0.45f), juce::jmax (1, (int) (s * 0.024f)),
                       { 0, juce::jmax (1, (int) (s * 0.010f)) }).drawForPath (g, shape);
 
-    // the slight top-to-bottom shading every macOS icon has
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2b2b2b), body.getX(), body.getY(),
-                                             juce::Colour (0xff181818), body.getX(), body.getBottom(), false));
+    // studio anthracite with the slight top-to-bottom shading every macOS icon has
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2a2b2f), body.getX(), body.getY(),
+                                             juce::Colour (0xff141518), body.getX(), body.getBottom(), false));
     g.fillPath (shape);
 
-    drawMark (g, body.reduced (body.getWidth() * 0.17f));
+    // a faint crimson glow behind the emblem
+    const auto centre = body.getCentre();
+    g.setGradientFill (juce::ColourGradient (colour::crimson.withAlpha (0.16f), centre.x, centre.y,
+                                             colour::crimson.withAlpha (0.0f), centre.x + body.getWidth() * 0.5f, centre.y, true));
+    g.fillPath (shape);
+
+    drawEmblem (g, body.reduced (body.getWidth() * 0.12f));
 }
 
 bool renderIconPng (const juce::File& file, int size)

@@ -1,5 +1,5 @@
-// ViolinMIDI - tests for the camera's logic (app/CameraLogic.h): the height of
-// the violin hand as a controller value, and nodding / shaking the head.
+// ViolinMIDI - tests for the camera's logic (app/CameraLogic.h): the violin hand
+// as a two-axis pad (since 2.0), and nodding / shaking the head.
 // Synthetic poses only: a person facing the camera, sizes in shoulder widths.
 //
 // Included by test_main.cpp after test_stage3.h, inside its anonymous namespace;
@@ -16,6 +16,7 @@ struct CamBody
     double turn = 0.0, tilt = 0.0; ///< nose against its rest position, shoulder widths (tilt > 0 = down)
     double rightShoulderUp = 0.0; ///< frame units: the bow arm's shoulder rising
     double handUp = 0.3;          ///< the violin hand above the shoulder line, shoulder widths
+    double handSide = 0.0;        ///< the violin hand moved to the right (in the frame), shoulder widths
     bool   rightHand = false;
 };
 
@@ -51,8 +52,8 @@ inline cam::Pose camPose (double t, const CamBody& b, std::mt19937* rng = nullpt
     p.rightShoulder = camPoint (b, -0.5, -b.rightShoulderUp / b.width, rng, n);
     p.neck = camPoint (b, 0.0, -0.1, rng, n);
     const double hand = -b.handUp;
-    p.leftWrist = camPoint (b, b.rightHand ? 0.9 : 0.6, b.rightHand ? 0.6 : hand, rng, n);
-    p.rightWrist = camPoint (b, b.rightHand ? -0.6 : -0.9, b.rightHand ? hand : 0.6, rng, n);
+    p.leftWrist = camPoint (b, b.rightHand ? 0.9 : 0.6 + b.handSide, b.rightHand ? 0.6 : hand, rng, n);
+    p.rightWrist = camPoint (b, b.rightHand ? -0.6 + b.handSide : -0.9, b.rightHand ? hand : 0.6, rng, n);
     p.leftElbow = camPoint (b, 0.8, 0.4, rng, n);
     p.rightElbow = camPoint (b, -0.8, 0.4, rng, n);
     return p;
@@ -117,241 +118,178 @@ inline std::function<void (double, CamBody&)> camShake (double amount, double t0
 }
 
 //==============================================================================
-// 1. Height.
-inline void cameraHeight()
+// 1. The pad: the violin hand moving two values, relative to where it rests.
+inline void cameraPad()
 {
-    using HT = cam::HeightTracker;
+    using PT = cam::PadTracker;
+    PT::Settings s;   // dead zone 0.06 of the picture, speed 0.8, linear
 
-    {   // measure
+    {   // measure: the hand against the middle of the shoulders, in the picture
         CamBody b;
         b.handUp = 0.5;
-        float raw = 0.0f;
-        check (HT::measure (camPose (0.0, b), false, raw) && std::abs (raw - 0.5f) < 1e-4f, "measure: hand 0.5 above: found %.4f", (double) raw);
-        b.handUp = -0.3;
-        check (HT::measure (camPose (0.0, b), false, raw) && std::abs (raw + 0.3f) < 1e-4f, "measure: hand 0.3 below: found %.4f", (double) raw);
-        b.width = 0.1;   // half the size: twice as far away, same posture
-        b.cx = 0.3;
-        check (HT::measure (camPose (0.0, b), false, raw) && std::abs (raw + 0.3f) < 1e-4f, "measure: twice as far away: found %.4f", (double) raw);
-
-        // scale every point by 0.5 around a centre
-        CamBody c;
-        c.handUp = 0.4;
-        cam::Pose p = camPose (0.0, c);
-        float r1 = 0.0f, r2 = 0.0f;
-        HT::measure (p, false, r1);
-        for (cam::Point* q : { &p.nose, &p.leftShoulder, &p.rightShoulder, &p.leftWrist, &p.rightWrist })
-        {
-            q->x = 0.6f + 0.5f * (q->x - 0.6f);
-            q->y = 0.4f + 0.5f * (q->y - 0.4f);
-        }
-        check (HT::measure (p, false, r2) && std::abs (r1 - r2) < 1e-4f, "measure: scaled by 0.5 around (0.6, 0.4): %.4f vs %.4f", (double) r1, (double) r2);
-
-        // right hand
-        CamBody rh;
-        rh.rightHand = true;
-        rh.handUp = 0.25;
-        check (HT::measure (camPose (0.0, rh), true, raw) && std::abs (raw - 0.25f) < 1e-4f, "measure: right hand: found %.4f", (double) raw);
-        check (HT::measure (camPose (0.0, rh), false, raw) && raw < -0.5f, "measure: the left hand of that pose is low: found %.4f", (double) raw);
-
-        // missing points
-        cam::Pose m = camPose (0.0, CamBody());
-        m.leftWrist.confidence = 0.29f;
-        check (! HT::measure (m, false, raw), "measure: wrist confidence 0.29 must give false");
-        m = camPose (0.0, CamBody());
-        m.rightShoulder.confidence = 0.0f;
-        check (! HT::measure (m, false, raw), "measure: a shoulder missing must give false");
-        m = camPose (0.0, CamBody());
-        m.valid = false;
-        check (! HT::measure (m, false, raw), "measure: no person must give false");
-        m = camPose (0.0, CamBody());
-        m.rightShoulder = m.leftShoulder;
-        check (! HT::measure (m, false, raw), "measure: both shoulders on one spot (seen edge-on) must give false");
+        float dx = 0.0f, dy = 0.0f;
+        check (PT::measure (camPose (0.0, b), false, dx, dy) && std::abs (dx - 0.12f) < 1e-4f && std::abs (dy + 0.10f) < 1e-4f,
+               "measure: expected (0.12, -0.10), found (%.4f, %.4f)", (double) dx, (double) dy);
+        cam::Pose hidden = camPose (0.0, b);
+        hidden.leftWrist.confidence = 0.1f;
+        check (! PT::measure (hidden, false, dx, dy), "measure: a hand that is not seen gives nothing");
+        b.rightHand = true;
+        check (PT::measure (camPose (0.0, b), true, dx, dy) && std::abs (dx + 0.12f) < 1e-4f, "measure: right hand, found dx %.4f", (double) dx);
     }
 
-    HT::Settings flat;   // no smoothing, no dead zone
-    flat.smoothingMs = 0.0f;
-    flat.deadZone = 0.0f;
-    flat.low = -0.2f;
-    flat.high = 0.6f;
-
-    {   // calibration, clamping, reversed
-        struct Case { float hand; int expected; };
-        const Case cases[] = { { -0.2f, 0 }, { 0.6f, 127 }, { 0.2f, 64 }, { -1.0f, 0 }, { 2.0f, 127 }, { 0.0f, 32 }, { 0.4f, 95 } };
-        for (const Case& c : cases)
+    {   // response curves
+        for (int r = 0; r < PT::numResponses; ++r)
         {
-            HT h;
-            CamBody b;
-            b.handUp = c.hand;
-            int value = -1;
-            const bool changed = h.update (camPose (1.0, b), flat, value);
-            check (changed && value == c.expected, "calibration -0.2..0.6: hand %.2f: expected %d (changed), found %d (%s)", (double) c.hand, c.expected, value,
-                   changed ? "changed" : "unchanged");
-        }
-        HT::Settings rev = flat;
-        rev.low = 0.6f;
-        rev.high = -0.2f;
-        HT h;
-        CamBody b;
-        int value = -1;
-        b.handUp = 0.6;
-        h.update (camPose (1.0, b), rev, value);
-        check (value == 0, "reversed calibration (high < low): the 'low' point 0.6 must give 0, found %d", value);
-        b.handUp = -0.2;
-        h.update (camPose (1.1, b), rev, value);
-        check (value == 127, "reversed calibration: the 'high' point -0.2 must give 127, found %d", value);
-
-        HT::Settings narrow = flat;
-        narrow.high = narrow.low + 0.01f;
-        HT h2;
-        value = 55;
-        check (! h2.update (camPose (1.0, b), narrow, value) && value == 55, "calibration narrower than 0.05: no value, found %d", value);
-        float raw = 0.0f;
-        check (h2.lastRaw (raw) && std::abs (raw + 0.2f) < 1e-4f, "lastRaw must work without a calibration (for the calibration buttons), found %.3f", (double) raw);
-    }
-
-    {   // smoothing: a step reaches 63 % after about smoothingMs
-        for (float ms : { 150.0f, 400.0f, 1000.0f })
-        {
-            HT h;
-            HT::Settings s = flat;
-            s.smoothingMs = ms;
-            CamBody b;
-            b.handUp = -0.2;
-            int value = -1;
-            const double fps = 15.0;
-            h.update (camPose (0.0, b), s, value);
-            b.handUp = 0.6;
-            double reached = -1.0;
-            for (int i = 1; i < 200 && reached < 0.0; ++i)
+            check (PT::shape (0.0f, r) == 0.0f && std::abs (PT::shape (1.0f, r) - 1.0f) < 1e-5f && std::abs (PT::shape (-1.0f, r) + 1.0f) < 1e-5f,
+                   "response %d: 0 -> 0, +-1 -> +-1", r);
+            float last = -2.0f;
+            for (float d = -1.0f; d <= 1.0001f; d += 0.05f)
             {
-                h.update (camPose (i / fps, b), s, value);
-                if (value >= (int) std::ceil (0.632 * 127.0)) reached = i / fps;
+                const float v = PT::shape (d, r);
+                check (v >= last - 1e-6f, "response %d not monotonic at %.2f", r, (double) d);
+                last = v;
             }
-            check (reached > 0.0 && std::abs (reached - ms * 0.001) <= 1.0 / fps + 1e-6, "smoothing %.0f ms: 63 %% reached after %.3f s, expected %.3f s +- one frame",
-                   (double) ms, reached, ms * 0.001);
+            check (std::abs (PT::shape (3.0f, r) - 1.0f) < 1e-5f, "response %d: deflection beyond 1 is 1", r);
         }
-        HT h;
-        CamBody b;
-        int value = -1;
-        b.handUp = -0.2;
-        h.update (camPose (0.0, b), flat, value);
-        b.handUp = 0.6;
-        h.update (camPose (1.0 / 15.0, b), flat, value);
-        check (value == 127, "smoothing 0: the step at once, found %d", value);
+        check (std::abs (PT::shape (0.5f, PT::fine) - 0.25f) < 1e-5f, "fine at 0.5: %.4f", (double) PT::shape (0.5f, PT::fine));
+        check (PT::shape (0.2f, PT::fine) < PT::shape (0.2f, PT::linear) && PT::shape (0.2f, PT::linear) < PT::shape (0.2f, PT::fast),
+               "near the zone: fine < linear < fast");
     }
 
-    {   // dead zone: jitter inside it changes nothing, a sweep reaches both ends, the output lags by the zone
-        HT::Settings s = flat;
-        s.deadZone = 0.05f;
-        HT h;
+    const auto feed = [&s] (PT& pad, double t0, double seconds, const CamBody& b, double fps = 15.0)
+    {
+        bool changed = false;
+        for (int i = 0; i < (int) std::lround (seconds * fps); ++i)
+            changed = pad.update (camPose (t0 + i / fps, b), s) || changed;
+        return changed;
+    };
+
+    {   // zero point, dead zone, movement in all four directions
+        PT pad;
+        CamBody rest;
+        check (! pad.hasZero() && pad.valueX() == 64 && pad.valueY() == 64, "start: no zero point, both values in the middle");
+        check (! pad.update (camPose (0.0, rest), s) && pad.hasZero(), "the first frame sets the zero point and changes nothing");
+
+        CamBody inside = rest;
+        inside.handSide = 0.2;            // 0.04 of the picture: inside the 0.06 zone
+        inside.handUp = 0.3 + 0.15;       // 0.03 up: still inside (0.05 away)
+        check (! feed (pad, 0.1, 2.0, inside) && ! pad.active() && pad.valueX() == 64 && pad.valueY() == 64,
+               "inside the dead zone nothing moves: %d %d", pad.valueX(), pad.valueY());
+
+        CamBody right = rest;
+        right.handSide = 1.3;             // 0.26 to the right: 0.2 beyond the zone, full deflection
+        // four frames from 2.2 s: 0.37 s since the last frame at rest (2.03 s)
+        check (feed (pad, 2.2, 0.25, right) && pad.active(), "out to the right: the values move");
+        check (pad.x() > 0.78f && pad.x() < 0.81f && pad.valueY() == 64,
+               "right for 0.37 s at full deflection (speed 0.8): x 0.5 -> 0.79, y stays; found x %.3f y %d", (double) pad.x(), pad.valueY());
+
+        const int heldX = pad.valueX();
+        check (! feed (pad, 2.8, 1.0, rest) && ! pad.active() && pad.valueX() == heldX, "back at rest: the value stays where it got to");
+
+        CamBody up = rest;
+        up.handUp = 0.3 + 0.8;            // 0.16 up: 0.1 beyond the zone, half deflection
+        feed (pad, 4.0, 1.0, up);
+        check (pad.y() > 0.80f && pad.y() < 0.99f && pad.valueX() == heldX, "up: y grows (found %.3f), x stays", (double) pad.y());
+
+        CamBody leftDown = rest;
+        leftDown.handSide = -2.0;
+        leftDown.handUp = 0.3 - 2.0;
+        feed (pad, 5.2, 3.0, leftDown);
+        check (pad.valueX() == 0 && pad.valueY() == 0, "left and down for long: both at 0, found %d %d", pad.valueX(), pad.valueY());
+    }
+
+    {   // the player sways: shoulders and hand move together, nothing changes
+        PT pad;
         CamBody b;
-        int value = -1;
-        std::mt19937 rng (5);
-        std::uniform_real_distribution<double> j (-0.019, 0.019);   // positions within +-0.024 of 0.5 (0.8 calibrated range)
-        b.handUp = 0.2;
-        h.update (camPose (0.0, b), s, value);
-        const int start = value;
-        int changes = 0;
+        pad.update (camPose (0.0, b), s);
+        bool changed = false;
+        for (int i = 1; i < 60; ++i)
+        {
+            b.cx = 0.5 + 0.15 * std::sin (i * 0.2);
+            b.cy = 0.55 + 0.05 * std::cos (i * 0.3);
+            changed = pad.update (camPose (i / 15.0, b), s) || changed;
+        }
+        check (! changed && ! pad.active(), "swaying with the violin at rest moves nothing");
+    }
+
+    {   // jitter inside the zone moves nothing; update() says true exactly when a value changed
+        PT pad;
+        std::mt19937 rng (7);
+        CamBody b;
+        pad.update (camPose (0.0, b), s);
+        CamNoise n;
+        n.jitter = 0.008f;
+        n.dip = 0.0f;
+        bool changed = false;
         for (int i = 1; i < 300; ++i)
-        {
-            b.handUp = 0.2 + j (rng);
-            changes += h.update (camPose (i / 15.0, b), s, value) ? 1 : 0;
-        }
-        check (changes == 0 && value == start, "dead zone 0.05: jitter of +-0.024 must change nothing, %d changes", changes);
+            changed = pad.update (camPose (i / 15.0, b, &rng), s) || changed;
+        check (! changed, "jitter of +-0.008 inside the zone changed a value");
 
-        // slow sweep up and down
-        HT h2;
-        int lo = 999, hi = -1, maxLag = 0;
-        double t = 0.0;
-        for (int dir = 0; dir < 2; ++dir)
-            for (int i = 0; i <= 200; ++i)
-            {
-                const double pos = dir == 0 ? -0.05 + 1.1 * i / 200.0 : 1.05 - 1.1 * i / 200.0;   // calibrated position
-                b.handUp = -0.2 + 0.8 * pos;
-                h2.update (camPose (t, b), s, value);
-                t += 1.0 / 15.0;
-                lo = std::min (lo, value);
-                hi = std::max (hi, value);
-                const double p = std::min (1.0, std::max (0.0, pos));
-                if (p > 0.1 && p < 0.9)
-                {
-                    const int expected = (int) std::lround ((dir == 0 ? p - 0.05 : p + 0.05) * 127.0);
-                    maxLag = std::max (maxLag, std::abs (value - expected));
-                }
-            }
-        check (lo == 0 && hi == 127, "slow sweep: both ends exactly, found %d..%d", lo, hi);
-        check (maxLag <= 1, "slow sweep: the output lags by the zone (0.05 = 6.35 steps), largest difference from that %d", maxLag);
+        PT pad2;
+        pad2.update (camPose (0.0, b), s);
+        int falseClaims = 0, lastX = pad2.valueX(), lastY = pad2.valueY();
+        std::uniform_real_distribution<double> u (-3.0, 3.0);
+        for (int i = 1; i < 2000; ++i)
+        {
+            CamBody m;
+            m.handSide = u (rng);
+            m.handUp = u (rng);
+            const bool claimed = pad2.update (camPose (i / 15.0 + (i % 7 == 0 ? 0.6 : 0.0), m, &rng), s);
+            const bool really = pad2.valueX() != lastX || pad2.valueY() != lastY;
+            falseClaims += claimed != really ? 1 : 0;
+            lastX = pad2.valueX();
+            lastY = pad2.valueY();
+            check (lastX >= 0 && lastX <= 127 && lastY >= 0 && lastY <= 127, "value out of 0..127");
+        }
+        check (falseClaims == 0, "update must return true exactly when a value changed: %d wrong answers", falseClaims);
     }
 
-    {   // a pause longer than 0.5 s starts afresh; shorter ones are smoothed over
-        HT::Settings s = flat;
-        s.smoothingMs = 300.0f;
-        for (double gap : { 0.4, 0.6 })
-        {
-            HT h;
-            CamBody b;
-            int value = -1;
-            b.handUp = -0.2;
-            h.update (camPose (0.0, b), s, value);
-            h.update (camPose (0.0667, b), s, value);
-            b.handUp = 0.6;
-            h.update (camPose (0.0667 + gap, b), s, value);
-            if (gap > 0.5)
-                check (value == 127, "pause of %.1f s: starts afresh at the new place, found %d", gap, value);
-            else
-                check (value > 0 && value < 127, "pause of %.1f s: smoothed, found %d", gap, value);
-        }
-        // the hand invisible for a while counts as a pause too
-        HT h;
-        CamBody b;
-        int value = -1;
-        b.handUp = -0.2;
-        h.update (camPose (0.0, b), s, value);
-        cam::Pose hidden = camPose (0.1, b);
-        hidden.leftWrist.confidence = 0.0f;
-        for (int i = 0; i < 15; ++i) { hidden.timeSec = 0.1 + i / 15.0; check (! h.update (hidden, s, value), "hand hidden: no change expected"); }
-        b.handUp = 0.6;
-        h.update (camPose (1.2, b), s, value);
-        check (value == 127, "hand back after 1.1 s: starts afresh, found %d", value);
+    {   // pauses, lost hand, time going back, recalibration
+        PT pad;
+        CamBody rest, right;
+        right.handSide = 1.3;
+        pad.update (camPose (0.0, rest), s);
+        pad.update (camPose (0.1, right), s);
+        const float x0 = pad.x();
+        pad.update (camPose (3.0, right), s);   // 2.9 s later: a pause, not 2.9 s of movement
+        check (std::abs (pad.x() - x0) < 1e-6f, "a long pause between frames moves nothing (%.3f -> %.3f)", (double) x0, (double) pad.x());
+        pad.update (camPose (2.0, right), s);   // back in time
+        check (std::abs (pad.x() - x0) < 1e-6f, "a step back in time moves nothing");
+
+        cam::Pose lost = camPose (3.1, right);
+        lost.leftWrist.confidence = 0.0f;
+        check (! pad.update (lost, s) && ! pad.active(), "hand lost: nothing changes, not active");
+
+        pad.recalibrate();
+        check (! pad.update (camPose (3.2, right), s) && pad.hasZero(), "recalibrate: the next frame is the new zero point");
+        const int x1 = pad.valueX();
+        check (! feed (pad, 3.3, 1.0, right) && pad.valueX() == x1, "after recalibrating where the hand is, it is at rest");
+        float zx = 0.0f, zy = 0.0f, hx = 0.0f, hy = 0.0f;
+        check (pad.zeroPoint (zx, zy) && pad.handPoint (hx, hy) && std::abs (zx - hx) < 1e-4f && std::abs (zy - hy) < 1e-4f,
+               "zero point drawn where the hand rests");
+
+        pad.reset();
+        check (! pad.hasZero() && pad.valueX() == 64 && pad.valueY() == 64, "reset: middle and no zero point");
     }
 
-    {   // update returns true exactly when the value changed; odd timestamps do no harm
-        HT::Settings s;   // the defaults
-        HT h;
-        std::mt19937 rng (11);
-        std::uniform_real_distribution<double> u (-0.5, 1.0);
-        int value = -1, previous = -1;
-        double t = 0.0;
-        int changes = 0, falseClaims = 0;
-        for (int i = 0; i < 3000; ++i)
-        {
-            CamBody b;
-            b.handUp = (i / 100) % 2 == 0 ? u (rng) * 0.1 + 0.2 : u (rng);
-            const int r = (int) (rng() % 20);
-            if (r == 0) t -= 0.2;               // time going backwards
-            else if (r == 1) { }                // the same timestamp again
-            else t += 1.0 / 15.0;
-            int v = value;
-            const bool changed = h.update (camPose (t, b, &rng), s, v);
-            if (changed != (v != previous || previous < 0))
-                ++falseClaims;
-            check (v >= 0 && v <= 127, "value out of range: %d", v);
-            changes += changed ? 1 : 0;
-            if (changed) previous = v;
-            value = v;
-        }
-        check (falseClaims == 0, "update must return true exactly when the value changed: %d wrong answers", falseClaims);
-        info ("camera height: %d changes in 3000 frames of jittery input with odd timestamps", changes);
-
-        // identical timestamps: the value does not move (no time has passed), and nothing breaks
-        HT h2;
+    {   // right hand, and the dead zone size is honoured
+        PT pad;
+        PT::Settings r = s;
+        r.rightHand = true;
+        r.deadZone = 0.15f;
         CamBody b;
-        b.handUp = -0.2;
-        h2.update (camPose (5.0, b), s, value);
-        const int before = value;
-        b.handUp = 0.6;
-        for (int i = 0; i < 10; ++i) h2.update (camPose (5.0, b), s, value);
-        check (value == before, "identical timestamps with smoothing: no movement expected, found %d -> %d", before, value);
+        b.rightHand = true;
+        pad.update (camPose (0.0, b), r);
+        CamBody moved = b;
+        moved.handSide = 0.6;             // 0.12 of the picture: inside a 0.15 zone
+        bool changed = false;
+        for (int i = 1; i < 30; ++i)
+            changed = pad.update (camPose (i / 15.0, moved), r) || changed;
+        check (! changed, "right hand, zone 0.15: 0.12 away moves nothing");
+        moved.handSide = 2.0;
+        for (int i = 30; i < 45; ++i)
+            changed = pad.update (camPose (i / 15.0, moved), r) || changed;
+        check (changed && pad.x() > 0.5f, "right hand: moving right raises x (%.3f)", (double) pad.x());
     }
 }
 

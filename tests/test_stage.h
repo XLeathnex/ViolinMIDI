@@ -459,7 +459,7 @@ inline void scaleTables()
     // The old scale::triad (note, root, mode, withRoot) is now voices (..., voicing 0, diatonic,
     // no free mask, withoutPlayedNote = ! withRoot).
     auto triadText = [] (int note, int root, int mode, bool withRoot) {
-        const vm::scale::Voices t = vm::scale::voices (note, root, mode, 0, true, 0, ! withRoot);
+        const vm::scale::Voices t = vm::scale::voices (note, root, mode, vm::scale::presetMask (0), true, ! withRoot);
         std::string s;
         for (int i = 0; i < t.count; ++i)
             s += (i == 0 ? "" : " ") + std::to_string (t.notes[i]);

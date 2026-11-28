@@ -26,6 +26,7 @@ private:
     void selectionChanged();
     void refreshStatus();
     void showPage (int index);
+    void explainDeviceControls();
 
     UpdateManager& updates;
     juce::TextButton pageButtons[3];
@@ -42,6 +43,9 @@ private:
 
     juce::StringArray itemVersions; // version behind each list entry
     juce::StringArray itemNotes;
+
+    // A window of its own: the main window's tooltips do not reach in here.
+    juce::TooltipWindow tooltips { this, 700 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SettingsPanel)
 };

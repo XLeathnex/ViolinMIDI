@@ -79,8 +79,34 @@ inline bool contains (unsigned scaleMask, int note) noexcept
 
 //==============================================================================
 // Voicings. The index is what Settings::voicing holds and what is stored on disk.
+//
+// Since 2.0 every voicing is a set of distances from the played note, -24 to
+// +24 semitones ("template", bit semitones + 24 of a 64-bit mask): the preset
+// voicings are only where such a set starts, and the voices can be added to or
+// taken away from in each of them (Settings::voicingVoices; the free voicing
+// keeps its own set in Settings::freeVoicing).
+//
+// Chromatic harmony plays the template as it is. Diatonic harmony reads each
+// distance as a step of the scale - a minor or major third as "the third", a
+// fifth as "the fifth" (kStepOfSemitone) - and counts that step in the key, so
+// the same template gives major, minor or diminished chords as the degree
+// demands. A played note that is not in the scale has no steps to count from
+// and gets the template as it is. For the preset voicings this is exactly the
+// behaviour of 1.x: their templates are kFixedSteps of their steps.
 
 constexpr int kMaxVoices = 10;
+constexpr int kMaskOffset = 24;   ///< bit (semitones + kMaskOffset) of a voicing mask
+constexpr int kMaskCells = 49;    ///< -24 .. +24
+
+constexpr uint64_t maskBit (int semitones) noexcept { return 1ull << (semitones + kMaskOffset); }
+
+/** The scale step each distance within an octave stands for in diatonic
+    harmony: the minor and major second are the second, both thirds the third,
+    the tritone the (diminished) fifth, both sixths the sixth, both sevenths the
+    seventh. */
+constexpr int kStepOfSemitone[12] = { 0, 1, 1, 2, 2, 3, 4, 4, 5, 5, 6, 6 };
+
+constexpr int floorDiv (int a, int b) noexcept { return a >= 0 ? a / b : -((-a + b - 1) / b); }
 
 struct VoicingDef
 {
@@ -157,39 +183,85 @@ inline int stepInterval (int note, int root, int mode, int step, bool diatonic) 
     return kFixedSteps[within] + 12 * octaves;
 }
 
+/** The template of a preset voicing (the distances it starts with). The free
+    voicing has no preset: 0. */
+constexpr uint64_t presetMask (int voicing) noexcept
+{
+    voicing = clampVoicing (voicing);
+    if (voicing == kFreeVoicing)
+        return 0;
+
+    const VoicingDef& def = kVoicings[voicing];
+    uint64_t mask = 0;
+    for (int i = 0; i < def.count; ++i)
+    {
+        const int semitones = def.steps ? kFixedSteps[def.v[i] % 7] + 12 * (def.v[i] / 7) : def.v[i];
+        if (semitones >= -kMaskOffset && semitones <= kMaskOffset)
+            mask |= maskBit (semitones);
+    }
+    return mask;
+}
+
+/** Semitones from `note` to the voice the template distance `semitones` stands
+    for. Diatonic: the distance is read as a scale step and counted in the
+    seven-note scale (in C major a third above D is F, a fifth below E is A).
+    Chromatic, or a note outside the scale: the distance itself. */
+inline int templateInterval (int note, int root, int mode, int semitones, bool diatonic) noexcept
+{
+    if (! diatonic)
+        return semitones;
+
+    const ScaleDef& s = kScales[kScales[clampMode (mode)].parent];
+    const int relative = pitchClass (note - root);
+
+    int index = -1;
+    for (int i = 0; i < 7 && index < 0; ++i)
+        if (s.steps[i] == relative)
+            index = i;
+
+    if (index < 0)
+        return semitones;
+
+    const int octaves = floorDiv (semitones, 12);
+    const int within = semitones - 12 * octaves;
+    const int target = index + kStepOfSemitone[within] + 7 * octaves;
+    const int targetOctaves = floorDiv (target, 7);
+    return s.steps[target - 7 * targetOctaves] + 12 * targetOctaves - relative;
+}
+
 struct Voices
 {
     int notes[kMaxVoices] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
     int count = 0;
 };
 
-/** The harmony voices for a played note, lowest definition first. Notes
-    outside 0..127 are left out; with `withoutPlayedNote` so is the played note
-    itself (when the harmony shares the channel of the melody). */
-inline Voices voices (int note, int root, int mode, int voicing, bool diatonic, uint64_t freeMask,
+/** The harmony voices for a played note, from the lowest distance up. Notes
+    outside 0..127 are left out, and a note the template reaches twice (both
+    thirds read diatonically) is there once; with `withoutPlayedNote` the played
+    note itself is left out too (when the harmony shares the channel of the
+    melody). `voicingMask` is the template, see presetMask(). */
+inline Voices voices (int note, int root, int mode, uint64_t voicingMask, bool diatonic,
                       bool withoutPlayedNote = false) noexcept
 {
     Voices result;
-    const auto add = [&] (int n)
+    const uint64_t cleaned = cleanFreeMask (voicingMask);
+
+    for (int i = 0; i < kMaskCells && result.count < kMaxVoices; ++i)
     {
-        if (n >= 0 && n <= 127 && result.count < kMaxVoices && ! (withoutPlayedNote && n == note))
+        if (((cleaned >> i) & 1ull) == 0)
+            continue;
+
+        const int n = note + templateInterval (note, root, mode, i - kMaskOffset, diatonic);
+        if (n < 0 || n > 127 || (withoutPlayedNote && n == note))
+            continue;
+
+        bool twice = false;
+        for (int k = 0; k < result.count && ! twice; ++k)
+            twice = result.notes[k] == n;
+
+        if (! twice)
             result.notes[result.count++] = n;
-    };
-
-    voicing = clampVoicing (voicing);
-
-    if (voicing == kFreeVoicing)
-    {
-        const uint64_t cleaned = cleanFreeMask (freeMask);
-        for (int i = 0; i < 49; ++i)
-            if ((cleaned >> i) & 1ull)
-                add (note + i - 24);
-        return result;
     }
-
-    const VoicingDef& def = kVoicings[voicing];
-    for (int i = 0; i < def.count; ++i)
-        add (note + (def.steps ? stepInterval (note, root, mode, def.v[i], diatonic) : def.v[i]));
     return result;
 }
 

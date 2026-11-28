@@ -44,11 +44,14 @@ public:
     void setSettings (const vm::Settings& s) noexcept;
 
     /** Sends a controller on the main channel at the next audio block (channel 1
-        with MPE). Only the newest value waits: meant for a slow source such as
-        the camera, from the message thread. */
-    void sendController (int number, int value) noexcept
+        with MPE). Per slot only the newest value waits: meant for a slow source
+        such as the camera (slot 0: its X axis, slot 1: its Y axis), from the
+        message thread. */
+    static constexpr int kControllerSlots = 2;
+    void sendController (int slot, int number, int value) noexcept
     {
-        pendingController.store (((number & 0x7F) << 8) | (value & 0x7F));
+        if (slot >= 0 && slot < kControllerSlots)
+            pendingController[slot].store (((number & 0x7F) << 8) | (value & 0x7F));
     }
 
     /** Ends the sounding note and resets the controllers at the next audio block. */
@@ -82,7 +85,7 @@ private:
     vm::Settings sharedSettings;     // guarded by settingsLock
     vm::Settings audioSettings;      // the audio thread's own copy
     std::atomic<bool>  panic { false };
-    std::atomic<int>   pendingController { -1 };   // number << 8 | value, -1 = none
+    std::atomic<int>   pendingController[kControllerSlots] { { -1 }, { -1 } };   // number << 8 | value, -1 = none
 
     // meters: written by the audio thread, read by the window
     std::atomic<float> mLevelDb { -120.0f }, mInputPeak { 0.0f }, mClarity { 0.0f };

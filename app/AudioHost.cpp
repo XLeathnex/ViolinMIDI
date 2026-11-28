@@ -131,18 +131,21 @@ void AudioHost::audioDeviceIOCallbackWithContext (const float* const* inputChann
         send (events);
     }
 
-    // A controller from a slow source (the camera).
-    if (const int packed = pendingController.exchange (-1); packed >= 0 && settings.enabled)
+    // Controllers from a slow source (the camera's two axes).
+    events.clear();
+    for (auto& slot : pendingController)
     {
-        vm::MidiEvent e;
-        e.size = 3;
-        e.bytes[0] = (uint8_t) (0xB0 | (settings.mpe ? 0 : juce::jlimit (1, 16, settings.midiChannel) - 1));
-        e.bytes[1] = (uint8_t) ((packed >> 8) & 0x7F);
-        e.bytes[2] = (uint8_t) (packed & 0x7F);
-        events.clear();
-        events.push_back (e);
-        send (events);
+        if (const int packed = slot.exchange (-1); packed >= 0 && settings.enabled)
+        {
+            vm::MidiEvent e;
+            e.size = 3;
+            e.bytes[0] = (uint8_t) (0xB0 | (settings.mpe ? 0 : juce::jlimit (1, 16, settings.midiChannel) - 1));
+            e.bytes[1] = (uint8_t) ((packed >> 8) & 0x7F);
+            e.bytes[2] = (uint8_t) (packed & 0x7F);
+            events.push_back (e);
+        }
     }
+    send (events);
 
     const bool sound = settings.audioHarmony && firstOut != nullptr;
 

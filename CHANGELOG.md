@@ -2,6 +2,16 @@
 
 Der Abschnitt einer Version erscheint in der App unter Einstellungen, wenn man die Version auswählt.
 
+## 2.0.0
+
+- Neuer Name: VioLogic (vorher Archet). Neues Logo als App-Icon, im Fenster oben, als Start-Animation, im Fenster „Über VioLogic“ (Menü VioLogic) und als Wasserzeichen in der Tonhöhen-Grafik. Der MIDI-Ausgang heißt jetzt auch bei bestehenden Installationen „VioLogic“: in MainStage einmal neu zuordnen.
+- Neues Farbkonzept aus dem Logo: Anthrazit, Karmesinrot und Silber. Schalter zeigen AN in Grün und AUS in Rot. Jedes Bedienelement erklärt sich beim Darüberfahren mit der Maus.
+- Echtzeit-Grafik: Unter dem Tonhöhenverlauf läuft im selben Zeitraster die Lautstärkekurve mit den Linien von In- und Out-Schwelle. Zoom (+, −, Standard) für schnelle Läufe, Vibrato oder lange Phrasen.
+- Harmonie: „Total Free Voicing“ steht oben in der Liste. Bei jeder Harmonieart öffnet sich die Intervall-Matrix mit ihren Stimmen; Töne lassen sich hinzufügen und abwählen, eine veränderte Harmonieart heißt dann zum Beispiel „Enger Dreiklang FV“. Diatonisch gilt jetzt auch im Total Free Voicing: eine Terz wird die Terz der Tonart.
+- Audio-Harmonizer in einem eigenen Fenster: Formantkorrektur und High-Cut als Kurven über die Tonhöhe mit Stützpunkten (Standard: tiefe Saiten natürlich, E-Saite warm statt schrill), Drop-Voicing (in hohen Lagen sinkt die oberste Stimme eine Oktave), Ensemble-Entkopplung (Stimmen 8–22 ms versetzt, leicht verstimmt, ±35 % im Stereobild). Die Regler „Korpus-Erhalt“ und „Piezo-Glättung“ sind in den Kurven aufgegangen und starten mit der Standard-Kurve.
+- Kamera: Die Geigenschnecke steuert jetzt zwei Controller (X und Y) wie ein XY-Pad. Die Ruheposition ist der Nullpunkt; innerhalb des silbernen Totzonen-Ovals bleiben die Werte stehen, außerhalb wandern sie, je nach Regelkurve fein oder schnell. Während der Bewegung zeigt ein Fadenkreuz die Werte, auch im Hauptfenster.
+- Einstellungsfenster: Die Tooltips erscheinen jetzt auch dort.
+
 ## 1.5.0
 
 - Verzögerung: Die Erkennung war nie langsamer geworden, aber zwei Dinge konnten bremsen. Der Audio-Puffer fiel unter Umständen unbemerkt auf 512 Samples zurück (etwa 10 ms mehr); er wird jetzt bei jedem Start klein gehalten, solange man ihn nicht selbst in den Einstellungen wählt. Und die Harmonie setzte in 1.4.0 bis zu 29 ms nach dem Soloton ein; sie beginnt jetzt wieder im selben Augenblick.

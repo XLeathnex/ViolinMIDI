@@ -1,4 +1,4 @@
-// The live display (note, tuning, pitch over time) and the input meter.
+// The live display (note, tuning, pitch and loudness over time) and the input meter.
 // Each repaints only itself and only while something changes.
 #pragma once
 
@@ -50,26 +50,76 @@ private:
 };
 
 //==============================================================================
-class LiveDisplay final : public juce::Component
+/** The dominant element of the main window. Left: the note, a tuning scale and
+    what goes out. Right: the pitch history over the note grid and, in the same
+    time grid below it, the loudness with the In and Out thresholds. A small
+    zoom strip in the top left corner of the pitch graph changes the time and
+    pitch span together. */
+class LiveDisplay final : public juce::Component,
+                          public juce::SettableTooltipClient
 {
 public:
     LiveDisplay();
-    void push (const LiveFrame&, float a4Hz);
-    void paint (juce::Graphics&) override;
 
-    static constexpr int kFrames = 180;   // 6 s at 30 frames per second
-    static constexpr int kNoteWidth = 250; // the left part, with the note
+    /** One frame from the meters, 30 times a second. The thresholds are the
+        engine's In and Out levels in dB; they move the lines in the loudness curve. */
+    void push (const LiveFrame&, float a4Hz, float gateDb, float gateOffDb);
+
+    /** A free area at the top right of the pitch graph, in this component's
+        coordinates, for a translucent overlay (the camera HUD). It never covers
+        the zoom strip. */
+    juce::Rectangle<int> overlayArea() const;
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+    /** Explains the part under the mouse: the note, the pitch graph or the loudness curve. */
+    juce::String getTooltip() override;
+
+    static constexpr int kFramesPerSecond = 30;
+    static constexpr int kFrames = 24 * kFramesPerSecond + 1; // the longest zoom step, 24 s
+    static constexpr int kNoteWidth = 250;                     // the left part, with the note
 
 private:
-    void paintNote (juce::Graphics&, juce::Rectangle<float>);
-    void paintHistory (juce::Graphics&, juce::Rectangle<float>);
+    /** Where everything goes; derived from the size alone. */
+    struct Layout
+    {
+        juce::Rectangle<float> note;      // the left part, inside its padding
+        juce::Rectangle<float> pitch;     // the pitch history
+        juce::Rectangle<float> level;     // the loudness curve, same width and time grid
+        juce::Rectangle<float> labels;    // the column left of both, for note names and dB marks
+        juce::Rectangle<float> timeRow;   // the time marks under both
+    };
 
-    std::array<LiveFrame, kFrames> frames {};
+    Layout layout() const;
+    const LiveFrame& frameAt (int age) const   { return frames[(size_t) ((head - age + kFrames) % kFrames)]; }
+    int spanFrames() const;
+    float spanSemitones() const;
+    void setZoom (int step);
+
+    void paintNote (juce::Graphics&, juce::Rectangle<float>);
+    void paintTimeGrid (juce::Graphics&, const Layout&);
+    void paintPitch (juce::Graphics&, const Layout&);
+    void paintLevel (juce::Graphics&, const Layout&);
+    void paintWatermark (juce::Graphics&, juce::Rectangle<float>);
+
+    std::vector<LiveFrame> frames;
     int head = 0;
-    int idleFrames = kFrames;
+    int idleFrames = kFrames;  // frames in a row with nothing to show
     float centre = 67.0f;      // note in the middle of the history, follows the playing
     float shownCents = 0.0f;
     float a4 = 440.0f;
+    float gateIn = -45.0f, gateOut = -51.0f;
+    int zoom = 2;              // index into the zoom steps; 2 is the standard view
+
+    juce::TextButton zoomOutButton, zoomInButton, zoomResetButton;
+
+    // The emblem behind the grid, drawn once per size and screen scale.
+    juce::Image watermark;
+    juce::Rectangle<float> watermarkArea;
+    float watermarkScale = 0.0f;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LiveDisplay)
 };
 
 //==============================================================================

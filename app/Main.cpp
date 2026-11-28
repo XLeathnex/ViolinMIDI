@@ -1,4 +1,4 @@
-// Archet (formerly ViolinMIDI) - plays virtual instruments from the pitch of a violin.
+// VioLogic (formerly Archet, first ViolinMIDI) - plays virtual instruments from the pitch of a violin.
 //
 // The app listens to an audio input, follows the pitch of the violin and
 // sends it as MIDI through a virtual MIDI port.
@@ -131,6 +131,10 @@ namespace
             "\"Audio buffer size:\" = \"Puffergr\xc3\xb6\xc3\x9f" "e:\"\n"
             "\"Active input channels:\" = \"Aktive Eing\xc3\xa4nge:\"\n"
             "\"(no audio input channels found)\" = \"(keine Eing\xc3\xa4nge gefunden)\"\n"
+            "\"Active output channels:\" = \"Aktive Ausg\xc3\xa4nge:\"\n"
+            "\"(no audio output channels found)\" = \"(keine Ausg\xc3\xa4nge gefunden)\"\n"
+            "\"Resets the audio interface - sometimes needed after changing a device's properties in its custom control panel\" = "
+                "\"Setzt das Audio-Interface zur\xc3\xbc" "ck. Manchmal n\xc3\xb6tig, nachdem in seinen eigenen Einstellungen etwas ge\xc3\xa4ndert wurde.\"\n"
             "\"Control Panel\" = \"Treiber-Einstellungen\"\n"
             "\"Opens the device's own control panel\" = \"\xc3\x96" "ffnet die Einstellungen des Ger\xc3\xa4ts\"\n"
             "\"Reset Device\" = \"Ger\xc3\xa4t zur\xc3\xbc" "cksetzen\"\n"

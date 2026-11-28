@@ -12,6 +12,20 @@ namespace
 
     juce::String text (const char* utf8) { return juce::String::fromUTF8 (utf8); }
 
+    /** Tooltips for the controls of JUCE's audio settings, found by the label next to them
+        (the texts as installTranslations() in Main.cpp shows them). */
+    struct DeviceTip { const char* label; const char* tip; };
+    const DeviceTip kDeviceTips[] = {
+        { "Treiber:", "Die Audio-Schnittstelle des Systems. Auf dem Mac ist das CoreAudio." },
+        { "Ger\xc3\xa4t:", "Das Audio-Interface, an dem die Geige h\xc3\xa4ngt." },
+        { "Eingang:", "Das Interface, an dem die Geige h\xc3\xa4ngt." },
+        { "Ausgang:", "Wohin der Audio-Harmonizer spielt. Ohne Harmonizer gibt VioLogic hier nichts aus." },
+        { "Abtastrate:", "Gilt f\xc3\xbcr alle Programme am Interface. Hier nicht ver\xc3\xa4ndern, sondern im Audio-MIDI-Setup des Mac." },
+        { "Puffergr\xc3\xb6\xc3\x9f" "e:", "So klein wie m\xc3\xb6glich, 64 oder 128 Samples: Jedes Sample Puffer ist Verz\xc3\xb6gerung. 512 Samples kosten etwa 10 ms." },
+        { "Aktive Eing\xc3\xa4nge:", "Der erste eingeschaltete Eingang tr\xc3\xa4gt die Geige." },
+        { "Aktive Ausg\xc3\xa4nge:", "Die ersten beiden eingeschalteten Ausg\xc3\xa4nge spielen den Audio-Harmonizer, links und rechts." },
+    };
+
     /** "2026-11-21" -> "21.11.2026" */
     juce::String germanDate (const juce::String& iso)
     {
@@ -37,6 +51,9 @@ SettingsPanel::SettingsPanel (juce::AudioDeviceManager& deviceManager, UpdateMan
         b.onClick = [this, i] { if (pageButtons[i].getToggleState()) showPage (i); };
         pageRow.add (b);
     }
+    pageButtons[0].setTooltip (text ("Audio-Interface, Eingang der Geige, Ausgang f\xc3\xbcr den Audio-Harmonizer und Puffergr\xc3\xb6\xc3\x9f" "e."));
+    pageButtons[1].setTooltip (text ("MIDI-Eingang f\xc3\xbcr Fu\xc3\x9f" "pedal oder Controller: Regler zuweisen, Presets per Program Change."));
+    pageButtons[2].setTooltip (text ("Updates und fr\xc3\xbchere Versionen."));
     addAndMakeVisible (pageRow);
 
     addChildComponent (selector);
@@ -46,6 +63,7 @@ SettingsPanel::SettingsPanel (juce::AudioDeviceManager& deviceManager, UpdateMan
     addChildComponent (runningLabel);
 
     versionBox.setTextWhenNothingSelected (text ("Noch keine Versionsliste geladen"));
+    versionBox.setTooltip (text ("Alle ver\xc3\xb6" "ffentlichten Versionen. Darunter stehen die \xc3\x84nderungen der gew\xc3\xa4hlten Version."));
     versionBox.onChange = [this] { selectionChanged(); };
     addChildComponent (versionBox);
 
@@ -65,10 +83,12 @@ SettingsPanel::SettingsPanel (juce::AudioDeviceManager& deviceManager, UpdateMan
     notes.setScrollbarsShown (true);
     notes.setCaretVisible (false);
     notes.setFont (juce::Font (juce::FontOptions (13.0f)));
+    notes.setTooltip (text ("Was sich in der gew\xc3\xa4hlten Version ge\xc3\xa4ndert hat."));
     addChildComponent (notes);
 
     checkButton.setButtonText ("Nach Updates suchen");
     checkButton.onClick = [this] { updates.check(); };
+    checkButton.setTooltip (text ("Fragt die Projektseite nach neuen Versionen. Installiert wird nichts ohne Klick."));
     addChildComponent (checkButton);
 
     statusLabel.setJustificationType (juce::Justification::centredLeft);
@@ -101,6 +121,7 @@ void SettingsPanel::changeListenerCallback (juce::ChangeBroadcaster*)
 void SettingsPanel::showPage (int index)
 {
     page = index;
+    explainDeviceControls();
     selector.setVisible (page == 0);
     mapping.setVisible (page == 1);
     for (juce::Component* c : { (juce::Component*) &runningLabel, (juce::Component*) &versionBox, (juce::Component*) &useButton,
@@ -111,6 +132,28 @@ void SettingsPanel::showPage (int index)
 void SettingsPanel::timerCallback()
 {
     refreshStatus();
+
+    // The audio settings rebuild their controls when the device changes.
+    if (page == 0)
+        explainDeviceControls();
+}
+
+void SettingsPanel::explainDeviceControls()
+{
+    std::function<void (juce::Component&)> visit = [&visit] (juce::Component& c)
+    {
+        if (auto* label = dynamic_cast<juce::Label*> (&c))
+        {
+            if (auto* client = dynamic_cast<juce::SettableTooltipClient*> (label->getAttachedComponent()))
+                for (const auto& entry : kDeviceTips)
+                    if (label->getText() == text (entry.label) && client->getTooltip().isEmpty())
+                        client->setTooltip (text (entry.tip));
+        }
+
+        for (auto* child : c.getChildren())
+            visit (*child);
+    };
+    visit (selector);
 }
 
 //==============================================================================

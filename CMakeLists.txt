@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Runs on every Mac that can run a current MainStage, Intel and Apple Silicon.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
-project(ViolinMIDI VERSION 1.5.0 LANGUAGES C CXX)
+project(ViolinMIDI VERSION 2.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

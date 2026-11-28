@@ -87,6 +87,13 @@ inline uint64_t s2Free (std::initializer_list<int> semis)
     return m;
 }
 
+/** The 1.x way of asking for voices: a voicing index, the free mask beside it. */
+inline vm::scale::Voices s2Voices (int note, int root, int mode, int voicing, bool diatonic, uint64_t freeMask, bool without = false)
+{
+    const int v = vm::scale::clampVoicing (voicing);
+    return vm::scale::voices (note, root, mode, v == vm::scale::kFreeVoicing ? freeMask : vm::scale::presetMask (v), diatonic, without);
+}
+
 //==============================================================================
 // 1. Scales and voicings (Scale.h).
 inline void scalesAndVoicings()
@@ -135,7 +142,7 @@ inline void scalesAndVoicings()
         const int n = degree[d];
         for (int v = 0; v < 7; ++v)
         {
-            const std::string found = s2VoicesText (sc::voices (n, 0, 0, v, true, 0));
+            const std::string found = s2VoicesText (s2Voices (n, 0, 0, v, true, 0));
             check (found == expected[d][v], "C major, %s, voicing %d: expected \"%s\", found \"%s\"", names[d], v, expected[d][v], found.c_str());
         }
         // octave voicings
@@ -144,9 +151,9 @@ inline void scalesAndVoicings()
                                      std::to_string (n + 12) + " " + std::to_string (n + 24) };
         for (int v = 7; v < 12; ++v)
         {
-            const std::string found = s2VoicesText (sc::voices (n, 0, 0, v, true, 0));
+            const std::string found = s2VoicesText (s2Voices (n, 0, 0, v, true, 0));
             check (found == oct[v - 7], "C major, %s, octave voicing %d: expected \"%s\", found \"%s\"", names[d], v, oct[v - 7].c_str(), found.c_str());
-            const std::string chrom = s2VoicesText (sc::voices (n, 0, 0, v, false, 0));
+            const std::string chrom = s2VoicesText (s2Voices (n, 0, 0, v, false, 0));
             check (chrom == oct[v - 7], "C major chromatic, %s, octave voicing %d: expected \"%s\", found \"%s\"", names[d], v, oct[v - 7].c_str(), chrom.c_str());
         }
     }
@@ -163,11 +170,11 @@ inline void scalesAndVoicings()
         for (int v = 0; v < 7; ++v)
         {
             const std::string want = fixedText (n, v);
-            const std::string chrom = s2VoicesText (sc::voices (n, 0, 0, v, false, 0));
+            const std::string chrom = s2VoicesText (s2Voices (n, 0, 0, v, false, 0));
             check (chrom == want, "C major chromatic, note %d, voicing %d: expected \"%s\", found \"%s\"", n, v, want.c_str(), chrom.c_str());
             if (! sc::contains (sc::mask (0, 0, false), n))
             {
-                const std::string dia = s2VoicesText (sc::voices (n, 0, 0, v, true, 0));
+                const std::string dia = s2VoicesText (s2Voices (n, 0, 0, v, true, 0));
                 check (dia == want, "C major diatonic, foreign note %d, voicing %d: expected the fixed sizes \"%s\", found \"%s\"", n, v, want.c_str(), dia.c_str());
             }
         }
@@ -188,8 +195,8 @@ inline void scalesAndVoicings()
         { "free 0 4 7",                                  60, 0, 0, 12, true, s2Free ({ 0, 4, 7 }), false, "60 64 67" },
         { "free -12 0 +12, lowest first",                60, 0, 0, 12, true, s2Free ({ 12, -12, 0 }), false, "48 60 72" },
         { "free -24 and +24 are kept",                   60, 0, 0, 12, true, s2Free ({ -24, 24 }), false, "36 84" },
-        { "free: bits above +24 ignored",                60, 0, 0, 12, true, s2Free ({ 3 }) | (1ull << 49) | (1ull << 63), false, "63" },
-        { "free: at most 10, the lowest",                60, 0, 0, 12, true, s2Free ({ -24, -20, -16, -12, -8, -4, 0, 4, 8, 12, 16, 20 }), false,
+        { "free: bits above +24 ignored",                60, 0, 0, 12, false, s2Free ({ 3 }) | (1ull << 49) | (1ull << 63), false, "63" },
+        { "free: at most 10, the lowest",                60, 0, 0, 12, false, s2Free ({ -24, -20, -16, -12, -8, -4, 0, 4, 8, 12, 16, 20 }), false,
                                                                                           "36 40 44 48 52 56 60 64 68 72" },
         { "free: empty mask",                            60, 0, 0, 12, true, 0, false, "" },
         { "free: mode and key do not matter",            61, 5, 3, 12, false, s2Free ({ 0, 3 }), false, "61 64" },
@@ -205,7 +212,7 @@ inline void scalesAndVoicings()
     };
     for (const Case& c : cases)
     {
-        const std::string found = s2VoicesText (sc::voices (c.note, c.root, c.mode, c.voicing, c.diatonic, c.free, c.without));
+        const std::string found = s2VoicesText (s2Voices (c.note, c.root, c.mode, c.voicing, c.diatonic, c.free, c.without));
         check (found == c.expected, "voices, %s: expected \"%s\", found \"%s\"", c.what, c.expected, found.c_str());
     }
 
@@ -427,6 +434,7 @@ inline void harmonySettings()
     }
     {
         StageRig rig = prepared ("free voicing changed while voicing is free");
+        rig.s.harmonyMode = vm::HarmonyMode::Chromatic;   // the distances as they are (diatonic reads them as steps, 2.0)
         rig.s.voicing = 12;
         rig.s.freeVoicing = s2Free ({ 0, 12 });
         rig.hop();
@@ -1410,7 +1418,8 @@ inline void stageRandom2()
                         uint64_t m = 0;
                         const int bits = pick (0, 14);
                         for (int b = 0; b < bits; ++b) m |= 1ull << pick (0, pick (0, 1) ? 48 : 63);
-                        rig.s.freeVoicing = m;
+                        if (pick (0, 1)) rig.s.freeVoicing = m;
+                        else { rig.s.voicingVoices = m; rig.s.voicingEdited = pick (0, 1) != 0; }
                         break;
                     }
                     case 10: rig.s.mpe = pick (0, 2) == 0; break;

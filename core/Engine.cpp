@@ -13,6 +13,8 @@ namespace
     constexpr float  kRangeMarginSemis = 1.2f;   // search a little beyond the note range
     constexpr float  kIdleSkipDb = 18.0f;        // this far below the gate nothing can start
     constexpr float  kMpeBendRange = 48.0f;      // what MPE instruments expect on the member channels
+    constexpr int    kDropFromNote = 69;         // drop voicing: from A4 up, the A and E string
+
 
     inline double noteToHz (double note, double a4) noexcept
     {
@@ -211,6 +213,7 @@ void Engine::updateHarmonizerFrame (const Settings& s) noexcept
         for (int i = 0; i < stage.triadCount() && frame.voiceCount < Harmonizer::kMaxVoices; ++i)
             if (stage.triadNote (i) != lastRoot)      // the unison is the violin itself
                 frame.semitones[frame.voiceCount++] = (float) stage.triadNote (i) - frozenPitch;
+        applyDropVoicing (frame, stage.triadCount(), lastRoot, s);
         return;
     }
 
@@ -229,6 +232,7 @@ void Engine::updateHarmonizerFrame (const Settings& s) noexcept
     for (int i = 0; i < stage.triadCount() && frame.voiceCount < Harmonizer::kMaxVoices; ++i)
         if (stage.triadNote (i) != root)
             frame.semitones[frame.voiceCount++] = (float) (stage.triadNote (i) - root) - drift;
+    applyDropVoicing (frame, stage.triadCount(), root, s);
 }
 
 void Engine::analyseHop (const Settings& s, int offset, MidiEventList& out)
@@ -359,6 +363,29 @@ void Engine::appendAllNotesOff (const Settings& s, int offset, MidiEventList& ou
         e.bytes[2] = 0;
         out.push_back (e);
     }
+}
+
+void Engine::applyDropVoicing (Harmonizer::Frame& f, int chordNotes, int root, const Settings& s) noexcept
+{
+    if (! s.dropVoicing || chordNotes < 3 || root < kDropFromNote || f.voiceCount < 1)
+        return;
+
+    int top = 0;
+    for (int i = 1; i < f.voiceCount; ++i)
+        if (f.semitones[i] > f.semitones[top])
+            top = i;
+
+    if (f.semitones[top] < 0.5f)
+        return;
+
+    const float dropped = f.semitones[top] - 12.0f;
+    if (std::abs (dropped) < 0.5f)
+        return;
+    for (int i = 0; i < f.voiceCount; ++i)
+        if (i != top && std::abs (f.semitones[i] - dropped) < 0.5f)
+            return;
+
+    f.semitones[top] = dropped;
 }
 
 } // namespace vm

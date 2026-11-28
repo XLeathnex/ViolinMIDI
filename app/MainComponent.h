@@ -1,4 +1,4 @@
-// The main window: the presets across the top, the live display below them,
+// The main window: the emblem and the presets across the top, the live display below them,
 // the settings in columns (in the order the signal takes), one status line at
 // the bottom.
 //
@@ -15,9 +15,11 @@
 #include "CameraSettings.h"
 #include "CameraTracker.h"
 #include "MidiRemote.h"
+#include "PadHud.h"
 #include "PresetBar.h"
 #include "PresetStore.h"
 #include "SettingsStore.h"
+#include "SplashOverlay.h"
 #include "UpdateManager.h"
 #include "Widgets.h"
 
@@ -128,6 +130,8 @@ private:
     void applySettingsToControls();
     void pushSettings();        // controls -> engine and settings file
     void updateValueLabels();
+    void refreshVoicingLabel(); // "Enger Dreiklang FV" while the voices differ from the preset's
+    void initialiseAudio();     // audio in, MIDI ports, update check: after the window (and the start animation) is up
     void setMode (int index);
     void remoteControl (int paramIndex, bool isNote, int value);
     void allNotesOff();
@@ -145,6 +149,8 @@ private:
     void updateCameraStatus();
     void cameraFrame (const juce::Image& preview, const cam::Pose&);
     void cameraAction (int action);
+    void sendPadValue (int slot, int target, int value);
+    static juce::String padTargetName (int target);
     void refreshUpdateButton();
     AudioHost::Meters demoMeters();
     void updateStatus (const AudioHost::Meters&);
@@ -166,16 +172,20 @@ private:
     juce::String presetImage;        // the settings as the current preset holds them
     juce::TextButton audioButton, cameraButton;   // at the right of the presets
 
-    // camera control
+    // camera control: the violin scroll as a two-axis pad, and head gestures
     CameraTracker camera;
     CameraSettings cameraSettings;
-    cam::HeightTracker heightTracker;
+    cam::PadTracker pad;
     cam::GestureDetector gestures;
     juce::Component::SafePointer<juce::DialogWindow> cameraDialog;
-    float cameraMix = 1.0f;          // 0..1 from the height of the violin, for the target "Harmonie-Mix"
-    int   cameraValue = -1;          // the last controller value from the height, -1 = none yet
+    float cameraMix = 1.0f;          // 0..1 from an axis of the pad, for the target "Harmonie-Mix"
+    int   padSent[AudioHost::kControllerSlots] = { -1, -1 };   // the last value each axis sent, -1 = none yet
+    bool  cameraHasPicture = false;  // a frame arrived since the camera was switched on
+
+    juce::Component::SafePointer<juce::DialogWindow> audioDialog;   // the audio harmonizer's window
 
     LiveDisplay display;
+    PadHud padHud;                   // over the display while the pad moves values
     juce::TextButton masterButton;   // these three sit on the display, under the note
     juce::TextButton freezeSoloButton, freezeHarmonyButton;
 
@@ -226,9 +236,11 @@ private:
 
     std::vector<Column> columns;
 
+    std::unique_ptr<SplashOverlay> splash;   // the start animation, until audio and MIDI are up
+
     Options options;
     juce::String audioInitError;
-    bool midiPortOk = false, loading = false;
+    bool midiPortOk = false, loading = false, audioReady = false;
     int silentTicks = 0, clipTicks = 0;
     int lastBufferSize = 0;          // to notice a change made in the settings window
     float lastLevelDb = -120.0f;

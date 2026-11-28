@@ -773,7 +773,8 @@ inline void stageRandom3()
                         uint64_t m = 0;
                         const int bits = pick (0, 14);
                         for (int b = 0; b < bits; ++b) m |= 1ull << pick (0, pick (0, 1) ? 48 : 63);
-                        rig.s.freeVoicing = m;
+                        if (pick (0, 1)) rig.s.freeVoicing = m;
+                        else { rig.s.voicingVoices = m; rig.s.voicingEdited = pick (0, 1) != 0; }
                         break;
                     }
                     case 10: rig.s.mpe = pick (0, 2) == 0; break;

@@ -299,7 +299,7 @@ bool CameraTracker::start (const juce::String& cameraName)
     if (status == AVAuthorizationStatusDenied || status == AVAuthorizationStatusRestricted)
     {
         native->setError (text ("Der Zugriff auf die Kamera ist nicht erlaubt. In den Systemeinstellungen unter "
-                                "\xe2\x80\x9e" "Datenschutz & Sicherheit\xe2\x80\x9c \xe2\x86\x92 \xe2\x80\x9eKamera\xe2\x80\x9c f\xc3\xbcr Archet einschalten."));
+                                "\xe2\x80\x9e" "Datenschutz & Sicherheit\xe2\x80\x9c \xe2\x86\x92 \xe2\x80\x9eKamera\xe2\x80\x9c f\xc3\xbcr VioLogic einschalten."));
         return false;
     }
 

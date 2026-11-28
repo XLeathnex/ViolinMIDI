@@ -11,7 +11,17 @@
 //     pitch ratio r = 2^(semitones / 12),   f = r^(1 - bodyKeep)
 //
 // f = 1 keeps the body where it is (classic PSOLA), f = r is plain resampling
-// (the cello effect an octave down).
+// (the cello effect an octave down). bodyKeep is not one number: it follows the
+// played pitch along Settings::formantCurve, and so does the cut-off of the
+// low-pass on the voices (Settings::hiCutCurve), smoothed over ~25 ms.
+//
+// Ensemble decoupling (Settings::ensemble). The voices are the violin's own
+// tone, so played exactly in time with it they comb-filter against it and
+// against each other. Each voice therefore comes a little late (odd voices
+// 8..12 ms, even ones 16..22 ms, through a delay line after the grains, so it
+// never reads the previous note) and is detuned by a slow sine of 4..6 cents
+// at 0.2..0.5 Hz; the values are drawn for each new chord. A layer that has
+// faded out keeps running until its delay lines are empty.
 //
 // Marks. A bowed string has no glottal-pulse-like epochs, so the marks are a
 // phase grid one period apart: every period a new mark is placed one period
@@ -115,12 +125,16 @@ namespace
     constexpr double kDryRampMs = 10.0;
     constexpr double kBusLimit = 4.0;              // safety net: +12 dBFS on the voice bus
 
-    // Humanize at 1: up to +-7 cents and 0.5 .. 4 ms extra delay, wandering
-    // towards new random targets every 0.15 .. 0.65 s, smoothed twice.
-    constexpr double kHumanCents = 7.0;
-    constexpr double kHumanDelayMs = 3.5;
-    constexpr double kHumanBaseMs = 0.5;
-    constexpr double kHumanSmoothSec = 0.3;
+    // Ensemble decoupling at 1: odd voices (1, 3, ...) 8..12 ms late, even ones
+    // 16..22 ms; each detuned by a sine of 4..6 cents at 0.2..0.5 Hz.
+    constexpr double kEnsembleDelayMs[2][2] = { { 8.0, 12.0 }, { 16.0, 22.0 } };
+    constexpr double kEnsembleMaxDelayMs = 22.0;
+    constexpr double kDetuneCentsLow = 4.0, kDetuneCentsHigh = 6.0;
+    constexpr double kDetuneHzLow = 0.2, kDetuneHzHigh = 0.5;
+
+    // The key-tracked low-pass moves to a new cut-off over about this time.
+    constexpr double kHiCutSmoothMs = 25.0;
+    constexpr double kReferenceA4 = 440.0;    // for the key note of a period (curves are coarse)
 
     inline double besselI0 (double x) noexcept
     {
@@ -202,16 +216,15 @@ struct Harmonizer::Impl
         // loop clock (capture-relative)
         double u = 0.0, turn = 0.0;
         int dir = -1, markIndex = 0;
-        // humanize
+        // ensemble decoupling, drawn when the layer starts
         uint32_t rng = 1;
-        double wanderTarget = 0.0, wander1 = 0.0, wander2 = 0.0;
-        double delayTarget = 0.5, delay1 = 0.5, delay2 = 0.5;
-        double timeLeft = 0.0;
+        int    delay = 0;                    // samples late, through the voice's delay line
+        double lfoPhase = 0.0, lfoRate = 0.3, lfoDepth = 5.0;   // radians, Hz, cents
         // stereo
         float gL = 1.0f, gR = 1.0f, dL = 0.0f, dR = 0.0f;
     };
 
-    enum class State { Off, Active, Fading };
+    enum class State { Off, Active, Fading, Draining };   // Draining: faded out, the delay lines empty themselves
 
     struct Layer
     {
@@ -220,6 +233,7 @@ struct Harmonizer::Impl
         int count = 0;
         float env = 0.0f, fadeInInc = 1.0f, fadeFrom = 1.0f;
         double fadeX = 0.0, fadeInc = 0.0;
+        int maxDelay = 0, drain = 0;     // longest delay of its voices; samples left while draining
         Voice voices[kMaxVoices];
     };
 
@@ -258,11 +272,16 @@ struct Harmonizer::Impl
 
     // --- parameters (from process, used by setFrame too)
     double overlapMs = 0.0, releaseMs = 0.0;
-    double bodyKeep = 1.0, humanize = 0.0;
+    double bodyKeep = 1.0, ensemble = 0.0;
+
+    // --- ensemble delay lines, one per voice of every layer
+    std::vector<float> delayBuf;
+    uint32_t delayMask = 0;
+    int delaySize = 1;
 
     // --- output
     Biquad cutL, cutR;
-    double cutHz = -1.0;
+    double cutHz = -1.0, cutSetHz = -1.0;   // smoothed cut-off and the one the filters have
     float gain = 0.0f, dryGain = 1.0f;
     bool firstBlock = true;
 
@@ -280,6 +299,10 @@ struct Harmonizer::Impl
         ring.assign (nextPow2 ((uint32_t) (kRingSec * fs)), 0.0f);
         ringMask = (uint32_t) ring.size() - 1;
         history.assign ((size_t) kHistory, Mark());
+
+        delaySize = (int) nextPow2 ((uint32_t) std::ceil (kEnsembleMaxDelayMs * 0.001 * fs) + 4);
+        delayMask = (uint32_t) delaySize - 1;
+        delayBuf.assign ((size_t) kLayers * kMaxVoices * (size_t) delaySize, 0.0f);
 
         const uint32_t capSize = nextPow2 ((uint32_t) (kCaptureSec * fs) + 64);
         for (Capture& c : caps)
@@ -344,13 +367,16 @@ struct Harmonizer::Impl
             l.state = State::Off;
             l.capture = -1;
             l.count = 0;
+            l.maxDelay = l.drain = 0;
             for (Voice& v : l.voices)
                 v.grainCount = 0;
         }
         for (Capture& c : caps)
             c.users = 0;
+        std::fill (delayBuf.begin(), delayBuf.end(), 0.0f);
         cutL.reset();
         cutR.reset();
+        cutHz = cutSetHz = -1.0;
         firstBlock = true;
     }
 
@@ -595,7 +621,7 @@ struct Harmonizer::Impl
 
     void fadeOut (Layer& l, double ms) noexcept
     {
-        if (l.state == State::Off)
+        if (l.state == State::Off || l.state == State::Draining)
             return;
         if (l.state == State::Fading)
         {
@@ -617,6 +643,7 @@ struct Harmonizer::Impl
         l.capture = -1;
         l.state = State::Off;
         l.count = 0;
+        l.maxDelay = l.drain = 0;
         for (Voice& v : l.voices)
             v.grainCount = 0;
     }
@@ -647,15 +674,18 @@ struct Harmonizer::Impl
         {
             if (layers[i].state == State::Off && idx < 0)
                 idx = i;
-            if (layers[i].state == State::Fading)
+            if (layers[i].state == State::Fading || layers[i].state == State::Draining)
                 ++fading;
         }
-        // Keep a free layer for the next change: the quietest ringing one hurries up.
+        // Keep a free layer for the next change: the quietest ringing one hurries up
+        // (a draining one is the quietest: it has faded out already).
+        const auto quietness = [this] (int i) { return layers[i].state == State::Draining ? 2.0 : layers[i].fadeX; };
         if (idx < 0 || fading >= kLayers - 2)
         {
             int quietest = -1;
             for (int i = 0; i < kLayers; ++i)
-                if (layers[i].state == State::Fading && (quietest < 0 || layers[i].fadeX > layers[quietest].fadeX))
+                if ((layers[i].state == State::Fading || layers[i].state == State::Draining)
+                    && (quietest < 0 || quietness (i) > quietness (quietest)))
                     quietest = i;
             if (quietest >= 0 && idx < 0)
             {
@@ -676,6 +706,7 @@ struct Harmonizer::Impl
         l.count = count;
         l.env = 0.0f;
         l.fadeInInc = (float) (1.0 / (std::max (1.0, fadeInMs) * 0.001 * fs));
+        l.maxDelay = l.drain = 0;
         for (int i = 0; i < kMaxVoices; ++i)
         {
             Voice& v = l.voices[i];
@@ -685,9 +716,22 @@ struct Harmonizer::Impl
             v.nextStart = 0.0;
             seedCounter = seedCounter * 1664525u + 1013904223u;
             v.rng = seedCounter | 1u;
-            v.wanderTarget = v.wander1 = v.wander2 = 2.0 * random01 (v.rng) - 1.0;
-            v.delayTarget = v.delay1 = v.delay2 = random01 (v.rng);
-            v.timeLeft = 0.0;
+
+            // Ensemble decoupling: voice 1, 3, ... 8..12 ms late, voice 2, 4, ... 16..22 ms;
+            // fixed for this chord, so the delay never moves under a sounding voice.
+            const double* range = kEnsembleDelayMs[(i % 2 == 0) ? 0 : 1];
+            const double ms = range[0] + (range[1] - range[0]) * random01 (v.rng);
+            v.delay = std::min (delaySize - 1, (int) std::lround (ensemble * ms * 0.001 * fs));
+            v.lfoRate = kDetuneHzLow + (kDetuneHzHigh - kDetuneHzLow) * random01 (v.rng);
+            v.lfoDepth = kDetuneCentsLow + (kDetuneCentsHigh - kDetuneCentsLow) * random01 (v.rng);
+            v.lfoPhase = 2.0 * kPi * random01 (v.rng);
+            if (i < count)
+                l.maxDelay = std::max (l.maxDelay, v.delay);
+
+            // what an earlier chord left in this voice's delay line is not this one's
+            float* line = delayLine (idx, i);
+            std::fill (line, line + delaySize, 0.0f);
+
             v.gL = v.gR = 1.0f;   // centre; process() moves it to its place within one block
             v.dL = v.dR = 0.0f;
         }
@@ -853,20 +897,9 @@ struct Harmonizer::Impl
         gr.kernels = kernels.data() + (size_t) table * (kPhases + 1) * kTaps;
     }
 
-    void humanizeStep (Voice& v, double dt) noexcept
+    float* delayLine (int layer, int voice) noexcept
     {
-        v.timeLeft -= dt;
-        if (v.timeLeft <= 0.0)
-        {
-            v.wanderTarget = 2.0 * random01 (v.rng) - 1.0;
-            v.delayTarget = random01 (v.rng);
-            v.timeLeft = 0.15 + 0.5 * random01 (v.rng);
-        }
-        const double a = dt / (kHumanSmoothSec + dt);
-        v.wander1 += (v.wanderTarget - v.wander1) * a;
-        v.wander2 += (v.wander1 - v.wander2) * a;
-        v.delay1 += (v.delayTarget - v.delay1) * a;
-        v.delay2 += (v.delay1 - v.delay2) * a;
+        return delayBuf.data() + ((size_t) layer * kMaxVoices + (size_t) voice) * (size_t) delaySize;
     }
 
     /** Starts the next grain of a voice if it is due. Returns false when nothing is due. */
@@ -879,8 +912,9 @@ struct Harmonizer::Impl
             return false;
         }
 
-        const double human = humanize;
-        double r = std::exp2 ((double) v.semis / 12.0 + human * kHumanCents * v.wander2 / 1200.0);
+        // ensemble detune: a slow sine, its phase from the output clock
+        const double cents = ensemble * v.lfoDepth * std::sin (v.lfoPhase + 2.0 * kPi * v.lfoRate * t / fs);
+        double r = std::exp2 ((double) v.semis / 12.0 + cents / 1200.0);
         double f = std::pow (r, 1.0 - bodyKeep);
         f = std::min (4.0, std::max (0.25, f));
 
@@ -921,13 +955,11 @@ struct Harmonizer::Impl
         else
         {
             // Latest grid point whose grain never reads ahead of the input.
-            const double delay = human * (kHumanBaseMs + kHumanDelayMs * v.delay2) * 0.001 * fs;
-            const double latest = v.nextS - kReadMargin - halfOut * std::abs (f - 1.0) - delay;
+            const double latest = v.nextS - kReadMargin - halfOut * std::abs (f - 1.0);
             const double a = anchor + std::floor ((latest - anchor) / period) * period;
             addGrain (v, ring.data(), ringMask, a, period, f, v.nextS, halfOut, t, g);
         }
 
-        humanizeStep (v, spacing / fs);
         v.nextS += spacing;
 
         if (loop)
@@ -991,21 +1023,34 @@ struct Harmonizer::Impl
             return;
 
         auto clampf = [] (float x, float lo, float hi) { return std::isfinite (x) ? std::min (hi, std::max (lo, x)) : lo; };
-        bodyKeep  = (double) clampf (s.bodyKeep, 0.0f, 1.0f);
-        humanize  = (double) clampf (s.humanize, 0.0f, 1.0f);
+        ensemble  = (double) clampf (s.ensemble, 0.0f, 1.0f);
         overlapMs = (double) clampf (s.overlapMs, 0.0f, 1500.0f);
         releaseMs = (double) clampf (s.releaseMs, 0.0f, 3000.0f);
         const float spread = clampf (s.stereoSpread, 0.0f, 1.0f);
-        const double hz = std::min ((double) clampf (s.hiCutHz, 4000.0f, 16000.0f), 0.45 * fs);
         const float gainDb = clampf (s.harmonyGainDb, -200.0f, 6.0f);
         const float gainTarget = gainDb <= -60.0f ? 0.0f : (float) std::pow (10.0, (double) gainDb / 20.0);
         const float dryTarget = s.dryKill ? 0.0f : 1.0f;
 
-        if (hz != cutHz)
+        // Key tracking: the played tone (the one the voices are made from), as a MIDI note.
+        // Before the first tone the curves are read at their low end.
+        const float keyNote = framePeriod > 0.0 ? (float) (69.0 + 12.0 * std::log2 (fs / framePeriod / kReferenceA4))
+                                                : curve::kLowNote;
+        const Curve formant = curve::sanitised (s.formantCurve, curve::kFormantLow, curve::kFormantHigh, curve::defaultFormant());
+        const Curve hiCut = curve::sanitised (s.hiCutCurve, curve::kHiCutLowHz, curve::kHiCutHighHz, curve::defaultHiCut());
+        bodyKeep = (double) clampf (curve::value (formant, keyNote), 0.0f, 1.0f);
+
+        const double hzTarget = std::min ((double) clampf (curve::value (hiCut, keyNote, true), curve::kHiCutLowHz, curve::kHiCutHighHz),
+                                          0.45 * fs);
+        if (cutHz <= 0.0)
+            cutHz = hzTarget;
+        else
+            cutHz *= std::pow (hzTarget / cutHz, 1.0 - std::exp (-(double) numSamples / (kHiCutSmoothMs * 0.001 * fs)));
+
+        if (cutSetHz <= 0.0 || std::abs (cutHz / cutSetHz - 1.0) > 1.0e-3)
         {
-            cutHz = hz;
-            cutL.setLowpass (fs, hz, 0.70710678);   // 12 dB per octave, no peak
-            cutR.setLowpass (fs, hz, 0.70710678);
+            cutSetHz = cutHz;
+            cutL.setLowpass (fs, cutHz, 0.70710678);   // 12 dB per octave, no peak
+            cutR.setLowpass (fs, cutHz, 0.70710678);
         }
         if (firstBlock)
         {
@@ -1049,9 +1094,11 @@ struct Harmonizer::Impl
                 refine();
 
             const double t = (double) (written - 1);
+            const uint32_t writeAt = (uint32_t) ((uint64_t) (written - 1) & delayMask);
             float busL = 0.0f, busR = 0.0f;
-            for (Layer& l : layers)
+            for (int li = 0; li < kLayers; ++li)
             {
+                Layer& l = layers[li];
                 if (l.state == State::Off)
                     continue;
                 if (l.state == State::Active)
@@ -1059,24 +1106,52 @@ struct Harmonizer::Impl
                     if (l.env < 1.0f)
                         l.env = std::min (1.0f, l.env + l.fadeInInc);
                 }
-                else
+                else if (l.state == State::Fading)
                 {
                     l.fadeX += l.fadeInc;
                     if (l.fadeX >= 1.0)
                     {
-                        release (l);   // never the live layer: that one is Active
-                        continue;
+                        // never the live layer: that one is Active
+                        if (l.maxDelay <= 0)
+                        {
+                            release (l);
+                            continue;
+                        }
+                        l.state = State::Draining;
+                        l.drain = l.maxDelay + 1;
+                        l.env = 0.0f;
                     }
-                    l.env = l.fadeFrom * (1.0f - smoothstep (l.fadeX));
+                    else
+                    {
+                        l.env = l.fadeFrom * (1.0f - smoothstep (l.fadeX));
+                    }
+                }
+                else if (--l.drain <= 0)
+                {
+                    release (l);   // its delay lines have played out
+                    continue;
                 }
 
+                const bool sounding = l.state != State::Draining;
                 for (int vi = 0; vi < l.count; ++vi)
                 {
                     Voice& v = l.voices[vi];
-                    for (int guard = 0; guard < 4 && t >= v.nextStart; ++guard)
-                        if (! launch (l, v, t))
-                            break;
-                    const float y = voiceSample (v) * l.env;
+                    float y = 0.0f;
+                    if (sounding)
+                    {
+                        for (int guard = 0; guard < 4 && t >= v.nextStart; ++guard)
+                            if (! launch (l, v, t))
+                                break;
+                        y = voiceSample (v) * l.env;
+                    }
+
+                    if (v.delay > 0)
+                    {
+                        float* line = delayLine (li, vi);
+                        line[writeAt] = y;
+                        y = line[(writeAt - (uint32_t) v.delay) & delayMask];
+                    }
+
                     v.gL += v.dL;
                     v.gR += v.dR;
                     busL += y * v.gL;

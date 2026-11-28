@@ -46,7 +46,7 @@
 //     re-centred on the note actually sounding.
 //
 // R4  Harmony (triad on). The voices are scale::voices (root, keyRoot,
-//     scaleMode, voicing, harmonyMode == Diatonic, freeVoicing) on triadChannel,
+//     scaleMode, voicingMask (settings), harmonyMode == Diatonic) on triadChannel,
 //     with the velocity of the main note. They always include the played note
 //     where the voicing has it (1 - 3 - 5 sends all three).
 //     a) The root is the semitone nearest to the pitch that sounds (tracker
@@ -79,7 +79,8 @@
 //        at once (with its harmony); R3 applies to it from then on. A sounding
 //        note that is still allowed carries on; its harmony is exchanged if it
 //        changed (old notes off, then new notes on).
-//     b) triad, triadChannel, voicing, harmonyMode or freeVoicing: if the
+//     b) triad, triadChannel, voicing, harmonyMode or the voices of the voicing
+//        (voicingMask: freeVoicing or voicingVoices): if the
 //        harmony stays on its channel and the new settings ask for exactly
 //        the voices that sound, nothing is sent. Otherwise the harmony notes
 //        end at once on the channel they were started on, and bend and

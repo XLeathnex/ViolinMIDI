@@ -331,6 +331,7 @@ void OutputStage::applySettings (const Settings& s, int offset, MidiEventList& o
     n.scaleMode      = scale::clampMode (n.scaleMode);
     n.voicing        = scale::clampVoicing (n.voicing);
     n.freeVoicing    = scale::cleanFreeMask (n.freeVoicing);
+    n.voicingVoices  = scale::cleanFreeMask (n.voicingVoices);
     n.harmonyMode    = n.harmonyMode == HarmonyMode::Chromatic ? HarmonyMode::Chromatic : HarmonyMode::Diatonic;
     n.bendRangeSemis = clampf (n.bendRangeSemis, 0.1f, 96.0f);
     n.gateOffDb      = std::min (n.gateOffDb, n.gateDb);
@@ -352,7 +353,7 @@ void OutputStage::applySettings (const Settings& s, int offset, MidiEventList& o
     const bool keyChanged = n.keyFilter != cfg.keyFilter || n.keyRoot != cfg.keyRoot || n.scaleMode != cfg.scaleMode
                          || n.pentatonic != cfg.pentatonic || n.pentaSustain != cfg.pentaSustain;
     const bool triadChanged = n.triad != cfg.triad || n.triadChannel != cfg.triadChannel || n.voicing != cfg.voicing
-                           || n.harmonyMode != cfg.harmonyMode || n.freeVoicing != cfg.freeVoicing;
+                           || n.harmonyMode != cfg.harmonyMode || voicingMask (n) != voicingMask (cfg);
     const bool mpeChanged = n.mpe != cfg.mpe;
     const bool channelChanged = mpeChanged || (! n.mpe && n.midiChannel != cfg.midiChannel);
 
@@ -388,8 +389,8 @@ void OutputStage::applySettings (const Settings& s, int offset, MidiEventList& o
     bool keepHarmony = false;
     if (triadChanged && ! channelChanged && harmActive && cur.note >= 0 && n.triad && n.triadChannel == cfg.triadChannel)
     {
-        const scale::Voices wanted = scale::voices (harmRoot, n.keyRoot, n.scaleMode, n.voicing,
-                                                    n.harmonyMode == HarmonyMode::Diatonic, n.freeVoicing, ! mirror());
+        const scale::Voices wanted = scale::voices (harmRoot, n.keyRoot, n.scaleMode, voicingMask (n),
+                                                    n.harmonyMode == HarmonyMode::Diatonic, ! mirror());
         keepHarmony = wanted.count == triadCount_ && triadChan == n.triadChannel - 1;
         for (int i = 0; keepHarmony && i < wanted.count; ++i)
             keepHarmony = wanted.notes[i] == triadNotes[i];
@@ -445,8 +446,8 @@ void OutputStage::applySettings (const Settings& s, int offset, MidiEventList& o
         }
         else if (harmActive)
         {
-            const scale::Voices wanted = scale::voices (harmRoot, cfg.keyRoot, cfg.scaleMode, cfg.voicing,
-                                                        cfg.harmonyMode == HarmonyMode::Diatonic, cfg.freeVoicing, ! mirror());
+            const scale::Voices wanted = scale::voices (harmRoot, cfg.keyRoot, cfg.scaleMode, voicingMask (cfg),
+                                                        cfg.harmonyMode == HarmonyMode::Diatonic, ! mirror());
             bool same = wanted.count == triadCount_ && triadChan == cfg.triadChannel - 1;
             for (int i = 0; same && i < wanted.count; ++i)
                 same = wanted.notes[i] == triadNotes[i];
@@ -866,8 +867,8 @@ void OutputStage::startTriad (int offset, MidiEventList& out)
         return;
 
     const bool ownChannel = mirror();
-    const scale::Voices v = scale::voices (harmRoot, cfg.keyRoot, cfg.scaleMode, cfg.voicing,
-                                           cfg.harmonyMode == HarmonyMode::Diatonic, cfg.freeVoicing, ! ownChannel);
+    const scale::Voices v = scale::voices (harmRoot, cfg.keyRoot, cfg.scaleMode, voicingMask (cfg),
+                                           cfg.harmonyMode == HarmonyMode::Diatonic, ! ownChannel);
     triadChan = cfg.triadChannel - 1;
     harmActive = true;
 

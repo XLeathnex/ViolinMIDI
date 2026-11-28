@@ -98,9 +98,10 @@ inline vm::Settings hzSettings()
 {
     vm::Settings s;
     s.audioHarmony = true;
-    s.humanize = 0.0f;
+    s.ensemble = 0.0f;                                  // no micro-delay or detune: the measurements need the voices in time
     s.stereoSpread = 0.0f;
-    s.hiCutHz = 16000.0f;
+    s.hiCutCurve = vm::curve::flat (16000.0f);
+    s.formantCurve = vm::curve::flat (1.0f);            // the body where it is, as 1.5 had it by default
     s.dryKill = true;
     return s;
 }
@@ -412,7 +413,7 @@ void harmonizerBody()
         for (float body : { 1.0f, 0.75f, 0.5f, 0.25f, 0.0f })
         {
             vm::Settings s = hzSettings();
-            s.bodyKeep = body;
+            s.formantCurve = vm::curve::flat (body);
             const HzOut out = hzRun (in, fs, s, [&] (long long) { return hzFrame (true, fs / f0, { shift }); });
             const std::vector<float> y = out.mono();
             const double fOut = hzMeasureF0 (y, (long long) (0.4 * fs), (long long) (1.1 * fs), fs, f0 * r);
@@ -693,10 +694,10 @@ void harmonizerRobustness()
                 f.semitones[0] = std::numeric_limits<float>::infinity();
             f.frozen = uni (rng) < 0.15;
 
-            s.bodyKeep = (float) pick (-0.5, 1.5);
-            s.humanize = uni (rng) < 0.5 ? 1.0f : (float) pick (0.0, 1.0);
+            s.formantCurve = vm::curve::flat ((float) pick (-0.5, 1.5));   // out of range on purpose: clamped
+            s.ensemble = uni (rng) < 0.5 ? 1.0f : (float) pick (0.0, 1.0);
             s.stereoSpread = (float) pick (0.0, 1.0);
-            s.hiCutHz = uni (rng) < 0.3 ? 4000.0f : 16000.0f;
+            s.hiCutCurve = uni (rng) < 0.3 ? vm::curve::defaultHiCut() : vm::curve::flat (16000.0f);
             s.harmonyGainDb = uni (rng) < 0.5 ? 6.0f : (float) pick (-80.0, 6.0);
             s.dryKill = uni (rng) < 0.3;
             s.overlapMs = uni (rng) < 0.5 ? 1500.0f : 0.0f;
@@ -770,8 +771,8 @@ void harmonizerPerformance()
     Synth synth (fs, 99);
     const Signal sig = synth.render ({ seg }, Timbre());
     vm::Settings s;
-    s.bodyKeep = 0.5f;            // resampled grains: the costlier path
-    s.humanize = 0.5f;
+    s.formantCurve = vm::curve::flat (0.5f);   // resampled grains: the costlier path
+    s.ensemble = 1.0f;                         // delay lines and detune on
     s.stereoSpread = 1.0f;
     const double period = fs / noteToHz (57);
     vm::Harmonizer h;

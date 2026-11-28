@@ -1,6 +1,7 @@
 #include "Widgets.h"
 
 #include "Brand.h"
+#include "Theme.h"
 
 #include <cmath>
 
@@ -67,6 +68,7 @@ void ButtonRow::paint (juce::Graphics& g)
     const auto isOn = [this, n] (int i) { return i >= 0 && i < n && items[(size_t) i] != nullptr && items[(size_t) i]->getToggleState(); };
     const bool enabled = n == 0 || items.front() == nullptr || items.front()->isEnabled();
     const float alpha = enabled ? 1.0f : 0.5f;
+    const SwitchStyle style = switchStyle (*this);
 
     g.setColour (colour::control.withMultipliedAlpha (alpha));
     g.fillRoundedRectangle (r, kControlRadius);
@@ -82,7 +84,11 @@ void ButtonRow::paint (juce::Graphics& g)
 
         if (isOn (i))
         {
-            g.setColour (colour::selected.withMultipliedAlpha (alpha));
+            // An on/off switch says its state in colour: the first segment is OFF, the last ON.
+            auto plateColour = colour::selected;
+            if (style != SwitchStyle::plain && n == 2)
+                plateColour = i == 1 ? colour::emeraldDim : (style == SwitchStyle::status ? colour::crimsonDim : colour::selected);
+            g.setColour (plateColour.withMultipliedAlpha (alpha));
             g.fillRoundedRectangle (plate, kControlRadius - 1.5f);
         }
         else if (enabled && (b->isOver() || b->isDown()))

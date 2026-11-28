@@ -1,9 +1,12 @@
 // Offline tool: plays the harmony voices of a recording with its own sound.
 //
 //   violinmidi_harmonize in.wav|in.aiff out.wav [--voicing N] [--key ROOT] [--scale N]
-//        [--body 0..1] [--humanize 0..1] [--spread 0..1] [--hicut Hz] [--gain dB] [--drykill]
-//        [--release ms] [--overlap ms] [--coupling 0..1] [--chromatic] [--harmony dB]
+//        [--body 0..1] [--ensemble 0..1] [--spread 0..1] [--hicut Hz] [--nodrop] [--gain dB]
+//        [--drykill] [--release ms] [--overlap ms] [--coupling 0..1] [--chromatic] [--harmony dB]
 //        [--start s] [--length s] [--report]
+//
+// --body and --hicut set the formant and high-cut curves flat at that value;
+// without them the standard key-tracked curves of the app are used.
 //
 // The recording runs through vm::Engine with the harmony on (as violinmidi_wav
 // does); at every analysis hop a Harmonizer::Frame is built from the engine's
@@ -309,6 +312,7 @@ struct FrameBuilder
             const float target = (float) m.triad[i] + coupling * (lastPitch - (float) root);
             f.semitones[f.voiceCount++] = target - lastPitch;
         }
+        vm::Engine::applyDropVoicing (f, m.triadCount, root, s);
         return f;
     }
 };
@@ -421,12 +425,12 @@ float medianPeriod (const std::vector<HopRow>& hops)
 
 void report (const std::vector<float>& in, const std::vector<HopRow>& hops, double fs, int block, const vm::Settings& s)
 {
-    // One voice at a time (dry left out, no humanize, centre), so each can be measured alone.
+    // One voice at a time (dry left out, no ensemble delay or detune, centre), so each can be measured alone.
     constexpr int kVoices = 4;
     std::vector<float> voice[kVoices], sum (in.size(), 0.0f);
     vm::Settings vs = s;
     vs.dryKill = true;
-    vs.humanize = 0.0f;
+    vs.ensemble = 0.0f;
     vs.stereoSpread = 0.0f;
     vs.harmonyGainDb = 0.0f;
     std::vector<float> l ((size_t) block), r ((size_t) block);
@@ -455,7 +459,7 @@ void report (const std::vector<float>& in, const std::vector<HopRow>& hops, doub
 
     // Notes: runs of hops with the same engine note.
     std::printf ("# report: per note, middle of the note; cents = voice pitch against the pitch it should have\n");
-    std::printf ("#  time   note  voice  semis  cents   centroid in -> voice (ratio, expected %s)\n", "r^(1-body)");
+    std::printf ("#  time   note  voice  semis  cents   centroid in -> voice (ratio, expected %s)\n", "r^(1-body), body from the formant curve");
     std::vector<double> allCents;
     double worstSteadyJump = 0.0, worstEndJump = 0.0;
     size_t i = 0;
@@ -491,9 +495,12 @@ void report (const std::vector<float>& in, const std::vector<HopRow>& hops, doub
                     const double cents = hz > 0.0 ? 1200.0 * std::log2 (hz / ref) : 999.0;
                     if (hz > 0.0) allCents.push_back (cents);
                     const double c = harmonicCentroid (voice[v], sa, sb, fs, hz > 0.0 ? hz : ref);
+                    const double body = (double) vm::curve::value (vm::curve::sanitised (s.formantCurve, vm::curve::kFormantLow,
+                                                                                          vm::curve::kFormantHigh, vm::curve::defaultFormant()),
+                                                                   (float) pitch);
                     std::printf ("%7.2f  %5.1f  %d  %+6.2f  %+6.1f   %5.0f -> %5.0f Hz (x%.2f, expected x%.2f)\n",
                                  a, pitch, v, semis, cents, inCentroid, c, c / inCentroid,
-                                 std::pow (std::pow (2.0, semis / 12.0), 1.0 - (double) s.bodyKeep));
+                                 std::pow (std::pow (2.0, semis / 12.0), 1.0 - body));
                 }
                 worstSteadyJump = std::max (worstSteadyJump, jumpRatio (sum, sa, sb, fs, 0.0));
             }
@@ -533,7 +540,7 @@ int main (int argc, char** argv)
     if (argc < 3)
     {
         std::printf ("usage: violinmidi_harmonize in.wav|in.aiff out.wav [--voicing N] [--key ROOT] [--scale N]\n"
-                     "       [--body 0..1] [--humanize 0..1] [--spread 0..1] [--hicut Hz] [--gain dB] [--drykill]\n"
+                     "       [--body 0..1] [--ensemble 0..1] [--spread 0..1] [--hicut Hz] [--nodrop] [--gain dB] [--drykill]\n"
                      "       [--release ms] [--overlap ms] [--coupling 0..1] [--chromatic] [--harmony dB]\n"
                      "       [--start s] [--length s] [--report]\n"
                      "  --gain is the engine's input gain (analysis only, as in violinmidi_wav);\n"
@@ -554,10 +561,11 @@ int main (int argc, char** argv)
         if (a == "--voicing")        s.voicing = (int) num();
         else if (a == "--key")       s.keyRoot = (int) num();
         else if (a == "--scale")     s.scaleMode = (int) num();
-        else if (a == "--body")      s.bodyKeep = (float) num();
-        else if (a == "--humanize")  s.humanize = (float) num();
+        else if (a == "--body")      s.formantCurve = vm::curve::flat ((float) num());
+        else if (a == "--ensemble")  s.ensemble = (float) num();
         else if (a == "--spread")    s.stereoSpread = (float) num();
-        else if (a == "--hicut")     s.hiCutHz = (float) num();
+        else if (a == "--hicut")     s.hiCutCurve = vm::curve::flat ((float) num());
+        else if (a == "--nodrop")    s.dropVoicing = false;
         else if (a == "--gain")      s.inputGainDb = (float) num();
         else if (a == "--harmony")   s.harmonyGainDb = (float) num();
         else if (a == "--release")   s.releaseMs = (float) num();

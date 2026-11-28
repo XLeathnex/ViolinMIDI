@@ -53,16 +53,18 @@ public:
     /** `input` is the violin (mono). `left`/`right` receive the output and must
         not overlap the input. Any number of samples.
 
-        Uses from Settings: bodyKeep, humanize, stereoSpread, hiCutHz,
-        harmonyGainDb, dryKill, overlapMs, releaseMs. (audioHarmony and
-        vibratoCoupling are the caller's business: it decides whether to call
-        this at all and where the voices lie.)
+        Uses from Settings: formantCurve, hiCutCurve (both read at the pitch of
+        the tone being played), ensemble, stereoSpread, harmonyGainDb, dryKill,
+        overlapMs, releaseMs. (audioHarmony, vibratoCoupling and dropVoicing
+        are the caller's business: it decides whether to call this at all and
+        where the voices lie.)
 
         Output = the violin unchanged and undelayed in the centre (left out
         with dryKill) + the voices. */
     void process (const float* input, float* left, float* right, int numSamples, const Settings&) noexcept;
 
-    /** How far the voices lag behind the input at the given period, in samples. */
+    /** How far the voices lag behind the input at the given period, in samples,
+        before the ensemble delay (Settings::ensemble adds 8..22 ms at 1). */
     int latencySamples (float periodSamples) const noexcept;
 
 private:
