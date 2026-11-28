@@ -10,7 +10,7 @@ namespace
     // slowly and only after a pause, so a short stop in a sweep does not
     // make it blink.
     constexpr double kFadeInMs = 120.0, kHoldMs = 400.0, kFadeOutMs = 500.0;
-    constexpr int kFadeHz = 60;
+    constexpr int kFadeIntervalMs = 16;      // about 60 steps a second while it fades
 
     // Box: padding, the pad square, a gap, one line of text.
     constexpr float kInset = 8.0f, kGap = 4.0f, kTextH = 15.0f;
@@ -49,16 +49,15 @@ void PadHud::setState (float x, float y, bool active)
     valueX = nx;
     valueY = ny;
 
+    const double now = juce::Time::getMillisecondCounterHiRes();
     if (active != isActive)
     {
         isActive = active;
         if (! isActive)
-            releasedAt = juce::Time::getMillisecondCounterHiRes();
-    }
+            releasedAt = now;
 
-    const bool settled = isActive ? level >= 1.0f : level <= 0.0f;
-    if (! settled)
-        startFading();
+        scheduleFade (now);
+    }
 
     if (moved && level > 0.0f)
         repaintBox();
@@ -76,26 +75,45 @@ void PadHud::setAxisNames (const juce::String& x, const juce::String& y)
 }
 
 //==============================================================================
-void PadHud::startFading()
+void PadHud::scheduleFade (double now)
 {
-    if (isTimerRunning())
+    if (isActive ? level >= 1.0f : level <= 0.0f)
+    {
+        stopTimer();   // fully shown while active, or gone: nothing changes until the next turn
         return;
+    }
 
-    lastTick = juce::Time::getMillisecondCounterHiRes();
-    startTimerHz (kFadeHz);
+    const double wait = isActive ? 0.0 : releasedAt + kHoldMs - now;
+    if (wait > 0.0)
+    {
+        // The pause before the fade-out: a single call when it is over. A timer that already waits keeps its time.
+        if (getTimerInterval() == 0 || getTimerInterval() == kFadeIntervalMs)
+            startTimer (juce::jmax (1, (int) std::ceil (wait)));
+    }
+    else if (getTimerInterval() != kFadeIntervalMs)
+    {
+        lastTick = now;
+        startTimer (kFadeIntervalMs);
+    }
 }
 
 void PadHud::timerCallback()
 {
     const double now = juce::Time::getMillisecondCounterHiRes();
-    const double step = juce::jmax (0.0, now - lastTick);
-    lastTick = now;
-
     const float before = level;
+
     if (isActive)
-        level = juce::jmin (1.0f, level + (float) (step / kFadeInMs));
-    else if (now - releasedAt >= kHoldMs)
-        level = juce::jmax (0.0f, level - (float) (step / kFadeOutMs));
+    {
+        level = juce::jmin (1.0f, level + (float) (juce::jmax (0.0, now - lastTick) / kFadeInMs));
+    }
+    else
+    {
+        // The fade-out counts from the end of the pause, however late this call comes.
+        const double fadeStart = releasedAt + kHoldMs;
+        if (now > fadeStart)
+            level = juce::jmax (0.0f, level - (float) ((now - juce::jmax (lastTick, fadeStart)) / kFadeOutMs));
+    }
+    lastTick = now;
 
     // Clicks (and with them the tooltip) only while it can be seen; hidden, it is not there at all.
     const bool shown = level > 0.0f;
@@ -108,8 +126,16 @@ void PadHud::timerCallback()
     if (std::abs (level - before) > 0.0f)
         repaintBox();
 
-    if (isActive ? level >= 1.0f : level <= 0.0f)
-        stopTimer();
+    // From scratch each time: a pause timer that fired a little early is set again for the rest of the pause.
+    stopTimer();
+    scheduleFade (now);
+}
+
+bool PadHud::hitTest (int x, int y)
+{
+    bool self = false, children = false;
+    getInterceptsMouseClicks (self, children);
+    return self && boxArea().contains ((float) x, (float) y);
 }
 
 //==============================================================================

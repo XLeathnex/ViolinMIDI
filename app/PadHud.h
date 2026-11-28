@@ -31,9 +31,15 @@ public:
 
     void paint (juce::Graphics&) override;
 
+    /** Only the box takes the mouse (for its tooltip), and only while it can be seen. */
+    bool hitTest (int x, int y) override;
+
 private:
     void timerCallback() override;
-    void startFading();
+
+    /** Runs the timer only while there is something to do: one call at the end
+        of the pause before the fade-out, and steady ticks while it fades. */
+    void scheduleFade (double now);
 
     /** The rounded box and the pad square inside it, in local coordinates. */
     juce::Rectangle<float> boxArea() const;
@@ -45,7 +51,7 @@ private:
     bool  isActive = false;
     float level = 0.0f;           // 0 hidden .. 1 fully shown, linear in time; drawn eased
     double releasedAt = 0.0;      // ms (hi-res counter) when the hand came back to rest
-    double lastTick = 0.0;
+    double lastTick = 0.0;        // ms (hi-res counter) of the last fade step
     bool  intercepting = false;
     juce::String nameX { "aus" }, nameY { "aus" };
 

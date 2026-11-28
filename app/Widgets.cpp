@@ -68,6 +68,20 @@ namespace
         return pitchClass != 1 && pitchClass != 3 && pitchClass != 6 && pitchClass != 8 && pitchClass != 10;
     }
 
+    /** The pitch to show for a live frame: the detected one while there is one,
+        otherwise (a note that only rings on) the pitch being sent. */
+    float measuredPitch (const LiveFrame& f)
+    {
+        return f.heard ? f.pitch : f.outputPitch;
+    }
+
+    /** The played melody goes out as MIDI. Not while a note is held by the
+        pentatonic sustain: then what is heard is a foreign note that is not sent. */
+    bool melodySent (const LiveFrame& f)
+    {
+        return f.active && ! f.held;
+    }
+
     /** A line through the points with the corners rounded off: quadratic curves
         from one midpoint to the next, so 30 points a second read as a played line.
         With `join` it continues the current sub-path instead of starting one. */
@@ -93,15 +107,17 @@ namespace
 
     const char* const kPitchTip =
         "Tonh\xc3\xb6henverlauf, ganz rechts ist jetzt. Die silberwei\xc3\x9f" "e Linie mit rotem Schein ist die erkannte "
-        "Melodie, solange MIDI gesendet wird; grau ist nur geh\xc3\xb6rt, nicht gesendet. Die roten Balken sind die "
-        "gesendeten MIDI-Noten, ihre Kante links ist der Anschlag. Mit \xe2\x88\x92 und + oben links zoomen: kurz "
-        "f\xc3\xbcr schnelle L\xc3\xa4ufe und Vibrato, lang f\xc3\xbcr ganze Phrasen.";
+        "Melodie, solange sie als MIDI gesendet wird; grau ist, was nur geh\xc3\xb6rt, aber nicht gesendet wird. Die roten "
+        "Balken sind die gesendeten MIDI-Noten, ihre Kante links ist der Notenbeginn. Mit \xe2\x88\x92 und + oben links "
+        "zoomen: kurz f\xc3\xbcr schnelle L\xc3\xa4ufe und Vibrato, lang f\xc3\xbcr ganze Phrasen. Standard holt die "
+        "normale Ansicht zur\xc3\xbc" "ck.";
 
     const char* const kLevelTip =
         "Lautst\xc3\xa4rkeverlauf im selben Zeitraster wie die Tonh\xc3\xb6he dar\xc3\xbc" "ber, von \xe2\x88\x92" "72 bis 0 dB: "
-        "Anstrich, Crescendo und Decrescendo direkt unter den gespielten T\xc3\xb6nen. Rot, solange eine Note gesendet wird. "
+        "Bogenansatz, Crescendo und Decrescendo direkt unter den gespielten T\xc3\xb6nen. Rot, solange eine Note gesendet wird. "
         "Die obere Linie (In) ist die Einschalt-Schwelle: dar\xc3\xbc" "ber kann ein Ton beginnen. Die gestrichelte (Out) "
-        "ist die Ausschalt-Schwelle: darunter endet er. Beide folgen den Reglern.";
+        "ist die Ausschalt-Schwelle: darunter endet er. Beide folgen den Reglern. Die Punkte zeigen, wo eine Note "
+        "beginnt (rot) und wo sie endet (silbern).";
 }
 
 juce::String noteName (int midiNote)
@@ -242,19 +258,30 @@ void LiveDisplay::push (const LiveFrame& f, float a4Hz, float gateDb, float gate
     // Something to show: a pitch, a note, or a level the loudness curve lifts off its floor for.
     const bool live = f.active || f.heard;
     const bool audible = f.levelDb > kLowDb + 0.5f;
-    idleFrames = live || audible || changed ? 0 : juce::jmin (kFrames, idleFrames + 1);
+    idleFrames = live || audible || changed ? 0 : juce::jmin (kFrames + 1, idleFrames + 1);
 
     if (live)
     {
-        // Follow the playing calmly, but fast enough that a leap never leaves a narrow view for long.
-        const float target = f.heard ? f.pitch : f.outputPitch;
+        // What is played; while a note only rings on (held, bridged, released) the
+        // detector has no pitch (0), so what is sent stands in for it.
+        const float target = measuredPitch (f);
+
+        // Follow the playing calmly. A leap to near the edge or beyond is caught up
+        // with fast, so it never leaves a narrow view for long - but only once it
+        // has lasted a few frames, so a one-frame octave error does not shake the grid.
         const float room = spanSemitones() * 0.5f - 1.0f;
-        centre += (target - centre) * (std::abs (target - centre) > room ? 0.35f : 0.06f);
-        shownCents += ((f.pitch - std::round (f.pitch)) * 100.0f - shownCents) * 0.45f;
+        outsideFrames = std::abs (target - centre) > room ? outsideFrames + 1 : 0;
+        centre += (target - centre) * (outsideFrames >= 3 ? 0.35f : 0.06f);
+        shownCents += ((target - std::round (target)) * 100.0f - shownCents) * 0.45f;
+    }
+    else
+    {
+        outsideFrames = 0;
     }
 
-    // Once everything has scrolled out of the view there is nothing left to move.
-    if (idleFrames <= spanFrames() || thresholdsMoved)
+    // Once everything has scrolled out of the view there is nothing left to move;
+    // the last repaint after that shows the empty graph with its hint.
+    if (idleFrames <= spanFrames() + 1 || thresholdsMoved)
         repaint();
 }
 
@@ -312,7 +339,8 @@ juce::Rectangle<int> LiveDisplay::overlayArea() const
 {
     // Top right of the pitch graph; the zoom strip sits in the opposite corner.
     const auto plot = layout().pitch;
-    const float side = juce::jmax (0.0f, juce::jmin (140.0f, plot.getHeight() - 2.0f * (float) kStripInset));
+    const float besideStrip = plot.getWidth() - (float) (3 * kStripInset + 2 * kSignWidth + kResetWidth);
+    const float side = juce::jmax (0.0f, juce::jmin (140.0f, plot.getHeight() - 2.0f * (float) kStripInset, besideStrip));
     return juce::Rectangle<float> (plot.getRight() - (float) kStripInset - side, plot.getY() + (float) kStripInset, side, side)
              .toNearestInt();
 }
@@ -421,7 +449,7 @@ void LiveDisplay::paintNote (juce::Graphics& g, juce::Rectangle<float> r)
     {
         const int c = juce::roundToInt (juce::jlimit (-50.0f, 50.0f, shownCents));
         const auto centsText = (c > 0 ? juce::String ("+") : (c < 0 ? minus() : juce::String())) + juce::String (std::abs (c)) + " ct";
-        const float hz = a4 * std::pow (2.0f, (f.pitch - 69.0f) / 12.0f);
+        const float hz = a4 * std::pow (2.0f, (measuredPitch (f) - 69.0f) / 12.0f);
         g.setColour (colour::silver);
         g.drawText (centsText, row, juce::Justification::centredLeft);
         g.drawText (juce::String (hz, 1).replaceCharacter ('.', ',') + " Hz", row, juce::Justification::centredRight);
@@ -459,7 +487,7 @@ void LiveDisplay::paintWatermark (juce::Graphics& g, juce::Rectangle<float> plot
     // The emblem in the middle of the pitch graph, faint and a touch redder than
     // the logo. Drawn into an image once per size and screen scale, so each frame
     // only copies it.
-    const float side = std::round (plot.getHeight() * 0.9f);
+    const float side = std::round (juce::jmin (plot.getWidth(), plot.getHeight()) * 0.9f);
     const auto centred = plot.withSizeKeepingCentre (side, side);
     const auto area = centred.withPosition (std::round (centred.getX()), std::round (centred.getY()));   // whole pixels, no blur
     const float scale = juce::jmax (1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
@@ -635,14 +663,15 @@ void LiveDisplay::paintPitch (juce::Graphics& g, const Layout& l)
             continue;
         }
 
-        if (! points.empty() && runSent != f.active)
+        const bool sentNow = melodySent (f);
+        if (! points.empty() && runSent != sentNow)
         {
             // the next colour starts where the last one ended, so the line has no gap
             const auto last = points.back();
             flush();
             points.push_back (last);
         }
-        runSent = f.active;
+        runSent = sentNow;
         points.push_back ({ xFor (age), yFor (f.pitch) });
     }
     flush();
@@ -663,22 +692,35 @@ void LiveDisplay::paintPitch (juce::Graphics& g, const Layout& l)
     if (now.heard)
     {
         const juce::Point<float> pt (xFor (0), yFor (now.pitch));
-        if (now.active)
+        if (melodySent (now))
         {
             g.setColour (colour::crimson.withAlpha (0.3f));
             g.fillEllipse (juce::Rectangle<float> (11.0f, 11.0f).withCentre (pt));
         }
-        g.setColour (now.active ? colour::crimson : colour::tertiary);
+        g.setColour (melodySent (now) ? colour::crimson : colour::tertiary);
         g.fillEllipse (juce::Rectangle<float> (5.0f, 5.0f).withCentre (pt));
     }
 
-    if (idleFrames >= frameSpan)
+    // nothing left in the view (push() repaints once more when the last trace has gone)
+    if (idleFrames > frameSpan)
     {
+        // The grid is wiped from under the words and the watermark put back, so
+        // no line runs through the text and the emblem stays whole.
+        const auto hint = text ("Gespielte T\xc3\xb6ne und gesendete MIDI-Noten der letzten ") + decimal (kZoomSteps[zoom].seconds)
+                        + " Sekunden";
+        const auto hintFont = font (13.0f);
+        const auto box = plot.withSizeKeepingCentre (juce::GlyphArrangement::getStringWidth (hintFont, hint) + 16.0f, 20.0f)
+                             .toNearestInt();
+        {
+            juce::Graphics::ScopedSaveState hintState (g);
+            g.reduceClipRegion (box);
+            g.fillAll (colour::display);
+            if (watermark.isValid())
+                g.drawImage (watermark, watermarkArea);
+        }
         g.setColour (colour::tertiary);
-        g.setFont (font (13.0f));
-        g.drawText (text ("Gespielte T\xc3\xb6ne und gesendete MIDI-Noten der letzten ") + decimal (kZoomSteps[zoom].seconds)
-                      + " Sekunden",
-                    plot, juce::Justification::centred);
+        g.setFont (hintFont);
+        g.drawText (hint, box, juce::Justification::centred, false);
     }
 }
 

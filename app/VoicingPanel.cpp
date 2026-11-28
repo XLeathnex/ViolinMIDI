@@ -3,6 +3,7 @@
 #include "Brand.h"
 #include "Scale.h"
 
+#include <cmath>
 #include <cstdlib>
 
 namespace
@@ -38,6 +39,9 @@ namespace
 
     constexpr int kWidth = 2 * kMargin + kRowWidth;                // 717
     constexpr int kHeight = kButtonsY + kButtonH + kHeadingY;      // 248
+
+    // What "Dreiklang" sets: the played note, the major third and the fifth.
+    constexpr uint64_t kTriad = vm::scale::maskBit (0) | vm::scale::maskBit (4) | vm::scale::maskBit (7);
 
     juce::String U (const char* utf8) { return juce::String::fromUTF8 (utf8); }
 
@@ -179,6 +183,14 @@ namespace
                   "der Tonart bekommt auch diatonisch die Abst\xc3\xa4nde, wie sie sind.");
     }
 
+    // Short on purpose: it sits next to the pointer while the lines under the matrix
+    // describe the cell, and a long tip there would cover them. The full
+    // explanation is on the scale under the cells.
+    juce::String cellTip()
+    {
+        return U ("Klick schaltet die Stimme an oder aus (bis zu 10). Was sie bedeutet, steht darunter.");
+    }
+
     juce::String matrixTip (bool freeType)
     {
         auto tip = U ("Intervall-Matrix: Jede Zelle ist ein Abstand vom gespielten Ton, von \xe2\x88\x92" "24 (zwei Oktaven "
@@ -232,7 +244,7 @@ VoicingPanel::VoicingPanel (const juce::String& typeName, bool isFree, uint64_t 
     addAndMakeVisible (freeType ? triadButton : resetButton);
     addAndMakeVisible (clearButton);
 
-    triadButton.onClick = [this] { setMask (sc::maskBit (0) | sc::maskBit (4) | sc::maskBit (7)); };
+    triadButton.onClick = [this] { setMask (kTriad); };
     clearButton.onClick = [this] { setMask (0); };
     resetButton.onClick = [this]
     {
@@ -273,7 +285,10 @@ void VoicingPanel::setMask (uint64_t newMask)
 
 void VoicingPanel::refresh()
 {
+    // A button that would change nothing is greyed out, as on the Mac.
     resetButton.setEnabled (isModified());
+    clearButton.setEnabled (bits != 0);
+    triadButton.setEnabled (bits != kTriad);
     repaint();
 }
 
@@ -296,9 +311,8 @@ void VoicingPanel::resized()
     (freeType ? triadButton : resetButton).setBounds (clearButton.getX() - kButtonGap - w, kButtonsY, w, kButtonH);
 }
 
-void VoicingPanel::mouseMove (const juce::MouseEvent& e)
+void VoicingPanel::setHovered (int cell)
 {
-    const int cell = cellAt (e.getPosition());
     if (cell != hovered)
     {
         hovered = cell;
@@ -306,23 +320,14 @@ void VoicingPanel::mouseMove (const juce::MouseEvent& e)
     }
 }
 
-void VoicingPanel::mouseExit (const juce::MouseEvent&)
-{
-    if (hovered != -1)
-    {
-        hovered = -1;
-        repaint();
-    }
-}
+void VoicingPanel::mouseMove (const juce::MouseEvent& e)   { setHovered (cellAt (e.getPosition())); }
+void VoicingPanel::mouseDrag (const juce::MouseEvent& e)   { setHovered (cellAt (e.getPosition())); }
+void VoicingPanel::mouseExit (const juce::MouseEvent&)     { setHovered (-1); }
 
 void VoicingPanel::mouseDown (const juce::MouseEvent& e)
 {
     const int cell = cellAt (e.getPosition());
-    if (cell != hovered)
-    {
-        hovered = cell;
-        repaint();
-    }
+    setHovered (cell);
 
     if (cell < 0)
         return;
@@ -344,6 +349,9 @@ juce::String VoicingPanel::getTooltip()
 
     if (juce::Rectangle<int> (kMargin, kModeY, kRowWidth, kModeH).contains (p))
         return modeTip();
+
+    if (cellAt (p) >= 0)
+        return cellTip();
 
     if (juce::Rectangle<int> (kMargin, kMatrixTop, kRowWidth, kMatrixBottom - kMatrixTop).contains (p))
         return matrixTip (freeType);
@@ -376,19 +384,26 @@ void VoicingPanel::paintHeading (juce::Graphics& g) const
     using namespace brand;
 
     const juce::Rectangle<int> heading (kMargin, kHeadingY, kRowWidth, kHeadingH);
+    const bool modified = isModified();
 
     const auto nameFont = font (13.0f, true);
+    const auto badgeFont = font (11.0f, true);
+    const float badgeW = juce::GlyphArrangement::getStringWidth (badgeFont, "FV") + 10.0f;
+
+    // The badge always keeps its place: a long name is shortened, never the "FV".
+    auto nameArea = heading.withTrimmedRight (kCountW);
+    if (modified)
+        nameArea = nameArea.withTrimmedRight ((int) std::ceil (badgeW) + 8);
+
     g.setColour (colour::text);
     g.setFont (nameFont);
-    g.drawText (title, heading.withTrimmedRight (kCountW), juce::Justification::centredLeft, true);
+    g.drawText (title, nameArea, juce::Justification::centredLeft, true);
 
     // "FV": this preset type plays voices of its own, visible at a glance on stage.
-    if (isModified())
+    if (modified)
     {
-        const auto badgeFont = font (11.0f, true);
-        const float nameW = juce::jmin (juce::GlyphArrangement::getStringWidth (nameFont, title), (float) (kRowWidth - kCountW - 40));
-        const float badgeW = juce::GlyphArrangement::getStringWidth (badgeFont, "FV") + 10.0f;
-        const juce::Rectangle<float> badge ((float) kMargin + nameW + 8.0f, (float) heading.getCentreY() - 8.0f, badgeW, 16.0f);
+        const float nameW = juce::jmin (juce::GlyphArrangement::getStringWidth (nameFont, title), (float) nameArea.getWidth());
+        const juce::Rectangle<float> badge ((float) nameArea.getX() + nameW + 8.0f, (float) heading.getCentreY() - 8.0f, badgeW, 16.0f);
 
         g.setColour (colour::crimson);
         g.fillRoundedRectangle (badge, 4.0f);
@@ -530,7 +545,7 @@ void VoicingPanel::paintInfo (juce::Graphics& g) const
 
     juce::String hint;
     if (refused)
-        hint = U ("Schon 10 Stimmen: erst eine andere abw\xc3\xa4hlen");
+        hint = "Schon " + juce::String (kMaxVoices) + U (" Stimmen: erst eine andere abw\xc3\xa4hlen");
     else if (freeType || (! inPreset && ! on))
         hint = on ? U ("Klick nimmt diese Stimme heraus") : U ("Klick f\xc3\xbcgt diese Stimme hinzu");
     else if (inPreset)

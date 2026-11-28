@@ -105,7 +105,8 @@ private:
 
     std::vector<LiveFrame> frames;
     int head = 0;
-    int idleFrames = kFrames;  // frames in a row with nothing to show
+    int idleFrames = kFrames + 1;  // frames in a row with nothing to show, at most kFrames + 1
+    int outsideFrames = 0;     // frames in a row the pitch was near or past the edge of the view
     float centre = 67.0f;      // note in the middle of the history, follows the playing
     float shownCents = 0.0f;
     float a4 = 440.0f;
