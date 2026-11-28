@@ -380,7 +380,8 @@ void PresetBar::commitSaveAs (const juce::String& name, int slot)
 
 void PresetBar::doSave (int slot, const juce::String& name, const vm::Settings& settings)
 {
-    if (! store.save (slot, name, settings))
+    // Saved back into the preset that is loaded: what other versions keep in it stays.
+    if (! store.save (slot, name, settings, slot == current))
     {
         updateTexts();
         showError (U ("Das Preset konnte nicht gespeichert werden.\nOrdner: ") + store.folder().getFullPathName());

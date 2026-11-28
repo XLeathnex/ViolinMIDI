@@ -60,6 +60,7 @@ void Engine::prepare (double sampleRate)
     frame = Harmonizer::Frame();
     frameFrozen = false;
     lastRoot = -1;
+    liveHops = 0;
     hopEvents.clear();
     hopEvents.reserve (64);
     wasEnabled = true;
@@ -196,12 +197,24 @@ void Engine::updateHarmonizerFrame (const Settings& s) noexcept
         return;
 
     const auto period = [this] (float note) { return (float) (fsIn / noteToHz ((double) note, cfgA4)); };
-    const int root = stage.harmonyRoot();
+    const bool frozenNow = stage.harmonyFrozen();
+    const int root = frozenNow ? stage.frozenHarmonyRoot() : stage.harmonyRoot();
     if (root >= 0)
         lastRoot = root;
 
-    if (stage.harmonyFrozen())
+    // The harmonizer loops the frozen voices from tone it has already played
+    // live. A freeze armed before the note (R7a) is captured in the very hop
+    // the harmony starts, before the harmonizer has heard any of it: so the
+    // first moments of such a note still go to it as live voices, and the
+    // freeze follows once there is tone to loop, or as soon as the note ends.
+    const int minLiveHops = (int) std::ceil (kFreezeLeadInSec * fsIn / (double) hop);
+    const bool leadIn = frozenNow && ! frameFrozen && liveHops < minLiveHops
+                        && lastRoot >= 0 && tracker.isActive();
+
+    if (frozenNow && ! leadIn)
     {
+        liveHops = 0;
+
         // The frozen voices are played from the tone as it was when the freeze began.
         if (! frameFrozen)
             frozenPitch = tracker.isActive() ? tracker.trackedPitch() : (float) std::max (lastRoot, 0);
@@ -219,7 +232,11 @@ void Engine::updateHarmonizerFrame (const Settings& s) noexcept
 
     frameFrozen = false;
     if (root < 0 || ! tracker.isActive())
+    {
+        liveHops = 0;
         return;
+    }
+    ++liveHops;
 
     // Settings::vibratoCoupling: at 1 the voices move with the player's pitch
     // (vibrato, intonation), at 0 they stay on the tempered note.

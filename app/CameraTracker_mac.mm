@@ -293,6 +293,8 @@ juce::StringArray CameraTracker::availableCameras()
 bool CameraTracker::start (const juce::String& cameraName)
 {
     stop();
+    wanted = true;
+    const int number = ++startNumber;
 
     const AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType: AVMediaTypeVideo];
 
@@ -312,15 +314,28 @@ bool CameraTracker::start (const juce::String& cameraName)
         [AVCaptureDevice requestAccessForMediaType: AVMediaTypeVideo completionHandler: ^(BOOL granted)
         {
             const bool allowed = granted == YES;
-            juce::MessageManager::callAsync ([weak, name, allowed]
+            juce::MessageManager::callAsync ([weak, name, allowed, number]
             {
-                if (auto* tracker = weak.get())
+                auto* tracker = weak.get();
+
+                // Switched off (or to another camera) while macOS was asking: nothing to do.
+                if (tracker == nullptr || ! tracker->wanted || tracker->startNumber != number)
+                    return;
+
+                if (allowed)
                 {
-                    if (allowed)
-                        tracker->start (name);
-                    else
-                        tracker->native->setError (text ("Ohne Zugriff auf die Kamera gibt es keine Kamera-Steuerung."));
+                    tracker->start (name);
                 }
+                else
+                {
+                    tracker->wanted = false;
+                    tracker->native->setError (text ("Ohne Zugriff auf die Kamera gibt es keine Kamera-Steuerung. "
+                                                     "Erlauben l\xc3\xa4sst sie sich in den Systemeinstellungen unter "
+                                                     "\xe2\x80\x9e" "Datenschutz & Sicherheit\xe2\x80\x9c \xe2\x86\x92 \xe2\x80\x9eKamera\xe2\x80\x9c."));
+                }
+
+                if (tracker->onStateChanged)
+                    tracker->onStateChanged();
             });
         }];
 
@@ -333,7 +348,9 @@ bool CameraTracker::start (const juce::String& cameraName)
 
 void CameraTracker::stop()
 {
+    wanted = false;
     native->close();
+    native->setError ({});   // "waiting for permission" and the like belong to the start that is over
 }
 
 bool CameraTracker::isRunning() const

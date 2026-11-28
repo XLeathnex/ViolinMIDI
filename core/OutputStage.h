@@ -204,6 +204,8 @@ public:
     int  harmonyRoot() const noexcept { return harmActive && harmFreeze != Freeze::On ? harmRoot : -1; }
     /** The harmony track is frozen and has notes. */
     bool harmonyFrozen() const noexcept { return harmFreeze == Freeze::On && harmDroneCount > 0; }
+    /** The semitone the frozen harmony was built on, or -1 if the harmony is not frozen. */
+    int  frozenHarmonyRoot() const noexcept { return harmonyFrozen() ? harmDroneRoot : -1; }
     /** The frozen solo note or -1. */
     int  frozenNote() const noexcept  { return soloFreeze == Freeze::On ? soloDrone.note : -1; }
 
@@ -342,6 +344,7 @@ private:
     int    harmDrone[scale::kMaxVoices] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
     int    harmDroneCount = 0;
     int    harmDroneChan = 0;
+    int    harmDroneRoot = -1;
 
     // what really went out, per channel
     int   chanBend[16];

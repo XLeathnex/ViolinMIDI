@@ -449,3 +449,91 @@ inline void ensembleAndHiCut()
         check (lowCut > 0.8 * lowOpen, "a low note under the same curve keeps its top (%.3g vs %.3g)", lowCut, lowOpen);
     }
 }
+
+//==============================================================================
+// 5. A harmony freeze armed before the note (R7a) sounds in the audio harmonizer:
+//    the voices play while the note is bowed and the loop rings on after it.
+
+inline void armedFreezeAudio()
+{
+    const double fs = 48000.0;
+    const auto rms = [fs] (const std::vector<float>& x, double a, double b)
+    {
+        double sum = 0.0;
+        long long n = 0;
+        for (long long i = (long long) (a * fs); i < (long long) (b * fs) && i < (long long) x.size(); ++i, ++n)
+            sum += (double) x[(size_t) i] * x[(size_t) i];
+        return n > 0 ? std::sqrt (sum / (double) n) : 0.0;
+    };
+
+    // pass 0: no freeze, 1: armed, 2: armed with ensemble, 3: armed, a note shorter than the lead-in
+    double reference = 0.0;
+    for (int pass = 0; pass < 4; ++pass)
+    {
+        vm::Settings es = baseSettings();
+        es.triad = true;
+        es.audioHarmony = true;
+        es.dryKill = true;
+        es.voicing = 0;
+        es.ensemble = pass == 2 ? 1.0f : 0.0f;
+        es.freezeHarmony = pass >= 1;
+
+        vm::Engine engine;
+        engine.prepare (fs);
+        Synth synth (fs, 21);
+        const double length = pass == 3 ? 0.15 : 1.5;
+        const Signal sig = synth.render ({ rest (0.3), tone (62.0, length, -20.0, 0.02), rest (0.8) }, Timbre());
+        std::vector<float> left (sig.samples.size()), right (sig.samples.size());
+        vm::MidiEventList events;
+        events.reserve (8192);
+        for (size_t pos = 0; pos < sig.samples.size(); pos += 64)
+        {
+            const int n = (int) std::min<size_t> (64, sig.samples.size() - pos);
+            events.clear();
+            engine.process (sig.samples.data() + pos, n, es, events, left.data() + pos, right.data() + pos);
+        }
+
+        const double end = 0.3 + length;
+        const double during = rms (left, 0.3 + std::min (0.2, length * 0.5), end - 0.02);
+        const double after = rms (left, end + 0.2, end + 0.6);
+        info ("armed freeze pass %d: wet during the note %.4f, after it %.4f", pass, during, after);
+        if (pass == 0)
+        {
+            reference = during;
+            check (during > 0.01, "no freeze: the harmony sounds while the note is bowed (%.4f)", during);
+            check (after < 0.1 * during, "no freeze: the harmony ends with the note (%.4f)", after);
+        }
+        else
+        {
+            check (during > 0.3 * reference, "armed freeze (pass %d): the voices sound while the note is bowed (%.4f, without freeze %.4f)",
+                   pass, during, reference);
+            check (after > 0.3 * reference, "armed freeze (pass %d): the frozen voices ring on after the note (%.4f)", pass, after);
+        }
+    }
+
+    // The frozen frame is built on the frozen chord's own root: no voice on the violin's own note.
+    {
+        vm::Settings es = baseSettings();
+        es.triad = true;
+        es.audioHarmony = true;
+        es.freezeHarmony = true;
+        vm::Engine engine;
+        engine.prepare (fs);
+        Synth synth (fs, 21);
+        const Signal sig = synth.render ({ rest (0.3), tone (62.0, 1.0, -20.0, 0.02), rest (0.3) }, Timbre());
+        std::vector<float> left (sig.samples.size()), right (sig.samples.size());
+        vm::MidiEventList events;
+        events.reserve (8192);
+        for (size_t pos = 0; pos < sig.samples.size(); pos += 64)
+        {
+            const int n = (int) std::min<size_t> (64, sig.samples.size() - pos);
+            events.clear();
+            engine.process (sig.samples.data() + pos, n, es, events, left.data() + pos, right.data() + pos);
+        }
+        const auto f = engine.harmonizerFrame();
+        bool unison = false;
+        for (int i = 0; i < f.voiceCount; ++i)
+            unison = unison || std::abs (f.semitones[i]) < 0.5f;
+        check (f.frozen && f.voiceCount == 2 && ! unison, "frozen frame: %d voices, frozen %d, a unison voice %d", f.voiceCount, (int) f.frozen, (int) unison);
+    }
+}

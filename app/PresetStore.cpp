@@ -191,9 +191,22 @@ bool PresetStore::write (int slot, const juce::String& name, const juce::var& se
     return ok;
 }
 
-bool PresetStore::save (int slot, const juce::String& name, const vm::Settings& settings)
+bool PresetStore::save (int slot, const juce::String& name, const vm::Settings& settings, bool keepUnknown)
 {
-    return write (slot, name, fields::toVar (settings));
+    juce::var fresh = fields::toVar (settings);
+
+    if (keepUnknown)
+    {
+        juce::var doc;
+        if (const auto* e = find (slot); e != nullptr && readJson (e->file, doc))
+            if (const auto* before = doc["settings"].getDynamicObject())
+                if (auto* now = fresh.getDynamicObject())
+                    for (const auto& p : before->getProperties())
+                        if (! now->hasProperty (p.name))
+                            now->setProperty (p.name, p.value);
+    }
+
+    return write (slot, name, fresh);
 }
 
 bool PresetStore::rename (int slot, const juce::String& newName)

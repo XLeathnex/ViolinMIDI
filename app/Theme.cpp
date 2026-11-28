@@ -43,6 +43,8 @@ Theme::Theme()
         setDefaultSansSerifTypeface (face);
 
     setColour (juce::ResizableWindow::backgroundColourId, colour::window);
+    // Dialogs (save as, rename, confirm) on the window colour, so their buttons and lists stand out from it.
+    setColour (juce::AlertWindow::backgroundColourId, colour::window);
     setColour (juce::DocumentWindow::textColourId, colour::text);
     setColour (juce::Label::textColourId, colour::text);
 

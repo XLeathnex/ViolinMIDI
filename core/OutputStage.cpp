@@ -70,6 +70,7 @@ void OutputStage::reset() noexcept
     soloDrone = Voice();
     harmDroneCount = 0;
     harmDroneChan = 0;
+    harmDroneRoot = -1;
     mpeNext = 1;
 
     for (int k = 0; k < kDynCount; ++k)
@@ -1021,6 +1022,7 @@ void OutputStage::captureHarmony (int offset, MidiEventList& out)
 
     harmDroneCount = triadCount_;
     harmDroneChan = triadChan;
+    harmDroneRoot = harmRoot;
     for (int i = 0; i < triadCount_; ++i)
         harmDrone[i] = triadNotes[i];
 

@@ -38,8 +38,10 @@ public:
         switch and the freeze buttons are not part of a preset and stay as they are in `into`. */
     bool load (int slot, vm::Settings& into) const;
 
-    /** Creates or replaces the preset in that slot. */
-    bool save (int slot, const juce::String& name, const vm::Settings&);
+    /** Creates or replaces the preset in that slot. `keepUnknown`: the preset is saved
+        back into its own slot, so keys this version does not know (those of other
+        versions, e.g. 1.5's harmonizer values) are carried over, as rename() does. */
+    bool save (int slot, const juce::String& name, const vm::Settings&, bool keepUnknown = false);
     bool rename (int slot, const juce::String& newName);
     bool remove (int slot);
 

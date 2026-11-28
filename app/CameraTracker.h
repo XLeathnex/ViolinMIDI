@@ -39,10 +39,17 @@ public:
         coordinates of that picture. */
     std::function<void (const juce::Image& preview, const cam::Pose& pose)> onFrame;
 
+    /** Message thread: a start() that had to wait for the user's permission is
+        decided. Either the camera runs now, or isRunning() is false and error()
+        says why. Not called when stop() came first. */
+    std::function<void()> onStateChanged;
+
     struct Native;   // the platform's part
 
 private:
     std::unique_ptr<Native> native;
+    bool wanted = false;   // message thread: started and not stopped since
+    int  startNumber = 0;  // message thread: counts the starts, so a late answer finds out it is out of date
 
     JUCE_DECLARE_WEAK_REFERENCEABLE (CameraTracker)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CameraTracker)

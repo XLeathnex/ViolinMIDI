@@ -1161,6 +1161,7 @@ const TestCase kTests[] = {
     { "curves", curves },
     { "drop voicing", dropVoicing },
     { "ensemble and high-cut", ensembleAndHiCut },
+    { "armed harmony freeze in the audio harmonizer", armedFreezeAudio },
     { "camera gestures", cameraGestures },
 };
 

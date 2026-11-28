@@ -21,6 +21,7 @@
 #include "PresetStore.h"
 #include "SettingsStore.h"
 #include "SplashOverlay.h"
+#include "TrackingPanel.h"
 #include "UpdateManager.h"
 #include "VoicingPanel.h"
 #include "Widgets.h"
@@ -150,6 +151,7 @@ private:
     vm::Settings hostSettings() const;   // what the engine gets: the settings plus what the camera adds
     void applyCameraSettings (const CameraSettings&);
     void updateCameraStatus();
+    void cameraStateChanged();
     void cameraFrame (const juce::Image& preview, const cam::Pose&);
     void cameraAction (int action);
     void sendPadValue (int slot, int target, int value);
@@ -188,6 +190,7 @@ private:
     juce::Component::SafePointer<juce::DialogWindow> audioDialog;   // the audio harmonizer's window
     juce::Component::SafePointer<VoicingPanel> voicingPanel;        // the open voicing matrix, if any
     int voicingPanelType = -1;                                      // ...and the voicing it was opened for
+    juce::Component::SafePointer<TrackingPanel> trackingPanel;      // the open tracking filter callout, if any
 
     LiveDisplay display;
     PadHud padHud;                   // over the display while the pad moves values

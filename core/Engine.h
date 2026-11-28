@@ -47,6 +47,10 @@ public:
 
     /** The tracker emits at most this many events per analysis hop. */
     static constexpr int kMaxEventsPerHop = 10;
+
+    /** A harmony freeze armed before the note starts looping after this much live tone (or at the note's end). */
+    static constexpr double kFreezeLeadInSec = 0.25;
+
     /** After the output stage (key filter, harmony, freeze, MPE). */
     static constexpr int kMaxOutputEventsPerHop = OutputStage::maxEventsFor (kMaxEventsPerHop) + 20;
 
@@ -81,6 +85,8 @@ public:
     const Meter& meter() const noexcept       { return currentMeter; }
     double internalSampleRate() const noexcept { return fs; }
     int    hopSize() const noexcept            { return hop; }
+    /** What the audio harmonizer was told at the last hop (for tests). */
+    const Harmonizer::Frame& harmonizerFrame() const noexcept { return frame; }
     int    decimation() const noexcept         { return decim; }
 
     /** Upper bound for the number of events one process() call can produce. */
@@ -114,6 +120,7 @@ private:
     bool  frameFrozen = false;
     float frozenPitch = 60.0f;       // the played pitch when the harmony was frozen
     int   lastRoot = -1;             // the last root the harmony was built on
+    int   liveHops = 0;              // hops the harmonizer has been sent live voices in a row
     MidiEventList hopEvents;      // what the tracker produced in one hop
     Settings lastSettings;
     bool wasEnabled = true;

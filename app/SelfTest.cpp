@@ -131,6 +131,27 @@ namespace
             expect (again.remove (7) && again.find (7) == nullptr && again.entries().size() == 1, "remove");
             vm::Settings untouched;
             expect (! again.load (7, untouched), "a removed preset does not load");
+
+            // A 1.5 preset saved again in 2.0 keeps 1.5's own keys (its harmonizer values)
+            // when it goes back into its own slot; a different preset written over it does not.
+            expect (again.save (9, "Aus 1.5", wanted), "save a preset to turn into a 1.5 one");
+            again.refresh();
+            if (const auto* entry = again.find (9))
+            {
+                auto doc = juce::JSON::parse (entry->file);
+                if (auto* stored = doc["settings"].getDynamicObject())
+                    stored->setProperty ("bodyKeep", 0.42);
+                entry->file.replaceWithText (juce::JSON::toString (doc));
+                const auto file = entry->file;
+                expect (again.save (9, "Aus 1.5", wanted, true) && file.loadFileAsString().contains ("bodyKeep"),
+                        "saved back into its own slot: the keys of other versions stay");
+                expect (again.save (9, "Aus 1.5", wanted, false) && file.existsAsFile() && ! file.loadFileAsString().contains ("bodyKeep"),
+                        "another preset written over it: they go");
+            }
+            else
+            {
+                expect (false, "the preset in slot 9 is found");
+            }
         }
 
         {

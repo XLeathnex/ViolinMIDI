@@ -11,6 +11,9 @@ Der Abschnitt einer Version erscheint in der App unter Einstellungen, wenn man d
 - Audio-Harmonizer in einem eigenen Fenster: Formantkorrektur und High-Cut als Kurven über die Tonhöhe mit Stützpunkten (Standard: tiefe Saiten natürlich, E-Saite warm statt schrill), Drop-Voicing (in hohen Lagen sinkt die oberste Stimme eine Oktave), Ensemble-Entkopplung (Stimmen 8–22 ms versetzt, leicht verstimmt, ±35 % im Stereobild). Die Regler „Korpus-Erhalt“ und „Piezo-Glättung“ sind in den Kurven aufgegangen und starten mit der Standard-Kurve.
 - Kamera: Die Geigenschnecke steuert jetzt zwei Controller (X und Y) wie ein XY-Pad. Die Ruheposition ist der Nullpunkt; innerhalb des silbernen Totzonen-Ovals bleiben die Werte stehen, außerhalb wandern sie, je nach Regelkurve fein oder schnell. Während der Bewegung zeigt ein Fadenkreuz die Werte, auch im Hauptfenster.
 - Einstellungsfenster: Die Tooltips erscheinen jetzt auch dort.
+- Behoben: War „Harmonie halten“ schon vor dem Ton eingeschaltet, blieb der Audio-Harmonizer für die ganze Dauer stumm. Jetzt klingen die Stimmen beim Spielen und danach weiter.
+- Behoben: Zwei Versionen (etwa 1.5 und 2.0) konnten gleichzeitig laufen und jede Note doppelt senden; ein Klick auf das installierte Programm konnte den Wechsel zu einer anderen Version rückgängig machen.
+- Behoben: In den Fenstern „Speichern unter“ und „Umbenennen“ waren die Knöpfe nicht als Knöpfe zu erkennen. Ein Preset aus 1.5, das in 2.0 neu gespeichert wird, behält seine Harmonizer-Werte für 1.5.
 
 ## 1.5.0
 

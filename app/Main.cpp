@@ -191,6 +191,17 @@ public:
 
     void initialise (const juce::String&) override
     {
+        // One copy at a time, across versions. JUCE's own lock is named after the
+        // app ("juceAppLock_VioLogic"), and 1.2 to 1.5 hold "juceAppLock_Archet":
+        // without this, 1.5 and 2.0 would run side by side (both on the violin input,
+        // both sending on the "VioLogic" port), and opening the installed app while
+        // another version runs would undo a version switch. Never rename this lock.
+        if (! versionsLock.enter (0))
+        {
+            quitWith (0);
+            return;
+        }
+
         const auto arguments = getCommandLineParameterArray();
         juce::LookAndFeel::setDefaultLookAndFeel (&theme);
         installTranslations();
@@ -277,6 +288,8 @@ public:
     void anotherInstanceStarted (const juce::String&) override {}
 
 private:
+    juce::InterProcessLock versionsLock { "juceAppLock_Archet" };   // see initialise()
+
     /** Ends the app from a fresh message, which also works from inside initialise(). */
     void quitWith (int code)
     {

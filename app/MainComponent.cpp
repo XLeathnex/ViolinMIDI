@@ -30,6 +30,31 @@ namespace
     constexpr int kEmblemSize = 30, kBrandGap = 8, kBrandWidth = 132;   // the emblem and word mark at the left of the header
     constexpr float kWordMarkHeight = 17.0f;
 
+    /** What the tracking filter callout shows for these settings. */
+    TrackingPanel::Values trackingValues (const vm::Settings& e)
+    {
+        TrackingPanel::Values values;
+        values.attackOn = e.octaveAttackGuard;
+        values.attackMs = e.octaveAttackMs;
+        values.sustainOn = e.octaveSustainGuard;
+        values.sustainMs = e.octaveSustainMs;
+        values.jumpOn = e.jumpGuard;
+        values.jumpInterval = e.jumpIntervalSemis;
+        values.jumpWindowMs = e.jumpWindowMs;
+        values.jumpLockMs = e.jumpLockMs;
+        values.bridgeMs = e.bridgeMs;
+        return values;
+    }
+
+    bool sameTracking (const TrackingPanel::Values& a, const TrackingPanel::Values& b)
+    {
+        return a.attackOn == b.attackOn && juce::approximatelyEqual (a.attackMs, b.attackMs)
+            && a.sustainOn == b.sustainOn && juce::approximatelyEqual (a.sustainMs, b.sustainMs)
+            && a.jumpOn == b.jumpOn && a.jumpInterval == b.jumpInterval
+            && juce::approximatelyEqual (a.jumpWindowMs, b.jumpWindowMs) && juce::approximatelyEqual (a.jumpLockMs, b.jumpLockMs)
+            && juce::approximatelyEqual (a.bridgeMs, b.bridgeMs);
+    }
+
     juce::String decimalComma (double value, int places)
     {
         return juce::String (value, places).replaceCharacter ('.', ',');
@@ -150,6 +175,7 @@ MainComponent::MainComponent (const Options& o) : options (o)
 
     cameraSettings = CameraSettings::fromJson (settings.cameraJson);
     camera.onFrame = [this] (const juce::Image& preview, const cam::Pose& pose) { cameraFrame (preview, pose); };
+    camera.onStateChanged = [this] { cameraStateChanged(); };
     padHud.setAxisNames (padTargetName (cameraSettings.xTarget), padTargetName (cameraSettings.yTarget));
 
     addAndMakeVisible (display);
@@ -538,7 +564,10 @@ void MainComponent::initialiseAudio()
     deviceManager.addChangeListener (this);
 
     // A quiet look for a newer version. Nothing is installed without a click.
-    updates.check();
+    // Not while the notice of a version that failed to start is shown: the check would
+    // replace it at once and offer that version again (the settings window still checks).
+    if (options.notice.isEmpty())
+        updates.check();
 
     audioReady = true;
     if (splash != nullptr)
@@ -553,6 +582,7 @@ MainComponent::~MainComponent()
 {
     stopTimer();
     camera.onFrame = nullptr;
+    camera.onStateChanged = nullptr;
     camera.stop();
     splash = nullptr;
     if (cameraDialog != nullptr)
@@ -770,6 +800,13 @@ void MainComponent::pushSettings()
             openPanel->setDiatonic (e.harmonyMode == vm::HarmonyMode::Diatonic);
         }
     }
+
+    // The same for the tracking filter callout: a preset, a foot switch or a MIDI
+    // controller that changes its values closes it, so it cannot write the old ones back.
+    if (auto* openTracking = trackingPanel.getComponent())
+        if (! sameTracking (openTracking->values(), trackingValues (e)))
+            if (auto* box = openTracking->findParentComponentOfClass<juce::CallOutBox>())
+                box->dismiss();
     e.inputGainDb = (float) gainSlider.getValue();
     e.fixedVelocity = juce::roundToInt (velocitySlider.getValue());
     e.a4Hz = (float) tuningSlider.getValue();
@@ -1013,19 +1050,7 @@ void MainComponent::showVoicingPanel()
 
 void MainComponent::showTrackingPanel()
 {
-    const auto& e = settings.engine;
-    TrackingPanel::Values values;
-    values.attackOn = e.octaveAttackGuard;
-    values.attackMs = e.octaveAttackMs;
-    values.sustainOn = e.octaveSustainGuard;
-    values.sustainMs = e.octaveSustainMs;
-    values.jumpOn = e.jumpGuard;
-    values.jumpInterval = e.jumpIntervalSemis;
-    values.jumpWindowMs = e.jumpWindowMs;
-    values.jumpLockMs = e.jumpLockMs;
-    values.bridgeMs = e.bridgeMs;
-
-    auto panel = std::make_unique<TrackingPanel> (values);
+    auto panel = std::make_unique<TrackingPanel> (trackingValues (settings.engine));
     juce::Component::SafePointer<MainComponent> safeThis (this);
     panel->onChange = [safeThis] (const TrackingPanel::Values& v)
     {
@@ -1043,6 +1068,7 @@ void MainComponent::showTrackingPanel()
         engine.bridgeMs = v.bridgeMs;
         safeThis->pushSettings();
     };
+    trackingPanel = panel.get();
     juce::CallOutBox::launchAsynchronously (std::move (panel), octaveButton.getScreenBounds(), nullptr);
 }
 
@@ -1277,6 +1303,24 @@ void MainComponent::applyCameraSettings (const CameraSettings& next)
     padHud.setAxisNames (padTargetName (cameraSettings.xTarget), padTargetName (cameraSettings.yTarget));
     setStatusDot (cameraButton, cameraSettings.enabled);
     host.setSettings (hostSettings());
+    updateCameraStatus();
+}
+
+void MainComponent::cameraStateChanged()
+{
+    // macOS has answered the permission question. If the camera did not start
+    // (access refused, camera busy), the switch goes back to "Aus" next to the reason.
+    if (cameraSettings.enabled && ! camera.isRunning())
+    {
+        cameraSettings.enabled = false;
+        cameraHasPicture = false;
+        if (cameraDialog != nullptr)
+            if (auto* panel = dynamic_cast<CameraPanel*> (cameraDialog->getContentComponent()))
+                panel->setPowerState (false);
+        padHud.setState (pad.x(), pad.y(), false);
+        setStatusDot (cameraButton, false);
+        host.setSettings (hostSettings());
+    }
     updateCameraStatus();
 }
 
@@ -1557,7 +1601,9 @@ void MainComponent::timerCallback()
     // The harmonizer's curves show where the played pitch is on them.
     if (audioDialog != nullptr)
         if (auto* panel = dynamic_cast<AudioPanel*> (audioDialog->getContentComponent()))
-            panel->setPlayhead (f.heard || f.active ? f.pitch : -1.0f);
+            // the pitch the curves are keyed on: what is heard, or while a note rings on
+            // without a detected pitch (bow change, bridged gap) the note that sounds
+            panel->setPlayhead (f.heard ? f.pitch : (f.active ? f.outputPitch : -1.0f));
 
     // the level as a number; a change of a whole dB is enough to read it
     if (std::abs (f.levelDb - lastLevelDb) >= 1.0f)
