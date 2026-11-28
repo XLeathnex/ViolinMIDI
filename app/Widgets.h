@@ -7,6 +7,7 @@
 #include "AudioHost.h"
 
 #include <array>
+#include <functional>
 #include <vector>
 
 /** One display frame, taken from the audio thread's meters. */
@@ -24,6 +25,10 @@ struct LiveFrame
     int   triad[vm::scale::kMaxVoices] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
     int   frozenNote = -1;     ///< the note kept by the solo freeze or -1
     bool  harmonyFrozen = false;
+
+    // 2.1
+    float levelMinDb = -120.0f, levelMaxDb = -120.0f;   ///< lowest / highest level since the previous frame
+    char  chord[24] = {};      ///< chord symbol (UTF-8, chord::symbol), empty = none
 };
 
 juce::String noteName (int midiNote);
@@ -76,6 +81,12 @@ public:
     /** Explains the part under the mouse: the note, the pitch graph or the loudness curve. */
     juce::String getTooltip() override;
 
+    /** 2.1: the zoom of both axes, steps into layout::kTimeSteps / kHeightSteps (from the settings,
+        without onZoom). */
+    void setZoom (int timeStep, int heightStep);
+    /** 2.1: after a click in the zoom strip, to remember it. */
+    std::function<void (int timeStep, int heightStep)> onZoom;
+
     static constexpr int kFramesPerSecond = 30;
     static constexpr int kFrames = 24 * kFramesPerSecond + 1; // the longest zoom step, 24 s
     static constexpr int kNoteWidth = 250;                     // the left part, with the note
@@ -121,6 +132,24 @@ private:
     float watermarkScale = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LiveDisplay)
+};
+
+//==============================================================================
+/** 2.1: a button that paints an icon (four corner arrows: into fullscreen, or out of it), on the
+    plate of a TextButton. */
+class IconButton final : public juce::Button
+{
+public:
+    enum class Icon { enterFullscreen, exitFullscreen };
+
+    explicit IconButton (const juce::String& name = {});
+    void setIcon (Icon);
+    Icon icon() const noexcept   { return shown; }
+
+    void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+
+private:
+    Icon shown = Icon::enterFullscreen;
 };
 
 //==============================================================================

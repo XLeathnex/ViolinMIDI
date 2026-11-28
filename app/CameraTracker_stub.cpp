@@ -19,3 +19,6 @@ juce::String CameraTracker::error() const
 {
     return juce::String::fromUTF8 ("Die Kamera-Steuerung gibt es nur auf dem Mac.");
 }
+
+void CameraTracker::setTracking (const Tracking&)                {}
+void CameraTracker::setBowCueSink (std::atomic<uint64_t>*) noexcept {}

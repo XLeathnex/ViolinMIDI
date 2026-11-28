@@ -61,6 +61,43 @@ public:
         could not be started. Optional. */
     void setPowerState (bool on);
 
+    //==========================================================================
+    // 2.1
+
+    /** "Totzone mittig setzen": the zero point in the middle of the picture (MainComponent::cameraZero). */
+    std::function<void()> onCentre;
+
+    /** The close button (x) of the docked panel: hide the dock (the camera keeps running). */
+    std::function<void()> onCloseDock;
+
+    /** Shown inside the fullscreen main window instead of a window of its own: no own
+        TooltipWindow (the main window's shows the tips) and a close button (x) in the header row.
+        The same instance moves between the window and the dock and keeps its state. */
+    void setDocked (bool docked);
+    bool isDocked() const noexcept   { return docked; }
+
+    /** A dead zone that changed elsewhere (a profile switch, the calibration's draft), without
+        onChange, so the panel's next change cannot write the old value back. */
+    void setDeadZone (float zone);
+
+    /** A new zero point was set from outside (button, MIDI, key N / M): the anchor shown, and the
+        notice for it. `handSeen`: the violin hand (or the marker) is in the picture. */
+    void setAnchor (int anchor, bool handSeen);
+
+    /** The pipette is waiting for a click in the picture. */
+    bool isPicking() const noexcept;
+    /** Ends the pipette with the old colour (ESC in the dock, critique 2.14). */
+    void cancelPipette();
+
+    /** One line under the picture for about a second (a flick, a marker message). */
+    void showEvent (const juce::String& text, bool isProblem);
+
+    /** The freeze badge in the preview: Chord Freeze is on. */
+    void setFreeze (bool on);
+
+    /** The bow tab's counters: changes of bow the camera saw, and new strokes the audio made of them. */
+    void setBowStats (int seen, unsigned used);
+
     void paint (juce::Graphics&) override;
     void resized() override;
 
@@ -148,6 +185,7 @@ private:
 
     // The panel lives in a window of its own, so it brings its own tooltips.
     juce::TooltipWindow tooltips { this, 700 };
+    bool docked = false;   // 2.1: shown in the fullscreen main window
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CameraPanel)
 };

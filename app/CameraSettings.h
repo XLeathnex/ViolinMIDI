@@ -3,7 +3,9 @@
 
 #include <juce_core/juce_core.h>
 
+#include "CameraBow.h"
 #include "CameraLogic.h"
+#include "CameraMarker.h"
 
 struct CameraSettings
 {
@@ -24,6 +26,15 @@ struct CameraSettings
     cam::GestureDetector::Settings gestures;
     int  nodAction = actionNone;
     int  shakeAction = actionNone;
+
+    // --- 2.1 (keys padAnchor, markerOn, flickOn, flickSpeed, flickCooldownMs live in `pad`;
+    // marker, markerTolerance, bowOn, bowThreshold, bowDebounceMs, bowDipDb, tab here)
+    cam::MarkerColour marker;          ///< the sticker's colour (pipette); marker.valid false = none
+    float markerTolerance = 1.0f;      ///< "Farbtoleranz", 0.5 .. 2, scales its tolerances
+    bool  bowOn = false;               ///< "Bogenhand-Erkennung": the camera announces changes of bow
+    cam::BowTracker::Settings bow;     ///< threshold, debounce (violinRightHand is filled from pad.rightHand)
+    float bowDipDb = 4.5f;             ///< "Neuanschlag ab": the level dip that is a new stroke while announced, 3 .. 8
+    int   tab = 0;                     ///< the window's last tab: 0 pad, 1 marker, 2 gestures, 3 bow hand
 
     /** The object as read: keys of other versions (1.5's heightTarget, low, high,
         smoothingMs, deadZone) are written back unchanged, so switching back keeps them. */

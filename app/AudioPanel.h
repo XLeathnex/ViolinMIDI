@@ -53,6 +53,30 @@ public:
         curves; negative while nothing is played. Repaints only when it moves. */
     void setPlayhead (float midiNote);
 
+    //==========================================================================
+    // 2.1: the harmonizer output, chosen in this window
+
+    /** What the routing band shows. */
+    struct Output
+    {
+        juce::StringArray devices;           ///< output devices of the driver
+        juce::String chosen;                 ///< "" = Automatisch
+        juce::String systemDefault;          ///< for the "Automatisch (...)" item
+        bool chosenMissing = false;          ///< the chosen device is not connected
+        juce::StringArray pairs, pairDetails;   ///< labels ("Out 1/2") and channel names of the open device; empty = unknown
+        int  pair = 0;
+        juce::String inputDevice, outputDevice; ///< for the clock hint
+        bool clocksDiffer = false;
+    };
+
+    /** After every device change (no onOutputChange). */
+    void setOutput (const Output&);
+
+    /** The user chose a device ("" = Automatisch) or a pair. */
+    std::function<void (const juce::String& device, int pair)> onOutputChange;
+    /** "Auf alle Presets anwenden ...": MainComponent asks and copies the curves and the level. */
+    std::function<void()> onApplyToAllPresets;
+
     void paint (juce::Graphics&) override;
     void resized() override;
 

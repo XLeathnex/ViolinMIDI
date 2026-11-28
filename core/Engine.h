@@ -5,10 +5,12 @@
 #pragma once
 
 #include "Biquad.h"
+#include "ChordTracker.h"
 #include "Harmonizer.h"
 #include "NoteTracker.h"
 #include "OutputStage.h"
 #include "PitchDetector.h"
+#include "SpscRing.h"
 #include "Types.h"
 
 #include <vector>
@@ -33,16 +35,31 @@ public:
         int   triadCount  = 0;      ///< notes sounding on the harmony channel
         int   triad[scale::kMaxVoices] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
         int   frozenNote  = -1;     ///< the note kept by the solo freeze or -1
+
+        // 2.1: the chord in force (external chords), also while the detection is off
+        int   chordRoot = -1, chordQuality = 0, chordBass = -1;   ///< chord::Chord; root -1 = none
+        int   chordScaleRoot = 0, chordScaleType = 0, keyTonic = 0;
+        bool  chordActive = false;  ///< a chord was committed since the last reset
+        uint32_t chordKeys[4] = {}; ///< held keys of the chord keyboard, bit n = key n (display)
+        // 2.1: new strokes the camera's bow cue helped with (NoteTracker B3/B4); counts up
+        unsigned bowStrokes = 0;
     };
 
-    /** One row per analysis hop, for tests and offline analysis only. */
+    /** One row per analysis hop, for tests, offline analysis and the calibration's telemetry
+        (2.1). Plain data: it travels through an SpscRing. */
     struct TraceRow
     {
-        double timeSec;
-        bool   voiced;
-        float  pitch, clarity, levelDb;
-        bool   active;
-        int    note;
+        double timeSec = 0.0;
+        bool   voiced = false;
+        float  pitch = 0.0f, clarity = 0.0f, levelDb = -120.0f;
+        bool   active = false;
+        int    note = -1;
+        // 2.1
+        long long hop = 0;           ///< hops since prepare()
+        float  hintClarity = 0.0f;   ///< NoteTracker::Input::hintClarity
+        bool   octaveDoubt = false;  ///< NoteTracker::Input::octaveDoubt
+        int    stageNote = -1;       ///< the main note after the output stage, -1 = none
+        float  outputPitch = 0.0f;   ///< the pitch the instrument is asked to play
     };
 
     /** The tracker emits at most this many events per analysis hop. */
@@ -94,6 +111,28 @@ public:
 
     void setTrace (std::vector<TraceRow>* destination) noexcept { trace = destination; }
 
+    //==========================================================================
+    // 2.1, all on the thread that calls process(), before it
+
+    /** MIDI from the chord keyboard (any channel), applied now (ChordTracker::midi). */
+    void chordInput (const MidiEvent* events, int count) noexcept;
+    /** Every key and the pedal up (the input went away); a latched chord stays. */
+    void chordKeysUp() noexcept        { chords.keysUp(); }
+    /** Forget keys, chord and key context; the start key applies again. */
+    void chordReset() noexcept         { chords.reset(); }
+    const ChordTracker& chordTracker() const noexcept   { return chords; }
+
+    /** The calibration's live telemetry: one TraceRow per hop into this ring, or none (null).
+        Wait-free; a row that does not fit is counted in telemetryDrops(). */
+    void setTelemetry (SpscRing<TraceRow>* ring) noexcept   { telemetry = ring; }
+    unsigned telemetryDrops() const noexcept                { return telemetryDropped; }
+    /** Analysis hops since prepare(). */
+    long long hops() const noexcept                          { return hopCount; }
+
+    /** The camera announces a change of bow now (NoteTracker::Input::bowCue, with
+        Settings::bowAssist); it stays until changed. */
+    void setBowCue (bool announced) noexcept                 { bowCue = announced; }
+
 private:
     void configure (const Settings& s);
     void analyseHop (const Settings& s, int offset, MidiEventList& out);
@@ -126,6 +165,12 @@ private:
     bool wasEnabled = true;
     Meter currentMeter;
     std::vector<TraceRow>* trace = nullptr;
+
+    // 2.1
+    ChordTracker chords;
+    SpscRing<TraceRow>* telemetry = nullptr;
+    unsigned telemetryDropped = 0;
+    bool bowCue = false;
 
     // configuration cache
     bool   configured = false;

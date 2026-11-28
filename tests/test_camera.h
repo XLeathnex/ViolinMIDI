@@ -468,3 +468,9 @@ inline void cameraGestures()
             check (r.nods + r.shakes == 0, "noise alone must not trigger at sensitivity %.1f: %d nods, %d shakes per hour", (double) s, r.nods, r.shakes);
     }
 }
+
+//==============================================================================
+// 2.1: the colour marker as the scroll point, and the scroll flick
+
+void cameraMarkerPad() {}
+void cameraFlick() {}

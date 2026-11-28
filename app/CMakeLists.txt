@@ -80,7 +80,22 @@ target_sources(ViolinMIDI PRIVATE
     SettingsPanel.cpp
     UpdateManager.cpp
     Updater.cpp
-    SelfTest.cpp)
+    SelfTest.cpp
+    # 2.1
+    ChordInput.cpp
+    ChordPanel.cpp
+    CalibrationSession.cpp
+    CalibrationWizard.cpp
+    ProfileStore.cpp
+    ProfileBar.cpp
+    UpdatePolicy.cpp
+    CameraMarker.cpp
+    CameraBow.cpp
+    FreezeBadge.cpp
+    WindowLayout.cpp
+    OutputRouting.cpp
+    WindowRoot.cpp
+    LayoutCheck.cpp)
 
 # The camera: AVFoundation and Vision on the Mac, a stand-in elsewhere.
 if(APPLE)

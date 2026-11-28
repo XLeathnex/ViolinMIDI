@@ -17,6 +17,16 @@ public:
     /** Looks up the published versions. */
     void check();
 
+    /** 2.1, once the app is up: puts this version into the Programs folder if it is due
+        (updater::promoteIfDue), then looks up the versions if `checkForVersions`. */
+    void startUp (bool checkForVersions);
+
+    /** 2.1, "Abbrechen": stops a running download or switch; nothing changes (state.json stays). */
+    void cancel();
+
+    /** 2.1: a switch with a download is running (the update buttons show "Abbrechen"). */
+    bool isDownloading() const noexcept;
+
     /** Loads the version if necessary, makes it the one to run and restarts into it. */
     void switchTo (const juce::String& version);
 

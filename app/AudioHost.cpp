@@ -65,8 +65,23 @@ AudioHost::Meters AudioHost::takeMeters() noexcept
     m.sampleRate = mSampleRate.load();
     m.blockSize = mBlockSize.load();
     m.midiMessages = mMidiMessages.load();
+    m.levelMinDb = m.levelMaxDb = m.levelDb;
     return m;
 }
+
+//==============================================================================
+void AudioHost::pushChordMidi (const uint8_t*, int) noexcept {}
+
+AudioHost::Capture& AudioHost::capture()
+{
+    if (cap == nullptr)
+        cap = std::make_unique<Capture>();
+    return *cap;
+}
+
+void AudioHost::armCapture (uint32_t) noexcept {}
+
+void AudioHost::disarmCapture() noexcept {}
 
 juce::String AudioHost::lastError() const
 {

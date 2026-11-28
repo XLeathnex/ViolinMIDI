@@ -36,6 +36,10 @@ public:
         float semitones[kMaxVoices] = {};  ///< each voice's distance from the tone being played right now, fractional
         bool  frozen = false;         ///< "harmony freeze": keep playing the voices from the tone as it was when
                                       ///< this became true, whatever comes in; `semitones` then refer to that tone
+        unsigned attack = 0;          ///< 2.1: counts the violin's new attacks; a change while sounding starts the
+                                      ///< voices anew (a new stroke on the same note), crossfading into a new layer
+        bool  revoice = false;        ///< 2.1: the voices moved because the chord did (OutputStage R9d), not the
+                                      ///< melody: the same number of voices glides in place. An attack wins.
     };
 
     Harmonizer();

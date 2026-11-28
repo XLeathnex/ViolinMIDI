@@ -182,6 +182,20 @@ namespace
             expect (fields::toVar (wanted).hasProperty ("gainDb") && ! presetPart.hasProperty ("gainDb") && ! presetPart.hasProperty ("dryKill")
                         && presetPart.hasProperty ("harmonyGainDb") && fields::profileKeys().size() == 13,
                     "the preset image has no profile or wiring keys");
+
+            // 2.1: a profile's values as JSON and back (the 13 keys plus the camera dead zone).
+            auto profile = vm::ProfileValues::of (wanted, 0.22f);
+            profile.inputGainDb = 6.5f;
+            profile.lowestNote = 48;
+            const auto back = fields::profileFromVar (fields::profileToVar (profile));
+            expect (vm::sameProfileValues (back, profile) && fields::profileToVar (profile).hasProperty ("padDeadZone"),
+                    "a profile's values come back from JSON");
+            auto outside = profile;
+            outside.gateOffDb = 0.0f;
+            outside.deadZone = 0.4f;
+            const auto tidied = fields::profileFromVar (fields::profileToVar (outside));
+            expect (tidied.gateOffDb <= tidied.gateDb && tidied.deadZone <= vm::ProfileValues::kMaxDeadZone,
+                    "profile values from JSON are clamped (Out <= In, dead zone <= 25 %)");
         }
 
         {

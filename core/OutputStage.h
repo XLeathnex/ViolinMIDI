@@ -157,6 +157,40 @@
 //        across a change of key, harmony or channel settings (R5) and
 //        releaseAll(): there everything ringing ends at once.
 //
+// R9  External chords (2.1, harmonySource == ExternalChords). Before every
+//     process() call the Engine hands over a chord::Context (setChord): the
+//     chord tones, the chord scale (seven notes above a root), its pentatonic,
+//     and whether keys are being struck right now. Until the first chord it
+//     describes the start key (keyRoot, scaleMode) without chord tones.
+//     a) Filter. The mask of R1 is the chord scale with keyFilter, the chord's
+//        pentatonic with pentaFilter.
+//     b) Voices. chord::voices (root, context, voicingMask, chordMode, targets,
+//        ! mirror()) instead of scale::voices. `targets` (Hybrid A and B) is
+//        decided whenever the harmony starts (R4b, also after R4c): the root's
+//        pitch class is a chord tone. Hybrid B: a root that is not a chord tone
+//        and has stayed for hybridLockMs (R4c's 0.65-semitone window) switches
+//        to chord tones once, by (d).
+//     c) A new chord (the context's serial changed):
+//        - a held note (R1c) the new mask does not allow ends; R3 applies to the
+//          tracker's note from then on (its 30 ms count starts again);
+//        - a note the player is bowing carries on, allowed or not: the filter
+//          decides at note starts only;
+//        - what rings on the harmony channel (R8) ends at once, if the
+//          harmony has a channel of its own (on a shared one, R4f, it rings out);
+//        - the harmony is re-voiced by (d), `targets` decided again. A frozen
+//          harmony (R7) stays; its live state follows as in R7b.
+//     d) Re-voicing changes only what differs: note-offs for the voices that
+//        go, then note-ons for the new ones (velocity of the harmony), same
+//        sample offset; voices in both carry on untouched. No overlap (R8a),
+//        no bend or controller is resent. revoiceCount() counts them.
+//     e) A harmony that would start while keys are being struck waits for that
+//        chord, at most 35 ms (ChordTracker::kMaxGatherSec); the main note is
+//        never delayed. If the note ends meanwhile, nothing starts.
+//     f) With harmonySource == FixedKey the context is ignored and everything
+//        is as in 2.0, apart from the two filter changes of 2.1: pentaFilter
+//        ("Nur Pentatonik-Toene", the pentatonic of the key) and pentaSustain
+//        ("Ton halten") for every filter (R1, R1c).
+//
 // Settings::harmonyOffset (-0.5 .. 0) makes the harmony softer: the velocity
 // of the voices and the dynamics controllers repeated on the harmony channel
 // are multiplied by (1 + harmonyOffset). Neutral values are not scaled.
@@ -165,6 +199,7 @@
 // tracker down and calls releaseAll().
 #pragma once
 
+#include "Chord.h"
 #include "Scale.h"
 #include "Types.h"
 
@@ -208,6 +243,11 @@ public:
     int  frozenHarmonyRoot() const noexcept { return harmonyFrozen() ? harmDroneRoot : -1; }
     /** The frozen solo note or -1. */
     int  frozenNote() const noexcept  { return soloFreeze == Freeze::On ? soloDrone.note : -1; }
+
+    /** R9 (2.1): the chord context for the next process() call. Same thread as process(). */
+    void setChord (const chord::Context& c) noexcept   { pendingChord = c; }
+    /** Counts the re-voicings of R9d (for the audio harmonizer, Engine::updateHarmonizerFrame). */
+    uint32_t revoiceCount() const noexcept             { return revoices; }
 
 private:
     enum class Track  { Solo, Harmony };
@@ -356,6 +396,10 @@ private:
     static constexpr int kMaxTails = 8;
     Tail  tails[kMaxTails];
     double hopRate = 750.0;
+
+    // external chords (R9)
+    chord::Context pendingChord;   // handed over by setChord() for the next process()
+    uint32_t revoices = 0;
 };
 
 } // namespace vm

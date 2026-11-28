@@ -909,3 +909,16 @@ void LevelMeter::paint (juce::Graphics& g)
     g.setColour (colour::text);
     g.fillRect (gx - 0.5f, (float) getHeight() * 0.5f - 6.0f, 1.0f, 12.0f);
 }
+
+//==============================================================================
+void LiveDisplay::setZoom (int, int) {}
+
+IconButton::IconButton (const juce::String& name) : juce::Button (name) {}
+
+void IconButton::setIcon (Icon i)
+{
+    shown = i;
+    repaint();
+}
+
+void IconButton::paintButton (juce::Graphics&, bool, bool) {}

@@ -4,8 +4,10 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include "Engine.h"
+#include "SpscRing.h"
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -32,6 +34,15 @@ public:
         double sampleRate = 0.0;
         int   blockSize = 0;
         unsigned int midiMessages = 0; ///< messages sent so far
+
+        // --- 2.1
+        float levelMinDb = -120.0f;  ///< lowest level since the last snapshot (the display's min/max band)
+        float levelMaxDb = -120.0f;  ///< highest level since the last snapshot
+        unsigned bowStrokes = 0;     ///< new strokes the camera's bow cue made so far (counts up, not reset)
+        int   chordRoot = -1, chordQuality = 0, chordBass = -1;   ///< the chord in force, root -1 = none
+        int   chordScaleRoot = 0, chordScaleType = 0, keyTonic = 0;
+        bool  chordActive = false;   ///< a chord was committed since the last reset
+        uint32_t chordKeys[4] = {};  ///< held keys of the chord keyboard, bit n = key n
     };
 
     AudioHost();
@@ -57,8 +68,48 @@ public:
     /** Ends the sounding note and resets the controllers at the next audio block. */
     void requestAllNotesOff() noexcept { panic.store (true); }
 
-    /** Takes a snapshot for the display and resets the input peak. */
+    /** Takes a snapshot for the display and resets the input peak (2.1: and the level min/max).
+        Destructive: exactly one call per timer tick, handed to everything that shows it
+        (critique 2.6). */
     Meters takeMeters() noexcept;
+
+    //==========================================================================
+    // 2.1: external chords (ChordInput, one producer: the MIDI thread)
+
+    /** MIDI thread: a message from the chord keyboard. Dropped when the queue is full (the keys
+        are then released at the next block). Never blocks. */
+    void pushChordMidi (const uint8_t* data, int size) noexcept;
+    /** Any thread: every key and the pedal up at the next block; a latched chord stays. */
+    void requestChordKeysUp() noexcept   { chordKeysUp.store (true); }
+    /** Any thread: "Akkord zuruecksetzen" at the next block. */
+    void requestChordReset() noexcept    { chordReset.store (true); }
+
+    //==========================================================================
+    // 2.1: the calibration's capture
+
+    /** The rings the calibration reads. Created on the message thread at the first call (about
+        4.6 MB) and kept until the host is destroyed, so the audio thread never sees a freed one. */
+    struct Capture
+    {
+        vm::SpscRing<float> audio { 1u << 20 };                   ///< raw input, first channel, before the gain
+        vm::SpscRing<vm::calib::BlockStamp> stamps { 1u << 13 };  ///< one per block, pushed after its samples
+        vm::SpscRing<vm::Engine::TraceRow> hops { 1u << 14 };     ///< the engine's telemetry, 21 s at 750 hops/s
+        std::atomic<uint64_t> lostSamples { 0 };                  ///< could not be pushed
+    };
+    /** Message thread. */
+    Capture& capture();
+    /** Message thread: the audio thread starts filling the rings; its stamps carry `generation`. */
+    void armCapture (uint32_t generation) noexcept;
+    /** Message thread: it stops. */
+    void disarmCapture() noexcept;
+    /** +1 at every audioDeviceAboutToStart (a take that spans a restart is interrupted). */
+    uint32_t deviceGeneration() const noexcept   { return devGeneration.load(); }
+
+    //==========================================================================
+    // 2.1: the camera's bow cue
+
+    /** Written by the camera queue (a cam::packCue word), read once per chunk by the audio thread. */
+    std::atomic<uint64_t>& bowCueSlot() noexcept   { return bowCue; }
 
     juce::String lastError() const;
 
@@ -99,6 +150,13 @@ private:
 
     mutable juce::CriticalSection errorLock;
     juce::String errorText;
+
+    // 2.1
+    std::atomic<bool> chordKeysUp { false }, chordReset { false };
+    std::unique_ptr<Capture> cap;                  // message thread; kept until the host goes
+    std::atomic<uint32_t> devGeneration { 0 };
+    std::atomic<uint64_t> bowCue { 0 };
+    static_assert (std::atomic<uint64_t>::is_always_lock_free, "the bow cue is read on the audio thread");
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioHost)
 };

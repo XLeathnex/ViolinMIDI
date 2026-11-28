@@ -17,13 +17,59 @@ struct Point
     float x = 0.0f, y = 0.0f, confidence = 0.0f;
 };
 
+/** 2.1: what the camera queue's bow tracker (CameraBow.h) saw in a frame, for drawing. */
+struct BowReport
+{
+    bool  tracked = false;      ///< the bow hand is seen and moves along a stroke
+    int   direction = 0;        ///< +1 down-bow (away from the violin), -1 up-bow, 0 unknown
+    float x = 0.0f, y = 0.0f;   ///< the bow hand, picture coordinates
+    float axisX = 0.0f, axisY = 0.0f;   ///< unit direction of a down-bow in the picture
+    bool  armed = false;        ///< a change of bow is announced now
+    bool  changed = false;      ///< a change of bow was confirmed with this frame
+    int   changes = 0;          ///< confirmed changes since BowTracker::reset()
+};
+
 /** The body points of one frame. Left and right are the player's own. */
 struct Pose
 {
     bool   valid = false;       ///< a person was found
-    double timeSec = 0.0;       ///< when the frame was taken, any steady clock
+    double timeSec = 0.0;       ///< when the frame was taken, any steady clock (2.1: the capture time)
     Point  nose, leftEye, rightEye, leftEar, rightEar, neck;
     Point  leftShoulder, rightShoulder, leftElbow, rightElbow, leftWrist, rightWrist;
+
+    double readySec = 0.0;      ///< 2.1: when its points were known, same clock as timeSec (0: = timeSec)
+    Point  marker;              ///< 2.1: the colour marker on the scroll; confidence 0 = not looked for / not found
+    BowReport bow;              ///< 2.1: the camera queue's bow hand (drawing only)
+};
+
+/** 2.1: how old a frame is when its result is known: host clock now minus the frame's
+    presentation time, both in seconds; outside 0 .. 0.5 s (an unexpected clock) kFallbackAgeSec. */
+constexpr double kFallbackAgeSec = 0.05;
+double frameAge (double hostNowSec, double presentationSec) noexcept;
+
+//==============================================================================
+/** 2.1: a fast vertical movement of the scroll ("Schnecken-Geste"): up switches Chord Freeze on,
+    down switches it off. */
+enum class Flick { none, up, down };
+
+/** Finds flicks in the scroll's deflection: fast enough, far enough, short and mostly vertical,
+    confirmed against one-frame glitches, then locked for the cooldown. Owned by PadTracker,
+    public for the tests. */
+class FlickDetector
+{
+public:
+    struct Params
+    {
+        float speed = 1.5f;          ///< shoulder widths per second, 0.6 .. 4
+        float cooldownMs = 800.0f;   ///< lock time after a flick, 300 .. 3000
+    };
+
+    /** One frame. `x`, `y` (up positive) in shoulder widths; `width` = the shoulder width as a share
+        of the picture; `continuous` false after a source switch or a gap (the history is cleared). */
+    Flick update (double t, float x, float y, float width, bool continuous, const Params&) noexcept;
+    /** A movement that may become a flick is under way. */
+    bool fastMovement() const noexcept;
+    void reset() noexcept;
 };
 
 //==============================================================================
@@ -42,15 +88,36 @@ struct Pose
 class PadTracker
 {
 public:
+    using Flick = cam::Flick;
+
     enum Response { linear = 0, fine = 1, fast = 2, numResponses };   ///< fine: exponential, gentle near the zone; fast: logarithmic
+
+    /** 2.1: where the zero point comes from. posture: "Nullpunkt setzen", the current posture
+        against the shoulders (2.0); centre: "Totzone mittig setzen", the middle of the picture. */
+    enum Anchor { posture = 0, centre = 1, numAnchors };
 
     struct Settings
     {
         bool  rightHand = false;   ///< the violin is held with the right hand (left-handed instrument)
-        float deadZone = 0.06f;    ///< radius of the dead zone, share of the picture, 0.03 .. 0.15
+        float deadZone = 0.06f;    ///< radius of the dead zone, share of the picture, 0.03 .. 0.15 (2.1: .. 0.25)
         int   responseX = linear, responseY = linear;
         float speed = 0.8f;        ///< full deflection sweeps a value through its whole range in 1 / speed s, 0.1 .. 4
+
+        // 2.1
+        int   anchor = posture;          ///< Anchor
+        bool  useMarker = false;         ///< the colour marker stands for the scroll when it is seen
+        bool  flick = false;             ///< "Schnecken-Geste (Chord Freeze)": flicks are taken out of the pad
+        float flickSpeed = 1.5f;         ///< FlickDetector::Params::speed
+        float flickCooldownMs = 800.0f;  ///< FlickDetector::Params::cooldownMs
     };
+
+    /** 2.1: the dead zone's range (the profile, the slider and the oval use it). */
+    static constexpr float kMinDeadZone = 0.03f, kMaxDeadZone = 0.25f;
+
+    /** 2.1: what stood for the scroll in the last frame. */
+    enum class Source { none, body, marker };
+    static constexpr float  kMarkerConfidence = 0.4f;
+    static constexpr double kMarkerGraceSec = 0.4;   ///< marker gone this long: the violin hand takes over
 
     /** Beyond the dead zone, this far (share of the picture) is full deflection. */
     static constexpr float kReach = 0.2f;
@@ -88,6 +155,20 @@ public:
     /** Puts the values where they are elsewhere already (0..1 each), so an axis
         takes over from there instead of jumping. */
     void setValues (float x, float y) noexcept;
+
+    // --- 2.1
+    /** Centre anchor: the scroll has not been inside the dead zone since recalibrate() or the
+        switch-on, so the values wait. */
+    bool waitingForZone() const noexcept;
+    Source source() const noexcept;
+    bool markerOffsetKnown() const noexcept;
+    /** The scroll point against its reference in the last frame (posture: against the shoulders,
+        centre: the picture position), in the pad's units. False if unknown. For the calibration. */
+    bool lastOffset (float& dx, float& dy) const noexcept;
+    /** A fast movement is being checked, or a flick episode holds the values. */
+    bool flickHeld() const noexcept;
+    /** The flick recognised by the last update(), once. */
+    Flick takeFlick() noexcept;
 
 private:
     static int toValue (float v) noexcept;

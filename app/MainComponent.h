@@ -25,6 +25,7 @@
 #include "UpdateManager.h"
 #include "VoicingPanel.h"
 #include "Widgets.h"
+#include "WindowLayout.h"
 
 #include <memory>
 #include <vector>
@@ -75,6 +76,41 @@ private:
     bool rightFixed = false;
 };
 
+/** Two controls in one slot, one of them shown (2.1: "Harmonie-Modus" with Feste Tonart or
+    with Externe Chords). */
+class SwapRow final : public juce::Component
+{
+public:
+    void set (juce::Component& firstControl, juce::Component& secondControl)
+    {
+        first = &firstControl;
+        second = &secondControl;
+        addChildComponent (firstControl);
+        addChildComponent (secondControl);
+        show (shown);
+    }
+
+    void show (int index)
+    {
+        shown = index;
+        if (first != nullptr)  first->setVisible (index == 0);
+        if (second != nullptr) second->setVisible (index == 1);
+    }
+
+    int shownIndex() const noexcept   { return shown; }
+
+    void resized() override
+    {
+        if (first != nullptr)  first->setBounds (getLocalBounds());
+        if (second != nullptr) second->setBounds (getLocalBounds());
+    }
+
+private:
+    juce::Component* first = nullptr;
+    juce::Component* second = nullptr;
+    int shown = 0;
+};
+
 class MainComponent final : public juce::Component,
                             private juce::Timer,
                             private juce::ChangeListener
@@ -90,6 +126,12 @@ public:
         int  showPanelAtStart = 0;       ///< 1: tracking filters, 2: audio harmonizer, 3: camera (layout checks)
         int  showMenuAtStart = 0;        ///< 1: open the list of scales, 2: the list of voicings (layout checks)
         juce::String notice;            ///< shown in the status line at start
+
+        // 2.1, layout checks
+        juce::File settingsFolder;       ///< not empty: the settings file and the presets live here, not in the user's folder
+        bool dock = false;               ///< in fullscreen the camera panel is docked (--dock)
+        int  page = 0;                   ///< paged fullscreen columns: the page shown first (--page)
+        int  cameraTab = -1;             ///< the camera window opens on this tab (--camera-tab), -1 = the stored one
     };
 
     explicit MainComponent (const Options&);
@@ -102,6 +144,16 @@ public:
     /** Window position, so the window opens where it was left. */
     bool savedWindowPosition (juce::Point<int>& topLeft) const;
     void rememberWindowPosition (juce::Point<int> topLeft);
+
+    // --- 2.1: fullscreen, through WindowRoot (it computes the plan and the transform)
+    /** Before every plan: the window is in fullscreen (or not). On a change this decides the dock
+        and moves the camera panel. */
+    void prepareFullscreen (bool fullscreen);
+    /** The camera panel should be docked in fullscreen. */
+    bool wantsDock() const noexcept;
+    /** The plan to lay out from; the bounds are WindowRoot's to set. */
+    void setPlan (const layout::Plan&);
+    const layout::Plan& currentPlan() const noexcept   { return plan; }
 
 private:
     struct Item
@@ -180,6 +232,7 @@ private:
     void updateStatus (const AudioHost::Meters&);
 
     juce::ApplicationProperties appProperties;
+    std::unique_ptr<juce::PropertiesFile> ownSettingsFile;   // Options::settingsFolder (layout checks); else appProperties
     std::unique_ptr<SettingsStore> store;
     AppSettings settings;
 
@@ -264,6 +317,7 @@ private:
     bool statusIsProblem = false;
 
     std::vector<Column> columns;
+    layout::Plan plan;               // the window, or fullscreen (2.1, WindowRoot)
     juce::Rectangle<int> dockArea;   // where a docked camera panel goes (fullscreen, 2.1); empty in the window
     int displayBottom = 0;           // the hairline under the live display
 

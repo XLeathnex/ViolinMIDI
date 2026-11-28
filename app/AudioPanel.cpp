@@ -367,3 +367,6 @@ void AudioPanel::paint (juce::Graphics& g)
         nameLine (blocks[i].label, valueText (blocks[i]), kBlockY[i]);
     nameLine ("Dry-Kill", {}, kDryY);
 }
+
+//==============================================================================
+void AudioPanel::setOutput (const Output&) {}

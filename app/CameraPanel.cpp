@@ -568,6 +568,34 @@ void CameraPanel::setWaiting (bool waitingForPicture)
     repaint (previewArea());
 }
 
+//==============================================================================
+void CameraPanel::setDocked (bool shouldBeDocked)
+{
+    docked = shouldBeDocked;
+}
+
+void CameraPanel::setDeadZone (float zone)
+{
+    current.pad.deadZone = zone;
+    deadZoneSlider.setValue (zone * 100.0, juce::dontSendNotification);
+    repaint();
+}
+
+void CameraPanel::setAnchor (int, bool) {}
+
+bool CameraPanel::isPicking() const noexcept
+{
+    return false;
+}
+
+void CameraPanel::cancelPipette() {}
+
+void CameraPanel::showEvent (const juce::String&, bool) {}
+
+void CameraPanel::setFreeze (bool) {}
+
+void CameraPanel::setBowStats (int, unsigned) {}
+
 void CameraPanel::setPowerState (bool on)
 {
     onButton.setToggleState (on, juce::dontSendNotification);

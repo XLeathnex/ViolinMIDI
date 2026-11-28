@@ -17,6 +17,8 @@ namespace
     using vm::settingsfile::kVoicingVoices;
     using vm::settingsfile::kVoicingVoicesOf;
 
+    constexpr const char* kPadDeadZone = "padDeadZone";   // the camera's key, also in a profile's values
+
     juce::String curveText (const vm::Curve& c)
     {
         juce::StringArray points;
@@ -233,6 +235,49 @@ juce::StringArray profileKeys()
     for (const auto& key : vm::settingsfile::keysOf (Field::Scope::profile))
         keys.add (key);
     return keys;
+}
+
+juce::var profileToVar (const vm::ProfileValues& values)
+{
+    vm::Settings e;
+    values.applyTo (e);
+
+    auto* object = new juce::DynamicObject();
+    for (const auto& key : vm::settingsfile::keysOf (Field::Scope::profile))
+    {
+        const auto* f = vm::settingsfile::find (key);
+        const double v = f->get (e);
+        if (f->type == Field::Type::Flag)        object->setProperty (f->key, v >= 0.5);
+        else if (f->type == Field::Type::Whole)  object->setProperty (f->key, juce::roundToInt (v));
+        else                                     object->setProperty (f->key, v);
+    }
+    object->setProperty (kPadDeadZone, (double) values.deadZone);
+    return juce::var (object);
+}
+
+vm::ProfileValues profileFromVar (const juce::var& object)
+{
+    vm::Settings e;
+    float zone = vm::ProfileValues().deadZone;
+
+    if (object.isObject())
+    {
+        for (const auto& key : vm::settingsfile::keysOf (Field::Scope::profile))
+        {
+            const auto* f = vm::settingsfile::find (key);
+            const juce::var value = object.getProperty (f->key, juce::var());
+            if (value.isBool())
+                f->set (e, value ? 1.0 : 0.0);
+            else if (isNumber (value))
+                f->set (e, juce::jlimit (f->low, f->high, (double) value));
+        }
+
+        const juce::var dz = object.getProperty (kPadDeadZone, juce::var());
+        if (isNumber (dz))
+            zone = (float) (double) dz;
+    }
+
+    return vm::ProfileValues::of (e, zone).clamped();
 }
 
 juce::NamedValueSet subset (const vm::Settings& e, std::initializer_list<const char*> keys)

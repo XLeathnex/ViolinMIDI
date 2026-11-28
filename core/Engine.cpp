@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <type_traits>
 
 namespace vm
 {
@@ -25,6 +26,15 @@ namespace
     {
         return (float) (69.0 + 12.0 * std::log2 (hz / a4));
     }
+}
+
+// The calibration's telemetry ring copies rows as plain memory.
+static_assert (std::is_trivially_copyable_v<Engine::TraceRow>);
+
+void Engine::chordInput (const MidiEvent* events, int count) noexcept
+{
+    for (int i = 0; i < count; ++i)
+        chords.midi (events[i]);
 }
 
 void Engine::prepare (double sampleRate)

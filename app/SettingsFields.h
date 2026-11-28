@@ -8,6 +8,7 @@
 
 #include <juce_data_structures/juce_data_structures.h>
 
+#include "Profiles.h"
 #include "SettingsText.h"
 #include "Types.h"
 
@@ -37,6 +38,11 @@ namespace fields
 
     /** The keys of the instrument profile's 13 settings, in table order. */
     juce::StringArray profileKeys();
+
+    /** A profile's values as JSON: the 13 keys plus "padDeadZone" (profiles A.3). */
+    juce::var profileToVar (const vm::ProfileValues&);
+    /** Back: missing keys take the defaults, values are clamped (Out <= In, dead zone 0.03 .. 0.25). */
+    vm::ProfileValues profileFromVar (const juce::var&);
 
     /** Some keys of toVar(), in the presets' own format (for PresetStore::patch). Unknown keys are left out. */
     juce::NamedValueSet subset (const vm::Settings&, std::initializer_list<const char*> keys);

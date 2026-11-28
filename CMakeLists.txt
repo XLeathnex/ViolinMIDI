@@ -19,7 +19,15 @@ add_library(violinmidi_core STATIC
     core/OutputStage.cpp
     core/Harmonizer.cpp
     core/Engine.cpp
-    core/SettingsText.cpp)
+    core/SettingsText.cpp
+    core/Chord.cpp
+    core/ChordTracker.cpp
+    core/Profiles.cpp
+    core/CalibrationProtocol.cpp
+    core/CalibrationAnalysis.cpp
+    core/CalibrationSound.cpp
+    core/CalibrationText.cpp
+    core/CalibrationReport.cpp)
 target_include_directories(violinmidi_core PUBLIC core)
 
 if(MSVC)
@@ -32,8 +40,16 @@ endif()
 if(VIOLINMIDI_BUILD_TESTS)
     enable_testing()
 
-    # The camera's logic has no dependencies either, so it is tested here too.
-    add_executable(violinmidi_tests tests/test_main.cpp app/CameraLogic.cpp)
+    # The app's plain C++ units have no dependencies either, so they are tested here too:
+    # the camera's logic, marker and bow hand, the updater's rules, the window's geometry
+    # and the harmonizer output's routing.
+    add_executable(violinmidi_tests tests/test_main.cpp
+        app/CameraLogic.cpp
+        app/CameraMarker.cpp
+        app/CameraBow.cpp
+        app/UpdatePolicy.cpp
+        app/WindowLayout.cpp
+        app/OutputRouting.cpp)
     target_include_directories(violinmidi_tests PRIVATE app)
     target_link_libraries(violinmidi_tests PRIVATE violinmidi_core)
     add_test(NAME core COMMAND violinmidi_tests)
@@ -45,6 +61,10 @@ if(VIOLINMIDI_BUILD_TESTS)
     # Offline tool: plays the harmony voices of a recording with its own sound (the audio harmonizer).
     add_executable(violinmidi_harmonize tools/harmonize.cpp)
     target_link_libraries(violinmidi_harmonize PRIVATE violinmidi_core)
+
+    # Offline tool: runs the calibration's analysis again on a Profimodus diagnosis folder.
+    add_executable(violinmidi_calibrate tools/calibrate.cpp)
+    target_link_libraries(violinmidi_calibrate PRIVATE violinmidi_core)
 endif()
 
 # --- application --------------------------------------------------------------

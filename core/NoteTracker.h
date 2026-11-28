@@ -27,6 +27,7 @@ public:
         float hintClarity = 0.0f; ///< periodicity still present at the sounding note's period
         bool  octaveDoubt = false; ///< the detector suspects an overtone
         float levelDb = -120.0f;  ///< RMS level of the filtered input
+        bool  bowCue = false;     ///< 2.1: the camera announces a change of bow now (Settings::bowAssist)
     };
 
     void prepare (double hopsPerSecond);
@@ -46,6 +47,11 @@ public:
     float outputPitch() const noexcept   { return outPitch; }
     /** True while the detector should hold on to the sounding note's period. */
     bool  wantsHint() const noexcept     { return active && ! inTransition; }
+
+    /** 2.1: note-ons with a new attack so far (the audio harmonizer's Frame::attack). */
+    unsigned attacks() const noexcept;
+    /** 2.1: new strokes the camera's bow cue made (rules B3 and B4), for the display. */
+    unsigned cueStrokes() const noexcept;
 
 private:
     void applySettings (const Settings& s, int offset, MidiEventList& out);

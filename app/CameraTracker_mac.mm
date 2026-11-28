@@ -363,3 +363,9 @@ juce::String CameraTracker::error() const
     const juce::ScopedLock sl (native->lock);
     return native->errorText;
 }
+
+//==============================================================================
+// 2.1: the colour marker and the bow hand on the camera queue (not yet used).
+void CameraTracker::setTracking (const Tracking&) {}
+
+void CameraTracker::setBowCueSink (std::atomic<uint64_t>*) noexcept {}

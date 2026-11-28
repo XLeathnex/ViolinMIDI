@@ -229,6 +229,27 @@ inline int templateInterval (int note, int root, int mode, int semitones, bool d
     return s.steps[target - 7 * targetOctaves] + 12 * targetOctaves - relative;
 }
 
+/** templateInterval() counted in any seven steps above `scaleRoot` (2.1: the chord scales of
+    Chord.h), always diatonic. A note outside those steps: the distance itself. */
+inline int templateIntervalIn (int note, int scaleRoot, const int8_t* steps7, int semitones) noexcept
+{
+    const int relative = pitchClass (note - scaleRoot);
+
+    int index = -1;
+    for (int i = 0; i < 7 && index < 0; ++i)
+        if (steps7[i] == relative)
+            index = i;
+
+    if (index < 0)
+        return semitones;
+
+    const int octaves = floorDiv (semitones, 12);
+    const int within = semitones - 12 * octaves;
+    const int target = index + kStepOfSemitone[within] + 7 * octaves;
+    const int targetOctaves = floorDiv (target, 7);
+    return steps7[target - 7 * targetOctaves] + 12 * targetOctaves - relative;
+}
+
 struct Voices
 {
     int notes[kMaxVoices] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };

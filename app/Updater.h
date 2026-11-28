@@ -15,6 +15,8 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 
+#include "UpdatePolicy.h"
+
 #include <functional>
 
 namespace updater
@@ -72,6 +74,28 @@ Startup onStartup (const juce::StringArray& commandLine);
 /** Call once the app is up: confirms that this version starts properly. */
 void startedSuccessfully();
 
+/** 2.1: the app quits before its start completed (during the start animation): the pending start
+    is cleared without counting as a good one (no promotion), and not as a failed one either. */
+void startEndedEarly();
+
+/** 2.1: what identifies an installed app beyond its version: path, version, build, executable
+    time and size. */
+juce::String bundleIdentity (const juce::File& bundle);
+
+/** 2.1: a process (other than this one) runs from that bundle. False where it cannot be known. */
+bool processRunsFrom (const juce::File& bundle);
+
+/** 2.1: a downloaded copy that started well replaces the app in the Programs folder (copied
+    beside it, verified, swapped atomically). Only if newer than the installed one and nothing
+    runs from it. Blocks for 1-3 s: never on the message thread. `shouldStop` cancels the copy. */
+struct PromotionResult
+{
+    updpolicy::Promotion outcome = updpolicy::Promotion::notDue;
+    bool done = false;              ///< due, and the installed app is this version now
+    juce::String message;           ///< for the status line, empty if nothing to say
+};
+PromotionResult promoteIfDue (const std::function<bool()>& shouldStop = nullptr);
+
 /** Chooses the version to run from now on. Empty = the installed app. */
 juce::Result select (const juce::String& version);
 
@@ -85,6 +109,11 @@ juce::Result fetchReleases (juce::Array<Release>& releases);
 /** Downloads one version. `progress` gets 0..1 and returns false to cancel. Blocks. */
 juce::Result download (const Release& release, const juce::File& destination,
                        const std::function<bool (double)>& progress);
+
+/** 2.1: the whole job of the update button except the restart: download (with progress and
+    cancel), install, and only then select. On any failure or cancel nothing is left behind and
+    state.json is as it was. Blocks. */
+juce::Result prepareSwitch (const Release& release, const std::function<bool (double)>& progress);
 
 /** Unpacks a downloaded version, checks it and puts it into the versions folder.
     @param expectedVersion  version the archive must contain, or empty to accept what is inside

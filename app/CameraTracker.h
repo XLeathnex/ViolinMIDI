@@ -10,8 +10,12 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "CameraBow.h"
 #include "CameraLogic.h"
+#include "CameraMarker.h"
 
+#include <atomic>
+#include <cstdint>
 #include <functional>
 #include <memory>
 
@@ -43,6 +47,25 @@ public:
         decided. Either the camera runs now, or isRunning() is false and error()
         says why. Not called when stop() came first. */
     std::function<void()> onStateChanged;
+
+    /** 2.1: what the camera queue looks for in each frame besides the body. The marker's
+        position arrives in Pose::marker, the bow hand's state in Pose::bow (both through
+        onFrame); the bow windows go straight to the audio thread (setBowCueSink). */
+    struct Tracking
+    {
+        bool  marker = false;               ///< look for the colour marker (markerOn && colour.valid)
+        cam::MarkerColour colour;
+        float tolerance = 1.0f;
+        bool  bow = false;                  ///< follow the bow hand; analyse every frame (up to 30 per second)
+        cam::BowTracker::Settings bowSettings;
+    };
+
+    /** Message thread, any time. */
+    void setTracking (const Tracking&);
+
+    /** Message thread, before start(): where the bow windows go (AudioHost::bowCueSlot(), a
+        cam::packCue word). It must outlive this tracker; stop() writes 0 there and nothing after. */
+    void setBowCueSink (std::atomic<uint64_t>*) noexcept;
 
     struct Native;   // the platform's part
 

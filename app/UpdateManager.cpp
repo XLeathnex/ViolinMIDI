@@ -36,6 +36,19 @@ void UpdateManager::check()
     startThread();
 }
 
+void UpdateManager::startUp (bool checkForVersions)
+{
+    if (checkForVersions)
+        check();
+}
+
+void UpdateManager::cancel() {}
+
+bool UpdateManager::isDownloading() const noexcept
+{
+    return false;
+}
+
 void UpdateManager::switchTo (const juce::String& version)
 {
     if (busy)

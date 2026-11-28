@@ -248,4 +248,54 @@ void GestureDetector::reset() noexcept
     *this = GestureDetector();
 }
 
+//==============================================================================
+// 2.1
+
+double frameAge (double, double) noexcept
+{
+    return kFallbackAgeSec;
+}
+
+Flick FlickDetector::update (double, float, float, float, bool, const Params&) noexcept
+{
+    return Flick::none;
+}
+
+bool FlickDetector::fastMovement() const noexcept
+{
+    return false;
+}
+
+void FlickDetector::reset() noexcept {}
+
+bool PadTracker::waitingForZone() const noexcept
+{
+    return false;
+}
+
+PadTracker::Source PadTracker::source() const noexcept
+{
+    return haveBody ? Source::body : Source::none;
+}
+
+bool PadTracker::markerOffsetKnown() const noexcept
+{
+    return false;
+}
+
+bool PadTracker::lastOffset (float&, float&) const noexcept
+{
+    return false;
+}
+
+bool PadTracker::flickHeld() const noexcept
+{
+    return false;
+}
+
+Flick PadTracker::takeFlick() noexcept
+{
+    return Flick::none;
+}
+
 } // namespace cam

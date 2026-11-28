@@ -795,3 +795,8 @@ void harmonizerPerformance()
     info ("10 voices (-12 .. +19), A3, 48 kHz: 10 s in %.3f s -> %.1f %% of one core", best, load);
     check (load < 25.0, "10 voices need %.1f %% of a core", load);
 }
+
+//==============================================================================
+// 2.1: a chord change glides the voices in place (Frame::revoice); a new attack on the same
+// note starts them anew (Frame::attack); a frame with both crossfades.
+void harmonizerGlideAttack() {}

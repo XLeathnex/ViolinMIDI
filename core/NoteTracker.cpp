@@ -198,6 +198,16 @@ void NoteTracker::prepare (double hopsPerSecond)
     reset();
 }
 
+unsigned NoteTracker::attacks() const noexcept
+{
+    return 0;
+}
+
+unsigned NoteTracker::cueStrokes() const noexcept
+{
+    return 0;
+}
+
 void NoteTracker::reset() noexcept
 {
     active = false;

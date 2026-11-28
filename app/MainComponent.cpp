@@ -139,12 +139,23 @@ MainComponent::MainComponent (const Options& o) : options (o)
     fileOptions.filenameSuffix = "settings";
     fileOptions.osxLibrarySubFolder = "Application Support";
     fileOptions.millisecondsBeforeSaving = 500;
-    appProperties.setStorageParameters (fileOptions);
-    store = std::make_unique<SettingsStore> (*appProperties.getUserSettings());
+    juce::PropertiesFile* settingsFile = nullptr;
+    if (options.settingsFolder != juce::File())
+    {
+        // layout checks: a file of their own, the user's are never touched
+        ownSettingsFile = std::make_unique<juce::PropertiesFile> (options.settingsFolder.getChildFile ("ViolinMIDI.settings"), fileOptions);
+        settingsFile = ownSettingsFile.get();
+    }
+    else
+    {
+        appProperties.setStorageParameters (fileOptions);
+        settingsFile = appProperties.getUserSettings();
+    }
+    store = std::make_unique<SettingsStore> (*settingsFile);
     settings = store->load();
 
     // --- presets: readable files next to the settings file
-    presets = std::make_unique<PresetStore> (appProperties.getUserSettings()->getFile().getParentDirectory().getChildFile ("Presets"));
+    presets = std::make_unique<PresetStore> (settingsFile->getFile().getParentDirectory().getChildFile ("Presets"));
     presetBar = std::make_unique<PresetBar> (*presets);
     presetBar->currentSettings = [this] { return settings.engine; };
     presetBar->onLoad = [this] (const vm::Settings& loaded)
@@ -1848,6 +1859,18 @@ void MainComponent::layoutColumns (juce::Rectangle<int> band)
 }
 
 //==============================================================================
+void MainComponent::prepareFullscreen (bool) {}
+
+bool MainComponent::wantsDock() const noexcept
+{
+    return false;
+}
+
+void MainComponent::setPlan (const layout::Plan& p)
+{
+    plan = p;
+}
+
 void MainComponent::launchCallout (std::unique_ptr<juce::Component> content, juce::Component& anchor)
 {
     // In fullscreen (2.1) a callout opens inside this component instead, so it is scaled with it.

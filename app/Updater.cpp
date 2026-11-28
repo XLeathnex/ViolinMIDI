@@ -540,4 +540,29 @@ juce::Result installZip (const juce::File& zip, const juce::String& expectedVers
     return juce::Result::ok();
 }
 
+//==============================================================================
+// 2.1: no fallback to an old version
+
+void startEndedEarly() {}
+
+juce::String bundleIdentity (const juce::File& bundle)
+{
+    return bundle.getFullPathName();
+}
+
+bool processRunsFrom (const juce::File&)
+{
+    return false;
+}
+
+PromotionResult promoteIfDue (const std::function<bool()>&)
+{
+    return {};
+}
+
+juce::Result prepareSwitch (const Release&, const std::function<bool (double)>&)
+{
+    return juce::Result::fail ("not implemented");
+}
+
 } // namespace updater

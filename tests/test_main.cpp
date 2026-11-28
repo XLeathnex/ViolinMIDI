@@ -4,11 +4,21 @@
 // the engine exactly as the app does, and checks the MIDI that comes out.
 
 #include "Harness.h"
+#include "../core/Calibration.h"
+#include "../core/CalibrationReport.h"
+#include "../core/Chord.h"
+#include "../core/ChordTracker.h"
 #include "../core/OutputStage.h"
+#include "../core/Profiles.h"
 #include "../core/Scale.h"
 #include "../core/SettingsText.h"
 #include "../core/SpscRing.h"
+#include "CameraBow.h"
 #include "CameraLogic.h"
+#include "CameraMarker.h"
+#include "OutputRouting.h"
+#include "UpdatePolicy.h"
+#include "WindowLayout.h"
 
 #include <vector>
 #include <string>
@@ -33,6 +43,7 @@ namespace
 
 int  gFailuresInTest = 0;
 bool gVerbose = false;
+bool gLongTests = false;   // --long: the long end-to-end runs too
 
 void check (bool condition, const char* format, ...)
 {
@@ -101,6 +112,15 @@ double periodMs (double note) { return 1000.0 / noteToHz (note); }
 #include "test_harmonizer.h"
 #include "test_v2.h"
 #include "test_settings21.h"
+#include "test_chord.h"
+#include "test_chordstage.h"
+#include "test_calibration.h"
+#include "test_profiles.h"
+#include "test_update_policy.h"
+#include "test_marker.h"
+#include "test_bow.h"
+#include "test_bowcue.h"
+#include "test_ui.h"
 
 //==============================================================================
 // Single bowed notes over the whole range of a 7-string violin.
@@ -1176,6 +1196,64 @@ const TestCase kTests[] = {
     { "settings 2.1: keep on preset load", settingsKeepOnPresetLoad },
     { "settings 2.1: a 2.0 settings text", settingsText20 },
     { "spsc ring", spscRing },
+    // 2.1: external chords
+    { "chord tables", chordTables },
+    { "chord recognition", chordRecognition },
+    { "chord scales", chordScales },
+    { "key context", chordKeyContext },
+    { "chord voices", chordVoices },
+    { "chord tracker", chordTrackerTests },
+    { "chord stage", chordStage },
+    { "chord stage random", chordStageRandom },
+    { "chord engine", chordEngine },
+    { "harmonizer: chord glide and attack", harmonizerGlideAttack },
+    // 2.1: the camera's bow cue and the calibration's telemetry in the engine
+    { "bow cue", bowCue },
+    { "engine telemetry", engineTelemetry },
+    // 2.1: automatic calibration
+    { "calibration: instrument", calibInstrument },
+    { "calibration: live counter", calibLiveCounter },
+    { "calibration: levels", calibLevels },
+    { "calibration: out threshold", calibOutThreshold },
+    { "calibration: search", calibSearch },
+    { "calibration: octave guards", calibOctaveGuards },
+    { "calibration: bridge", calibBridge },
+    { "calibration: jump guard", calibJumpGuard },
+    { "calibration: lowest note", calibLowestNote },
+    { "calibration: dead zone", calibDeadZone },
+    { "calibration: sound default", calibSoundDefault },
+    { "calibration: sound piezo", calibSoundPiezo },
+    { "calibration: mix", calibMix },
+    { "calibration: determinism", calibDeterminism },
+    { "calibration: report", calibReport },
+    { "calibration: settings text", calibSettingsText },
+    { "calibration: fields", calibFields },
+    { "calibration: end to end", calibEndToEnd },
+    // 2.1: instrument profiles and the updater
+    { "profiles: values", profilesValues },
+    { "profiles: outside changes", profilesOutsideChanges },
+    { "profiles: preset rule", profilesPresetRule },
+    { "profiles: lowest latency", profilesLowestLatency },
+    { "profiles: list", profilesList },
+    { "profiles: table agrees", profilesTableAgrees },
+    { "update policy: selection", updatePolicySelection },
+    { "update policy: pending", updatePolicyPending },
+    { "update policy: strikes", updatePolicyStrikes },
+    { "update policy: last good", updatePolicyLastGood },
+    { "update policy: direct start", updatePolicyDirectStart },
+    { "update policy: promotion", updatePolicyPromotion },
+    { "update policy: versions", updatePolicyVersions },
+    // 2.1: camera
+    { "camera marker pad", cameraMarkerPad },
+    { "camera flick", cameraFlick },
+    { "camera marker", cameraMarker },
+    { "camera bow hand", cameraBowHand },
+    // 2.1: main window and harmonizer output
+    { "window plan", windowPlan },
+    { "graph split", graphSplit },
+    { "zoom steps", zoomSteps },
+    { "loudness window", loudnessWindow },
+    { "output routing", outputRouting },
 };
 
 } // namespace
@@ -1186,6 +1264,7 @@ int main (int argc, char** argv)
     for (int i = 1; i < argc; ++i)
     {
         if (std::strcmp (argv[i], "--verbose") == 0) gVerbose = true;
+        else if (std::strcmp (argv[i], "--long") == 0) gLongTests = true;
         else if (std::strcmp (argv[i], "--only") == 0 && i + 1 < argc) only = argv[++i];
     }
 
